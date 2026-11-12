@@ -382,6 +382,9 @@ CMDB_PASSWORD_ENCRYPTION_KEY = _setting_value(
     '',
 )
 
+# 网络监控指标样本保留天数（接口/设备样本共用）
+NETWORK_METRIC_RETENTION_DAYS = int(os.getenv('NETWORK_METRIC_RETENTION_DAYS', '30'))
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _bool_value(os.getenv('DEBUG'), False)
 
@@ -433,6 +436,8 @@ INSTALLED_APPS = [
     'aiops.apps.AiopsConfig',
     'rbac',
     'eventwall',
+    'planning',
+    'network',
 ]
 
 MIDDLEWARE = [

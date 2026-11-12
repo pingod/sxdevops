@@ -8,9 +8,11 @@ from . import docker_logs
 from . import k8s_views
 from . import observability_views
 from . import rum_views
+from . import webshell_views
 from sxdevops.features import is_system_posture_enabled
 
 router = DefaultRouter()
+router.register(r'webshell-rules', webshell_views.WebShellCommandRuleViewSet, basename='webshell-rule')
 router.register(r'hosts', views.HostViewSet)
 router.register(r'task-resource-groups', views.TaskResourceGroupViewSet, basename='task-resource-group')
 router.register(r'task-resources', views.TaskResourceViewSet, basename='task-resource')

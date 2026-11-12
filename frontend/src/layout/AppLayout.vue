@@ -257,6 +257,15 @@ const menuItems = [
     ],
   },
   {
+    moduleKey: 'datacenter',
+    title: '数据中心',
+    icon: 'OfficeBuilding',
+    children: [
+      { path: '/datacenter/planning', visibilityKey: 'datacenter.planning', title: 'IDC 上架布线', icon: 'OfficeBuilding', permission: 'datacenter.planning.view' },
+      { path: '/datacenter/twin', visibilityKey: 'datacenter.twin', title: '数字孪生', icon: 'Box', permission: 'datacenter.twin.view' },
+    ],
+  },
+  {
     moduleKey: 'aiops',
     title: 'AIOps',
     icon: 'ChatDotSquare',
@@ -289,6 +298,8 @@ const menuItems = [
       { path: '/observability/tracing', visibilityKey: 'observability.tracing', title: '链路追踪', icon: 'Connection', permission: 'ops.trace.view' },
       { path: '/observability/datasources', visibilityKey: 'observability.datasources', title: '数据源', icon: 'DataBoard', anyPermissions: ['ops.metric.datasource.view', 'ops.log.datasource.view', 'ops.trace.datasource.view', 'ops.observability.link.view'] },
       { path: '/alerts', visibilityKey: 'observability.alerts', title: '告警中心', icon: 'Bell', anyPermissions: ['ops.alert.view', 'ops.alert.config.view'] },
+      { path: '/network/noc', visibilityKey: 'observability.network', title: '网络监控', icon: 'Odometer', permission: 'network.monitor.view' },
+      { path: '/network/devices', visibilityKey: 'observability.network-devices', title: '网络设备', icon: 'Connection', permission: 'network.device.view' },
     ],
   },
   {
@@ -329,6 +340,7 @@ const menuItems = [
     children: [
       { path: '/cloud-security/waf', visibilityKey: 'cloudsecurity.waf', title: 'WAF 防火墙', icon: 'Lock', permission: 'cloudsecurity.waf.view' },
       { path: '/security-center/internal-platform', visibilityKey: 'cloudsecurity.internal-platform', title: '内部平台安全', icon: 'DocumentChecked', permission: 'cloudsecurity.internal_platform.view' },
+      { path: '/security-center/webshell', visibilityKey: 'cloudsecurity.webshell', title: 'WebShell 防护', icon: 'Monitor', permission: 'ops.webshell.rule.view' },
     ],
   },
   {

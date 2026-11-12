@@ -17,6 +17,16 @@ frontend/node_modules
 frontend/dist
 frontend/screenshots
 
+planning/backend/.venv
+planning/backend/.pytest_cache
+planning/backend/tests
+planning/**/__pycache__
+planning/web/node_modules
+planning/web/dist
+planning/shared
+planning/docs
+planning/scripts
+
 docs
 *.log
 *.out.log

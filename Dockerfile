@@ -9,6 +9,19 @@ COPY frontend/ ./
 RUN npm run build
 
 
+FROM node:22-alpine AS planning-web-builder
+
+WORKDIR /app/planning/web
+
+RUN corepack enable && corepack prepare pnpm@11.27.0 --activate
+
+COPY planning/web/package.json planning/web/pnpm-lock.yaml planning/web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY planning/web/ ./
+RUN VITE_BASE=/planning-app/ VITE_API_BASE=/api/planning pnpm build
+
+
 FROM python:3.12-slim AS app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -30,6 +43,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r /app/backend/requirements.txt
 
+# IDC 上架布线引擎（vendored，MPL-2.0，见 planning/NOTICE.md）。
+# 依赖版本由引擎自己的 pyproject [serve] 钉死；运行时监管进程以
+# /app/planning/backend 为 cwd 启动 uvicorn，导入的是这份源码树。
+COPY planning/backend/pyproject.toml /app/planning/backend/pyproject.toml
+COPY planning/backend/idcbox/ /app/planning/backend/idcbox/
+RUN pip install --no-cache-dir "/app/planning/backend[serve]"
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash bash-completion \
     && rm -rf /var/lib/apt/lists/*
@@ -39,6 +59,12 @@ COPY THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 COPY licenses/ /app/licenses/
 COPY backend/ /app/backend/
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+COPY planning/LICENSE planning/NOTICE.md /app/planning/
+COPY planning/data/idcbox.db /app/planning/data/idcbox.db
+COPY planning/rules/ /app/planning/rules/
+COPY planning/projects/ /app/planning/projects/
+COPY planning/信息港部署上架/ /app/planning/信息港部署上架/
+COPY --from=planning-web-builder /app/planning/web/dist /app/planning/web/dist
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh

@@ -33,6 +33,7 @@ services:
       SXDEVOPS_SEED_DATA: "0"
       SXDEVOPS_SEED_TEMPLATES: "1"
       AIOPS_LANGGRAPH_CHECKPOINT_BACKEND: postgresql
+      PLANNING_ENGINE_URL: http://planning-engine:18001
     volumes:
       - aiops_runtime:/app/backend/runtime
     ports:
@@ -103,6 +104,81 @@ services:
       - aiops_runtime:/app/backend/runtime
     command: ["python", "manage.py", "run_aiops_chat_worker", "--interval", "2"]
 
+  planning-engine:
+    image: sxdevops:latest
+    container_name: sxdevops-planning-engine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      # 引擎绑定容器接口供平台反代访问；不发布端口到宿主机，
+      # 对外唯一入口是 sxdevops 的 /api/planning/（RBAC + 审计）。
+      PLANNING_BIND: 0.0.0.0
+    volumes:
+      - aiops_runtime:/app/backend/runtime
+      - planning_projects:/app/planning/projects
+    command: ["python", "manage.py", "planning_engine"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18001/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  network-poller:
+    image: sxdevops:latest
+    container_name: sxdevops-network-poller
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      NETWORK_METRIC_RETENTION_DAYS: ${NETWORK_METRIC_RETENTION_DAYS:-30}
+    command: ["python", "manage.py", "run_network_poller", "--tick", "5", "--concurrency", "8"]
+
   postgres:
     image: postgres:16-alpine
     container_name: sxdevops-postgres
@@ -138,3 +214,4 @@ volumes:
   postgres_data:
   redis_data:
   aiops_runtime:
+  planning_projects:

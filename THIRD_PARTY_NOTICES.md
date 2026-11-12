@@ -16,3 +16,7 @@ Python 包附带的许可文件由 pip 安装在对应 `.dist-info` 目录，发
 - [本轮依赖版本与许可清单](docs/releases/v2.0.0-dependency-licenses.json)
 
 清单记录本地验证环境的依赖闭包，不代表未来 `>=` 约束解析出的全部版本。每次构建镜像须重新核对实际安装版本、发行文本、可选依赖和系统包；本轮清单不能替代新发行物的检查。
+
+## Vendored 子系统：IDC 上架布线引擎（planning/）
+
+`planning/` 目录整体引入自 NetMon-Agent-Platform（原独立项目 IDCBoxLine），遵循 **MPL-2.0**（文件级 copyleft），与项目其余部分的 MIT 许可互不影响。上游仓库未附 LICENSE 文件，`planning/LICENSE` 为 MPL-2.0 官方标准文本，依据上游 README 的许可声明适用。本地修改（认证接入、主题联动、构建配置）逐文件记录在 `planning/NOTICE.md`；对外分发时这些文件须以源码形式提供（MPL-2.0 §3），本仓库随源码分发即满足该要求。引擎 Python 依赖（FastAPI、SQLAlchemy、openpyxl 等）按 `planning/backend/pyproject.toml` 钉版安装，各自许可随 `.dist-info` 保留。

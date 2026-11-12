@@ -22,6 +22,7 @@ from rest_framework.authtoken.models import Token
 
 from ops.k8s_views import _is_demo, _prepare_kubeconfig
 from ops.k8s_shell import interactive_shell_command
+from ops.webshell_guard import WebShellGuard, handle_guard_events, load_rules
 from ops.models import K8sCluster
 from rbac.services import user_has_permissions
 from rbac.k8s_access import can_access_k8s
@@ -59,6 +60,8 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
         if not can_access_k8s(token.user, self.cluster_id, shell=True):
             self.close(code=4403)
             return
+        self.user = token.user
+        self.guard = WebShellGuard(load_rules())
         self.accept()
         try:
             self._start_shell()
@@ -101,7 +104,15 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             return
         try:
             if payload.get('type') == 'input':
-                os.write(self.master_fd, str(payload.get('data', '')).encode('utf-8'))
+                forward, events = self.guard.process(str(payload.get('data', '')))
+                if forward:
+                    os.write(self.master_fd, forward.encode('utf-8'))
+                if events:
+                    handle_guard_events(
+                        events, user=self.user, resource_type='k8s_cluster',
+                        resource_id=self.cluster_id, resource_name=self.cluster.name,
+                        send_text=lambda text: self.send(text_data=json.dumps({'type': 'output', 'data': text})),
+                    )
             elif payload.get('type') == 'resize':
                 self._resize(payload.get('cols', 120), payload.get('rows', 40))
         except (OSError, TypeError, ValueError):

@@ -21,6 +21,8 @@
 | [任务资源与 CMDB](task-resource-cmdb.md) | 显式接入、执行字段和资产生命周期 |
 | [Kubernetes 工作台](K8s工作台与用户授权.md) | 资源操作、集群及命名空间授权、日志和终端 |
 | [Docker 工作台](Docker工作台.md) | 环境、容器、镜像、日志和终端 |
+| [网络监控使用手册](网络监控使用手册.md) | SNMP 设备纳管、凭据加密、NOC 态势与接口流量 |
+| [WebShell 防护使用手册](WebShell防护使用手册.md) | 终端高危命令拦截、告警、规则管理与防护审计 |
 | [vSphere 指标接入](vsphere-vm-prometheus-metrics.md) | Prometheus / node_exporter 真实运行指标 |
 
 ## AIOps 与开发

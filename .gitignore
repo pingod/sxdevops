@@ -52,6 +52,11 @@ docs/screenshots/*-smoke.png
 !.codex/skills/
 !.codex/skills/**
 
+# Vendored planning engine local env
+planning/backend/.venv/
+planning/backend/.pytest_cache/
+planning/web/dist/
+
 # Deployment private material must stay ignored even inside a tracked skill.
 .codex/**/deploy.local.json
 .codex/**/connection.json

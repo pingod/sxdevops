@@ -435,6 +435,18 @@ const routes = [
         meta: { title: '告警中心', icon: 'Bell', anyPermissions: ['ops.alert.view', 'ops.alert.config.view'] },
       },
       {
+        path: 'network/noc',
+        name: 'NetworkNoc',
+        component: () => import('@/views/NetworkNoc.vue'),
+        meta: { title: '网络监控', icon: 'Odometer', permission: 'network.monitor.view' },
+      },
+      {
+        path: 'network/devices',
+        name: 'NetworkDevices',
+        component: () => import('@/views/NetworkDevices.vue'),
+        meta: { title: '网络设备', icon: 'Connection', permission: 'network.device.view' },
+      },
+      {
         path: 'observability',
         redirect: () => {
           const authStore = useAuthStore(pinia)
@@ -595,6 +607,12 @@ const routes = [
         meta: { title: '内部平台安全', icon: 'DocumentChecked', permission: 'cloudsecurity.internal_platform.view' },
       },
       {
+        path: 'security-center/webshell',
+        name: 'WebShellGuard',
+        component: () => import('@/views/WebShellGuard.vue'),
+        meta: { title: 'WebShell 防护', icon: 'Monitor', permission: 'ops.webshell.rule.view' },
+      },
+      {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/Users.vue'),
@@ -615,6 +633,26 @@ const routes = [
         name: 'ModuleManage',
         component: () => import('@/views/ModuleManage.vue'),
         meta: { title: '系统设置', icon: 'Menu', permission: 'rbac.module.manage' },
+      },
+      {
+        path: 'datacenter/planning',
+        name: 'PlanningCenter',
+        component: () => import('@/views/PlanningCenter.vue'),
+        meta: {
+          title: 'IDC 上架布线',
+          icon: 'OfficeBuilding',
+          permission: 'datacenter.planning.view',
+        },
+      },
+      {
+        path: 'datacenter/twin',
+        name: 'DatacenterTwin',
+        component: () => import('@/views/DatacenterTwin.vue'),
+        meta: {
+          title: '数字孪生',
+          icon: 'Box',
+          permission: 'datacenter.twin.view',
+        },
       },
       {
         path: 'aiops/chat',

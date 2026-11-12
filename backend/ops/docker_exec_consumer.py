@@ -17,6 +17,7 @@ from .docker_views import (
     _get_ssh_client_from_docker_host, _is_demo_docker_host, _run_docker,
 )
 from .k8s_shell import interactive_shell_command
+from .webshell_guard import WebShellGuard, handle_guard_events, load_rules
 
 
 class DockerExecConsumer(WebsocketConsumer):
@@ -32,6 +33,7 @@ class DockerExecConsumer(WebsocketConsumer):
         if not token or not token.user.is_active:
             return self.close(code=4401)
         self.user = token.user
+        self.guard = WebShellGuard(load_rules())
         if not user_has_permissions(self.user, ['ops.docker.view', 'ops.docker.exec']):
             return self.close(code=4403)
         self.container_id = query.get('container_id', [''])[0]
@@ -107,7 +109,15 @@ class DockerExecConsumer(WebsocketConsumer):
                 if self.demo:
                     self._demo_input(incoming)
                 elif self.channel is not None:
-                    self.channel.sendall(incoming)
+                    forward, events = self.guard.process(incoming)
+                    if forward:
+                        self.channel.sendall(forward)
+                    if events:
+                        handle_guard_events(
+                            events, user=self.user, resource_type='docker_container',
+                            resource_id=self.container_id, resource_name=self.host.name,
+                            send_text=lambda text: self._send('output', data=text),
+                        )
             elif payload.get('type') == 'resize' and self.channel is not None:
                 self.channel.resize_pty(width=max(20, min(500, int(payload.get('cols', 120)))),
                                         height=max(5, min(300, int(payload.get('rows', 36)))))

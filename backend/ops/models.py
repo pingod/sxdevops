@@ -1800,3 +1800,30 @@ class TransactionTicket(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class WebShellCommandRule(models.Model):
+    ACTION_BLOCK = 'block'
+    ACTION_WARN = 'warn'
+    ACTION_AUDIT = 'audit'
+    ACTION_CHOICES = [(ACTION_BLOCK, '拦截'), (ACTION_WARN, '告警放行'), (ACTION_AUDIT, '仅审计')]
+    SEVERITY_CHOICES = [('info', '信息'), ('warning', '警告'), ('critical', '严重')]
+
+    name = models.CharField('规则名称', max_length=100, unique=True)
+    pattern = models.CharField('匹配正则', max_length=500)
+    action = models.CharField('动作', max_length=10, choices=ACTION_CHOICES, default=ACTION_BLOCK)
+    severity = models.CharField('级别', max_length=10, choices=SEVERITY_CHOICES, default='warning')
+    priority = models.IntegerField('优先级(小者优先)', default=100)
+    enabled = models.BooleanField('启用', default=True)
+    description = models.CharField('描述', max_length=255, blank=True, default='')
+    is_builtin = models.BooleanField('内置规则', default=False)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = 'WebShell 命令规则'
+        verbose_name_plural = 'WebShell 命令规则'
+        ordering = ['priority', 'id']
+
+    def __str__(self):
+        return f'{self.name} ({self.get_action_display()})'
