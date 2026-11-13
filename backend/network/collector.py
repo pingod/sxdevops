@@ -14,7 +14,7 @@ from eventwall.services import record_event
 
 from . import oids
 from .models import DeviceMetricSample, InterfaceMetricSample, NetworkDevice, NetworkInterface
-from .snmp import SnmpError, format_mac, snmp_get, snmp_walk, target_from_device, walk_index
+from .snmp import SnmpError, close_engine, create_engine, format_mac, snmp_get, snmp_walk, target_from_device, walk_index
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def _max_numeric(rows):
     return max(values) if values else None
 
 
-async def _collect_vendor_health(target, vendor):
+async def _collect_vendor_health(target, vendor, engine=None):
     """按厂商候选 OID 采集 CPU/内存/温度；标量直接 GET，表 WALK 取最大值。"""
     mapping = oids.VENDOR_HEALTH_OIDS.get(vendor) or {}
     result = {'cpu_pct': None, 'mem_pct': None, 'temperature': None}
@@ -73,7 +73,7 @@ async def _collect_vendor_health(target, vendor):
                 scalar_oids.append((metric, oid))
                 break
     if scalar_oids:
-        values = await snmp_get(target, [oid for _, oid in scalar_oids])
+        values = await snmp_get(target, [oid for _, oid in scalar_oids], engine=engine)
         for metric, oid in scalar_oids:
             value = values.get(oid)
             if isinstance(value, (int, float)):
@@ -87,7 +87,7 @@ async def _collect_vendor_health(target, vendor):
         for oid in candidates:
             if oid.endswith('.0'):
                 continue
-            rows = await snmp_walk(target, oid)
+            rows = await snmp_walk(target, oid, engine=engine)
             value = _max_numeric(rows)
             if value is None:
                 continue
@@ -95,7 +95,7 @@ async def _collect_vendor_health(target, vendor):
                 result['cpu_pct'] = float(value)
             elif metric == 'mem':
                 if vendor == 'cisco':
-                    free_rows = await snmp_walk(target, mapping['mem_free'][0])
+                    free_rows = await snmp_walk(target, mapping['mem_free'][0], engine=engine)
                     free = _max_numeric(free_rows)
                     if free is not None and value + free > 0:
                         result['mem_pct'] = round(value / (value + free) * 100, 2)
@@ -107,17 +107,17 @@ async def _collect_vendor_health(target, vendor):
     return result
 
 
-async def _collect_generic_health(target):
+async def _collect_generic_health(target, engine=None):
     """HOST-RESOURCES-MIB 兜底：hrProcessorLoad 平均 + RAM 存储行利用率。"""
     result = {'cpu_pct': None, 'mem_pct': None, 'temperature': None}
-    cpu_rows = await snmp_walk(target, oids.HR_PROCESSOR_LOAD_OID)
+    cpu_rows = await snmp_walk(target, oids.HR_PROCESSOR_LOAD_OID, engine=engine)
     cpu = _max_numeric(cpu_rows)
     if cpu is not None:
         values = [value for _, value in cpu_rows if isinstance(value, (int, float))]
         result['cpu_pct'] = round(sum(values) / len(values), 2)
-    type_rows = dict(await snmp_walk(target, '1.3.6.1.2.1.25.2.3.1.2'))
-    size_rows = dict(await snmp_walk(target, oids.HR_STORAGE_SIZE_OID))
-    used_rows = dict(await snmp_walk(target, oids.HR_STORAGE_USED_OID))
+    type_rows = dict(await snmp_walk(target, '1.3.6.1.2.1.25.2.3.1.2', engine=engine))
+    size_rows = dict(await snmp_walk(target, oids.HR_STORAGE_SIZE_OID, engine=engine))
+    used_rows = dict(await snmp_walk(target, oids.HR_STORAGE_USED_OID, engine=engine))
     for full_oid, storage_type in type_rows.items():
         if str(storage_type) != oids.HR_STORAGE_TYPE_RAM:
             continue
@@ -175,25 +175,29 @@ def _persist_system(device_id, sys_values, health, uptime_seconds, error=''):
 async def collect_device_system(device, target=None):
     """采集系统组 + 厂商健康指标。返回 'online'/'offline'。"""
     target = target or await sync_to_async(target_from_device, thread_sensitive=False)(device)
+    engine = create_engine()
     try:
-        sys_values = await snmp_get(target, list(oids.SYSTEM_OIDS.values()))
-    except SnmpError as exc:
-        logger.warning('设备 %s 系统采集失败: %s', device.name, exc)
-        return await sync_to_async(_persist_system, thread_sensitive=False)(device.pk, {}, {}, None, error=str(exc))
-    uptime_ticks = sys_values.get(oids.SYSTEM_OIDS['sys_uptime'])
-    uptime_seconds = int(uptime_ticks // 100) if isinstance(uptime_ticks, (int, float)) else None
-    vendor = device.vendor if device.vendor != 'other' else detect_vendor(str(sys_values.get(oids.SYSTEM_OIDS['sys_descr']) or ''))
-    health = {'cpu_pct': None, 'mem_pct': None, 'temperature': None}
-    try:
-        if vendor:
-            health = await _collect_vendor_health(target, vendor)
-        if health['cpu_pct'] is None and health['mem_pct'] is None:
-            generic = await _collect_generic_health(target)
-            for key, value in generic.items():
-                if health[key] is None:
-                    health[key] = value
-    except SnmpError as exc:
-        logger.info('设备 %s 健康指标采集失败（系统组已入库）: %s', device.name, exc)
+        try:
+            sys_values = await snmp_get(target, list(oids.SYSTEM_OIDS.values()), engine=engine)
+        except SnmpError as exc:
+            logger.warning('设备 %s 系统采集失败: %s', device.name, exc)
+            return await sync_to_async(_persist_system, thread_sensitive=False)(device.pk, {}, {}, None, error=str(exc))
+        uptime_ticks = sys_values.get(oids.SYSTEM_OIDS['sys_uptime'])
+        uptime_seconds = int(uptime_ticks // 100) if isinstance(uptime_ticks, (int, float)) else None
+        vendor = device.vendor if device.vendor != 'other' else detect_vendor(str(sys_values.get(oids.SYSTEM_OIDS['sys_descr']) or ''))
+        health = {'cpu_pct': None, 'mem_pct': None, 'temperature': None}
+        try:
+            if vendor:
+                health = await _collect_vendor_health(target, vendor, engine=engine)
+            if health['cpu_pct'] is None and health['mem_pct'] is None:
+                generic = await _collect_generic_health(target, engine=engine)
+                for key, value in generic.items():
+                    if health[key] is None:
+                        health[key] = value
+        except SnmpError as exc:
+            logger.info('设备 %s 健康指标采集失败（系统组已入库）: %s', device.name, exc)
+    finally:
+        close_engine(engine)
     return await sync_to_async(_persist_system, thread_sensitive=False)(device.pk, sys_values, health, uptime_seconds)
 
 
@@ -320,15 +324,19 @@ def _persist_interfaces(device_id, rows, uptime_regressed):
 async def collect_device_interfaces(device, target=None):
     """WALK ifXTable/ifTable，更新接口台账并计算速率。返回接口数量。"""
     target = target or await sync_to_async(target_from_device, thread_sensitive=False)(device)
-    x_table, if_table = {}, {}
-    for base_oid in oids.IF_X_TABLE_OIDS.values():
-        x_table[base_oid] = await snmp_walk(target, base_oid)
-    for base_oid in oids.IF_TABLE_OIDS.values():
-        if_table[base_oid] = await snmp_walk(target, base_oid)
-    rows = _build_interface_rows(x_table, if_table)
-    uptime_regressed = False
-    sys_uptime = await snmp_get(target, [oids.SYSTEM_OIDS['sys_uptime']])
-    ticks = sys_uptime.get(oids.SYSTEM_OIDS['sys_uptime'])
-    if isinstance(ticks, (int, float)) and device.sys_uptime_seconds and ticks // 100 < device.sys_uptime_seconds:
-        uptime_regressed = True
+    engine = create_engine()
+    try:
+        x_table, if_table = {}, {}
+        for base_oid in oids.IF_X_TABLE_OIDS.values():
+            x_table[base_oid] = await snmp_walk(target, base_oid, engine=engine)
+        for base_oid in oids.IF_TABLE_OIDS.values():
+            if_table[base_oid] = await snmp_walk(target, base_oid, engine=engine)
+        rows = _build_interface_rows(x_table, if_table)
+        uptime_regressed = False
+        sys_uptime = await snmp_get(target, [oids.SYSTEM_OIDS['sys_uptime']], engine=engine)
+        ticks = sys_uptime.get(oids.SYSTEM_OIDS['sys_uptime'])
+        if isinstance(ticks, (int, float)) and device.sys_uptime_seconds and ticks // 100 < device.sys_uptime_seconds:
+            uptime_regressed = True
+    finally:
+        close_engine(engine)
     return await sync_to_async(_persist_interfaces, thread_sensitive=False)(device.pk, rows, uptime_regressed)

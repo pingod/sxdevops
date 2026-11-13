@@ -19,9 +19,10 @@ class SnmpCredentialSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         version = attrs.get('version') or (self.instance.version if self.instance else SnmpCredential.VERSION_V2C)
-        creating = self.instance is None
         if version == SnmpCredential.VERSION_V2C:
-            if creating and not attrs.get('community'):
+            # 新建、或从 v3 切回 v2c（原本无 Community）时都必须提供 Community
+            has_community = bool(attrs.get('community')) or (self.instance and bool(self.instance.community_encrypted))
+            if not has_community:
                 raise serializers.ValidationError({'community': 'SNMPv2c 凭据必须填写 Community。'})
             return attrs
         username = attrs.get('v3_username') or (self.instance.v3_username if self.instance else '')

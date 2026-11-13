@@ -99,9 +99,14 @@ def _check_error(error_indication, error_status, error_index):
         raise SnmpError(f'SNMP 错误 {error_status.prettyPrint()} @ {error_index}')
 
 
-async def snmp_get(target: SnmpTarget, oids) -> dict:
-    """单次 GET 多个标量 OID，返回 {oid: 值}；不存在/无此对象的 OID 值为 None。"""
-    engine = snmp_api.SnmpEngine()
+async def snmp_get(target: SnmpTarget, oids, engine=None) -> dict:
+    """单次 GET 多个标量 OID，返回 {oid: 值}；不存在/无此对象的 OID 值为 None。
+
+    传入 engine 可复用同一引擎（一次设备采集共用，v3 引擎发现只做一次）；
+    不传则自建自毁，兼容单次调用场景。
+    """
+    own_engine = engine is None
+    engine = engine or snmp_api.SnmpEngine()
     try:
         transport = await snmp_api.UdpTransportTarget.create(
             (target.host, target.port), timeout=target.timeout, retries=target.retries,
@@ -121,12 +126,14 @@ async def snmp_get(target: SnmpTarget, oids) -> dict:
                 result[key] = _normalize(value)
         return result
     finally:
-        engine.close_dispatcher()
+        if own_engine:
+            engine.close_dispatcher()
 
 
-async def snmp_walk(target: SnmpTarget, base_oid: str) -> list:
+async def snmp_walk(target: SnmpTarget, base_oid: str, engine=None) -> list:
     """WALK 一棵子树，返回 [(完整 OID 字符串, 值)]；v2c/v3 用 GETBULK。"""
-    engine = snmp_api.SnmpEngine()
+    own_engine = engine is None
+    engine = engine or snmp_api.SnmpEngine()
     rows = []
     try:
         transport = await snmp_api.UdpTransportTarget.create(
@@ -142,7 +149,17 @@ async def snmp_walk(target: SnmpTarget, base_oid: str) -> list:
                 rows.append((str(oid), _normalize(value)))
         return rows
     finally:
-        engine.close_dispatcher()
+        if own_engine:
+            engine.close_dispatcher()
+
+
+def create_engine():
+    """为一次设备采集创建可复用的 SNMP 引擎。"""
+    return snmp_api.SnmpEngine()
+
+
+def close_engine(engine):
+    engine.close_dispatcher()
 
 
 def walk_index(full_oid: str, base_oid: str) -> str:

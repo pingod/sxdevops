@@ -146,7 +146,7 @@ def fake_if_walks(in_octets=1000, out_octets=2000, oper_status=1, hc=True):
         oids.IF_TABLE_OIDS['if_out_errors']: walk_rows(oids.IF_TABLE_OIDS['if_out_errors'], {1: 0, 2: 0}),
     }
 
-    async def _walk(target, base_oid):
+    async def _walk(target, base_oid, engine=None):
         if base_oid in x_table:
             return x_table[base_oid]
         return if_table.get(base_oid, [])
@@ -173,7 +173,7 @@ class CollectorTests(TransactionTestCase):
             '1.3.6.1.4.1.2011.5.25.31.1.1.1.1.11.1': 38,
         }
 
-        async def _walk(target, base_oid):
+        async def _walk(target, base_oid, engine=None):
             return [(oid, value) for oid, value in health_values.items() if oid.startswith(base_oid + '.')]
 
         with patch('network.collector.snmp_get', new=AsyncMock(return_value=sys_values)), \
@@ -262,7 +262,7 @@ class CollectorTests(TransactionTestCase):
         self.assertEqual(self.device.interfaces.count(), 2)
         walk = fake_if_walks()
 
-        async def _walk_one_interface(target, base_oid):
+        async def _walk_one_interface(target, base_oid, engine=None):
             rows = await walk(target, base_oid)
             return [(oid, value) for oid, value in rows if not oid.endswith('.2')]
 
@@ -270,6 +270,26 @@ class CollectorTests(TransactionTestCase):
                 patch('network.collector.snmp_get', new=AsyncMock(return_value={oids.SYSTEM_OIDS['sys_uptime']: 106000})):
             asyncio.run(collect_device_interfaces(self.device))
         self.assertEqual(self.device.interfaces.count(), 1)
+
+    def test_interface_collect_reuses_single_engine(self):
+        with patch('network.collector.create_engine', return_value=object()) as mock_create, \
+                patch('network.collector.close_engine') as mock_close, \
+                patch('network.collector.snmp_walk', new=AsyncMock(side_effect=fake_if_walks())), \
+                patch('network.collector.snmp_get', new=AsyncMock(return_value={oids.SYSTEM_OIDS['sys_uptime']: 100000})):
+            asyncio.run(collect_device_interfaces(self.device))
+        self.assertEqual(mock_create.call_count, 1)
+        self.assertEqual(mock_close.call_count, 1)
+
+    def test_system_collect_reuses_single_engine(self):
+        sys_values = {oid: 'x' for oid in oids.SYSTEM_OIDS.values()}
+        sys_values[oids.SYSTEM_OIDS['sys_uptime']] = 100000
+        with patch('network.collector.create_engine', return_value=object()) as mock_create, \
+                patch('network.collector.close_engine') as mock_close, \
+                patch('network.collector.snmp_get', new=AsyncMock(return_value=sys_values)), \
+                patch('network.collector.snmp_walk', new=AsyncMock(return_value=[])):
+            asyncio.run(collect_device_system(self.device))
+        self.assertEqual(mock_create.call_count, 1)
+        self.assertEqual(mock_close.call_count, 1)
 
 
 @override_settings(CMDB_PASSWORD_ENCRYPTION_KEY=TEST_KEY)
@@ -349,6 +369,20 @@ class ApiTests(TestCase):
             'v3_auth_protocol': 'none', 'v3_priv_protocol': 'aes128', 'v3_priv_key': 'x',
         }, format='json')
         self.assertEqual(response.status_code, 400)
+
+    def test_credential_switch_v3_to_v2c_requires_community(self):
+        credential = make_credential(name='v3-switch', version='v3')
+        response = self.client_as(self.admin).patch(
+            f'/api/network/credentials/{credential.pk}/', {'version': 'v2c'}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client_as(self.admin).patch(
+            f'/api/network/credentials/{credential.pk}/', {'version': 'v2c', 'community': 'public'}, format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        credential.refresh_from_db()
+        self.assertEqual(credential.version, 'v2c')
+        self.assertEqual(credential.community, 'public')
 
     def test_credential_delete_blocked_when_referenced(self):
         response = self.client_as(self.admin).delete(f'/api/network/credentials/{self.credential.pk}/')
