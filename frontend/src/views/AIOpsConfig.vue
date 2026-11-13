@@ -34,7 +34,7 @@
         </el-tab-pane>
         <el-tab-pane name="orchestration">
           <template #label>
-            <span class="tab-label"><el-icon><Message /></el-icon>拓展功能-待实现</span>
+            <span class="tab-label"><el-icon><Message /></el-icon>拓展功能</span>
           </template>
         </el-tab-pane>
         <el-tab-pane name="providers">
