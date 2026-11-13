@@ -370,16 +370,19 @@ export class TwinScene {
     }
     for (const mesh of this.deviceMeshes || []) {
       this.scene.remove(mesh)
+      mesh.dispose()
       mesh.geometry.dispose()
       mesh.material.dispose()
     }
     if (this.cabinetMesh) {
       this.scene.remove(this.cabinetMesh)
+      this.cabinetMesh.dispose()
       this.cabinetMesh.geometry.dispose()
       this.cabMat.dispose()
     }
     if (this.capMesh) {
       this.scene.remove(this.capMesh)
+      this.capMesh.dispose()
       this.capMesh.geometry.dispose()
       this.capMat.dispose()
     }
