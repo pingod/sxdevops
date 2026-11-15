@@ -69,4 +69,8 @@ When the user asks to update `README.md` for product presentation, treat README 
 - If a page needs live data to look complete, use the local demo account and trigger a representative query or action before capturing the screenshot.
 
 ## Security & Configuration Tips
+
 `backend/sxdevops/settings.py` is configured for local development (`DEBUG = True`, open CORS, SQLite). Do not commit production secrets, real credentials, or environment-specific hostnames. If you change backend Python code while using Daphne, restart the server manually because hot reload is not enabled.
+
+## Docker LAN Access
+When running this project with Docker Compose, publish the app port on all interfaces (`"8000:8000"` or `"0.0.0.0:8000:8000"`) so other hosts on the LAN can reach it. Do not bind the port to `127.0.0.1` only.
