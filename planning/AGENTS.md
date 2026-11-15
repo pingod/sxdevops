@@ -1,14 +1,14 @@
 # 项目记忆（AGENTS.md）
 
-> **已并入 NetMon-Agent-Platform**：本目录是平台内置的「IDC 上架规划与布线」模块。
-> 统一入口 `/#/planning`（侧边栏「数据机房 → IDC上架布线」），API 前缀 `/api/v1/planning`。
+> **SXDevOps 内置子系统**：本目录原为独立仓库 IDCBoxLine，现作为 SXDevOps 的「IDC 上架规划与布线」模块运行。
+> 平台入口 `/datacenter/planning`（侧边栏「数据机房 → IDC 上架布线」），API 前缀 `/api/planning`（Django 认证反代 + RBAC）。
 > 独立运行/测试方式保持不变（`bash scripts/run.sh`、`pytest`、`pnpm vitest`）。
 > 集成细节见 [`INTEGRATION.md`](INTEGRATION.md)。
 
 
 > 本文件是**给 agent 的项目记忆**，每次在本仓库工作时自动加载。
 > 人类交接文档见 [`docs/HANDOFF.md`](docs/HANDOFF.md)；全貌见 [`README.md`](README.md)。
-> 最后更新：2026-10-28，v1.0 完成 3D 机房视图 + 离线交付双形态（绿色包为默认，见 §1 表底两条与 HANDOFF §3.0）。
+> 最后更新：2026-11-15，网段级 IP 规划落地（复用 V13 信息港地址段，第十三页签 `#ipplan`）；v1.0 3D 机房视图 + 离线交付双形态（绿色包为默认，见 §1 表底两条与 HANDOFF §3.0）。
 > **提交数与会话无关，别写死在文档里** —— 想知道就 `git rev-list --count HEAD`。
 
 ---

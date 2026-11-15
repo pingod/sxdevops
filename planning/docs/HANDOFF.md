@@ -1,6 +1,6 @@
 # 交接文档（HANDOFF）
 
-> 写于 2026-10-25，交接时仓库状态：**v0.12 + v1.0 的 3D 已完成，工作树干净**。
+> 初稿写于 2026-10-25（v0.12 + v1.0 的 3D），最后更新 2026-11-15（补网段级 IP 规划，第十三页签 `#ipplan`）。
 > 版本提交见 `git log --oneline`。**3D 的三道 gate 只过了可验证的那条**
 > —— 见 §5.8，别以为它已经"通过评审"了。
 > 这份文档的目标：**换一个新会话/新的人，读完这一份就能接着干活，不需要读十几份共 16.4k 行的文档。**
@@ -14,7 +14,7 @@
 
 **为什么值得做**：那份 Excel 里有一个隐性事实 —— **5113 条有效连线里只有 636 行（12.4%）真的走了公式链，剩下 4477 行（87.6%）连 N/O/P 都没填，长度是人凭经验直接敲的**。所以竞争点不是"把 Excel 搬到网页"，而是三件 Excel 做不到的事：几何自动化、布线表生成、数据体检。
 
-**当前形态**：Python 后端（域层纯函数 + FastAPI + SQLite）+ React 前端（十一页签）+ CLI（17 个子命令）。**完全离线单机跑**，`bash scripts/run.sh` 一条命令启动。
+**当前形态**：Python 后端（域层纯函数 + FastAPI + SQLite）+ React 前端（十三页签）+ CLI（17 个子命令）。**完全离线单机跑**，`bash scripts/run.sh` 一条命令启动。
 
 **规模**（2026-10-25 实测，以 `wc -l` / `find | wc -l` 为准，别背数字）：
 后端 79 个 Python 文件 + 54 个测试文件；前端 33 个 TS/TSX + 4008 行 CSS；
@@ -29,8 +29,8 @@
 
 | 项 | 结果 | 怎么复现 |
 |---|---|---|
-| 后端用例 | **1328 passed**（golden 293 / unit 769 / integration 263 / perf 3） | `cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -p no:warnings` |
-| 前端用例 | **255 passed**（8 文件） | `cd web && ./node_modules/.bin/vitest run` |
+| 后端用例 | **1378 passed**（golden 293 / unit 790 / integration 292 / perf 3） | `cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -p no:warnings` |
+| 前端用例 | **255 passed**（7 文件） | `cd web && ./node_modules/.bin/vitest run` |
 | 分层契约 | **5 kept, 0 broken** | `cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/lint-imports` |
 | **导出保真铁线** | **123072 格，差异 0 格** | `cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/python scripts/verify_export.py` |
 | 生成行位对齐 | **5127 / 5127**（多出 0、缺失 0） | 见 golden `test_golden_generate.py` |
@@ -68,7 +68,7 @@ docker compose up -d --build            # 形态②备选（客户允许 Docker 
 ### 3.1 一条命令启动 Web
 
 ```bash
-cd /path/to/NetMon-Agent-Platform/planning
+cd /path/to/sxdevops/planning
 bash scripts/run.sh                      # 默认 http://127.0.0.1:8000
 IDCBOX_PORT=8123 bash scripts/run.sh     # 换端口
 IDCBOX_SOURCE=/path/to/V13.xlsx bash scripts/run.sh   # 换源数据
@@ -362,12 +362,12 @@ infrastructure/ ← L0：唯一允许出现第三方库类型的地方
 | `infrastructure/db/canon_store.py` | 806 | 落库（确定性 ID，不用 UUID） |
 | `cli.py` | 1543 | 17 个子命令 |
 
-### 6.3 前端（`web/src/`，27 文件）
+### 6.3 前端（`web/src/`，34 文件）
 
 - `domain/cableLength.ts` — 公式镜像，**必须与后端共享同一份 golden 向量**（`shared/golden/length_vectors.json`）
 - `store/appStore.ts`（单 zustand store + 纯 selector）、`store/useIntentDraft.ts`（编辑器草稿）、`store/dragStore.ts`（跨组件拖拽）
-- `views/` 14 个页面组件，十一页签
-- **不引 UI 框架**（MUI/AntD/shadcn）：界面只有 4 个 tab + SVG + AG Grid + 卡片，引 200KB 组件库换来的只是按钮好看，却带来主题覆盖/升级/离线打包三份负担
+- `views/` 17 个组件，十三页签
+- **不引 UI 框架**（MUI/AntD/shadcn）：界面只有 13 个 tab + SVG + AG Grid + 卡片，引 200KB 组件库换来的只是按钮好看，却带来主题覆盖/升级/离线打包三份负担
 - **2D 用纯 SVG 自绘**：因为要导出 SVG 施工图（canvas 只能 `toDataURL` 出位图）。42U 刻度必须用 1 个 `<pattern>` 而非 42 条 `<line>`
 
 ---
@@ -416,4 +416,4 @@ infrastructure/ ← L0：唯一允许出现第三方库类型的地方
 
 ## 十、一句话总结交接状态
 
-**能跑、能验收、能复现** —— 十一条能力的域层全部有 golden 测试锁定，前端十一页签全部可用，CLI 17 个子命令全部可跑。**下一件该做的事不是写代码，是先和用户确认 v1.0 要不要做 3D 与施工状态**（这两项都已被用户明确排到"后面再说"）。
+**能跑、能验收、能复现** —— 十一条能力的域层全部有 golden 测试锁定，前端十三页签全部可用，CLI 17 个子命令全部可跑。3D 机房视图（v1.0）与网段级 IP 规划均已落地；后续方向按用户需求确认，不自行开工。
