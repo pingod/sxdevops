@@ -25,6 +25,10 @@
         <div class="stat-value stat-value--small">{{ formatBps(overview.traffic.in_bps) }} / {{ formatBps(overview.traffic.out_bps) }}</div>
         <div class="stat-label">总流量（入/出）</div>
       </div>
+      <button type="button" class="audit-card audit-card--inline audit-card--action" :class="{ 'audit-card--danger': overview.alerts.active > 0 }" :disabled="!canViewAlerts" @click="goAlerts">
+        <div class="stat-value">{{ overview.alerts.active }}</div>
+        <div class="stat-label">活动告警</div>
+      </button>
     </div>
 
     <div class="workbench-card">
@@ -81,15 +85,40 @@
           </div>
         </div>
       </div>
+      <div class="noc-alerts">
+        <div class="noc-alerts-head">
+          <span class="noc-panel-title">活动告警</span>
+          <el-tag v-if="overview.alerts.critical > 0" type="danger" size="small" effect="light">严重 {{ overview.alerts.critical }}</el-tag>
+          <el-tag v-if="overview.alerts.warning > 0" type="warning" size="small" effect="light">警告 {{ overview.alerts.warning }}</el-tag>
+          <el-button v-if="canViewAlerts" link type="primary" size="small" class="noc-alerts-link" @click="goAlerts">查看全部</el-button>
+        </div>
+        <div class="event-list">
+          <div v-for="alert in activeAlerts" :key="alert.id" class="event-item">
+            <span class="event-dot" :class="`event-dot--${alert.level}`"></span>
+            <div class="event-body">
+              <div class="event-title">{{ alert.title }}</div>
+              <div class="event-meta">{{ alert.resource }} · {{ formatTime(alert.starts_at || alert.created_at) }}</div>
+            </div>
+            <el-tag v-if="alert.is_acknowledged" type="success" size="small" effect="light">已确认</el-tag>
+          </div>
+          <div v-if="!activeAlerts.length" class="table-empty">当前无活动告警，网络运行正常。</div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Odometer, RefreshRight } from '@element-plus/icons-vue'
 import echarts from '@/lib/echarts'
+import { useAuthStore } from '@/stores/auth'
 import { getNetworkOverview, listNetworkDevices } from '@/api/modules/network'
+
+const router = useRouter()
+const authStore = useAuthStore()
+const canViewAlerts = authStore.hasPermission('network.alert.view')
 
 const loading = ref(false)
 const devices = ref([])
@@ -99,10 +128,17 @@ const overview = ref({
   traffic: { in_bps: 0, out_bps: 0 },
   top_utilization: [],
   recent_events: [],
+  alerts: { active: 0, critical: 0, warning: 0, acknowledged: 0 },
+  recent_alerts: [],
 })
+const activeAlerts = computed(() => (overview.value.recent_alerts || []).filter(alert => alert.status === 'active'))
 const utilChartRef = ref()
 let utilChart = null
 let timer = null
+
+function goAlerts() {
+  if (canViewAlerts) router.push('/network/alerts')
+}
 
 function statusTag(status) {
   return { online: 'success', offline: 'danger', unknown: 'info' }[status] || 'info'
@@ -342,6 +378,37 @@ onBeforeUnmount(() => {
 .event-meta {
   color: #94a3b8;
   font-size: 12px;
+}
+
+.noc-alerts {
+  border-top: 1px solid #e5e7eb;
+  margin-top: 10px;
+  padding-top: 12px;
+}
+
+.noc-alerts-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.noc-alerts-head .noc-panel-title {
+  margin-bottom: 0;
+}
+
+.noc-alerts-link {
+  margin-left: auto;
+}
+
+.noc-alerts .event-list {
+  max-height: 220px;
+}
+
+.noc-alerts .event-body {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (max-width: 1100px) {

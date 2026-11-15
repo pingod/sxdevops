@@ -87,6 +87,8 @@ PERMISSION_DEFINITIONS = [
     ('network.device.view', '查看网络设备', 'network', '查看网络设备、SNMP 凭据摘要与接口台账'),
     ('network.device.manage', '管理网络设备', 'network', '纳管设备、维护 SNMP 凭据、测试连通性与手动采集'),
     ('network.monitor.view', '查看网络监控', 'network', '查看 NOC 监控总览、接口流量与设备健康指标趋势'),
+    ('network.alert.view', '查看网络告警', 'network', '查看网络告警规则、活动告警与历史告警'),
+    ('network.alert.manage', '管理网络告警', 'network', '维护网络告警规则、启停规则与确认告警'),
     ('sqlaudit.datasource.view', '查看 SQL 数据源', 'sqlaudit', '查看数据库数据源与库列表'),
     ('sqlaudit.datasource.manage', '管理 SQL 数据源', 'sqlaudit', '维护数据库数据源与测试连通性'),
     ('sqlaudit.order.view', '查看 SQL 工单', 'sqlaudit', '查看 SQL 工单与检查结果'),
@@ -167,6 +169,7 @@ BUILTIN_ROLES = [
             'datacenter.planning.view', 'datacenter.planning.manage',
             'datacenter.twin.view',
             'network.device.view', 'network.device.manage', 'network.monitor.view',
+            'network.alert.view', 'network.alert.manage',
         ],
     },
     {
@@ -184,7 +187,7 @@ BUILTIN_ROLES = [
             'sqlaudit.order.submit', 'sqlaudit.query.view', 'sqlaudit.query.execute',
             'datacenter.planning.view',
             'datacenter.twin.view',
-            'network.device.view', 'network.monitor.view',
+            'network.device.view', 'network.monitor.view', 'network.alert.view',
         ],
     },
     {
@@ -201,7 +204,7 @@ BUILTIN_ROLES = [
             'sqlaudit.order.view', 'sqlaudit.order.review', 'sqlaudit.query.view',
             'datacenter.planning.view',
             'datacenter.twin.view',
-            'network.device.view', 'network.monitor.view',
+            'network.device.view', 'network.monitor.view', 'network.alert.view',
         ],
     },
     {
@@ -219,7 +222,7 @@ BUILTIN_ROLES = [
             'rbac.user.view', 'rbac.role.view', 'rbac.group.view', 'rbac.permission.view', 'rbac.audit.view',
             'datacenter.planning.view',
             'datacenter.twin.view',
-            'network.device.view', 'network.monitor.view',
+            'network.device.view', 'network.monitor.view', 'network.alert.view',
         ],
     },
 ]

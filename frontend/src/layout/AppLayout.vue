@@ -300,6 +300,7 @@ const menuItems = [
       { path: '/alerts', visibilityKey: 'observability.alerts', title: '告警中心', icon: 'Bell', anyPermissions: ['ops.alert.view', 'ops.alert.config.view'] },
       { path: '/network/noc', visibilityKey: 'observability.network', title: '网络监控', icon: 'Odometer', permission: 'network.monitor.view' },
       { path: '/network/devices', visibilityKey: 'observability.network-devices', title: '网络设备', icon: 'Connection', permission: 'network.device.view' },
+      { path: '/network/alerts', visibilityKey: 'observability.network-alerts', title: '网络告警', icon: 'Bell', permission: 'network.alert.view' },
     ],
   },
   {

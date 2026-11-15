@@ -13,6 +13,7 @@ from django.utils import timezone
 from eventwall.services import record_event
 
 from . import oids
+from .alerting import evaluate_device_alerts, evaluate_interface_alerts
 from .models import DeviceMetricSample, InterfaceMetricSample, NetworkDevice, NetworkInterface
 from .snmp import SnmpError, close_engine, create_engine, format_mac, snmp_get, snmp_walk, target_from_device, walk_index
 
@@ -169,6 +170,7 @@ def _persist_system(device_id, sys_values, health, uptime_seconds, error=''):
             resource_type='network_device', resource_id=device.pk, resource_name=device.name,
             **POLLER_ACTOR,
         )
+    evaluate_device_alerts(device, health)
     return device.status
 
 
@@ -286,8 +288,9 @@ def _persist_interfaces(device_id, rows, uptime_regressed):
             interface.out_bps = round(out_bps, 2)
             interface.out_util = round(min(out_bps / speed_bps * 100, 100), 2) if speed_bps else 0
         interface.save()
+        sample = None
         if in_bps is not None and out_bps is not None:
-            InterfaceMetricSample.objects.create(
+            sample = InterfaceMetricSample.objects.create(
                 interface=interface, sampled_at=now,
                 in_bps=interface.in_bps, out_bps=interface.out_bps,
                 in_util=interface.in_util, out_util=interface.out_util,
@@ -313,6 +316,7 @@ def _persist_interfaces(device_id, rows, uptime_regressed):
                 resource_name=f'{device.name}:{interface.name}',
                 **POLLER_ACTOR,
             )
+        evaluate_interface_alerts(interface, sample)
     if seen_indexes:
         device.interfaces.exclude(if_index__in=seen_indexes).delete()
     device.last_interface_poll_at = now

@@ -447,6 +447,12 @@ const routes = [
         meta: { title: '网络设备', icon: 'Connection', permission: 'network.device.view' },
       },
       {
+        path: 'network/alerts',
+        name: 'NetworkAlerts',
+        component: () => import('@/views/NetworkAlerts.vue'),
+        meta: { title: '网络告警', icon: 'Bell', permission: 'network.alert.view' },
+      },
+      {
         path: 'observability',
         redirect: () => {
           const authStore = useAuthStore(pinia)

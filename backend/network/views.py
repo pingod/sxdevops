@@ -14,14 +14,19 @@ from rest_framework.views import APIView
 
 from eventwall.models import EventRecord
 from eventwall.services import record_event
+from ops.alerting import apply_alert_action
+from ops.models import Alert, AlertAction
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
 
+from .alerting import ALERT_SOURCE
 from .collector import collect_device_interfaces, collect_device_system, detect_vendor
-from .models import DeviceMetricSample, InterfaceMetricSample, NetworkDevice, NetworkInterface, SnmpCredential
+from .models import DeviceMetricSample, InterfaceMetricSample, NetworkAlertRule, NetworkDevice, NetworkInterface, SnmpCredential
 from .oids import OPER_STATUS_DOWN, OPER_STATUS_UP, SYSTEM_OIDS
 from .serializers import (
     DeviceMetricSampleSerializer,
     InterfaceMetricSampleSerializer,
+    NetworkAlertRuleSerializer,
+    NetworkAlertSerializer,
     NetworkDeviceSerializer,
     NetworkInterfaceSerializer,
     SnmpCredentialSerializer,
@@ -256,6 +261,89 @@ class NetworkInterfaceViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet
         return Response({'interface': interface.pk, 'start': start.isoformat(), 'end': end.isoformat(), 'series': series})
 
 
+class NetworkAlertRuleViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
+    queryset = NetworkAlertRule.objects.select_related('device').all()
+    serializer_class = NetworkAlertRuleSerializer
+    rbac_permissions = {
+        'list': ['network.alert.view'],
+        'retrieve': ['network.alert.view'],
+        'create': ['network.alert.manage'],
+        'update': ['network.alert.manage'],
+        'partial_update': ['network.alert.manage'],
+        'destroy': ['network.alert.manage'],
+    }
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        params = self.request.query_params
+        target = params.get('target', '').strip()
+        if target:
+            queryset = queryset.filter(target=target)
+        enabled = params.get('enabled', '').strip()
+        if enabled in ('true', 'false'):
+            queryset = queryset.filter(enabled=(enabled == 'true'))
+        search = params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        return queryset
+
+    def perform_create(self, serializer):
+        rule = serializer.save()
+        _audit(self.request, 'create_alert_rule', f'新建网络告警规则：{rule.name}', 'network_alert_rule', rule)
+
+    def perform_update(self, serializer):
+        rule = serializer.save()
+        _audit(self.request, 'update_alert_rule', f'更新网络告警规则：{rule.name}', 'network_alert_rule', rule)
+
+    def perform_destroy(self, instance):
+        if instance.is_builtin:
+            raise ProtectedError('内置告警规则不可删除', {instance})
+        name = instance.name
+        instance.delete()
+        record_event(
+            request=self.request, module='network', category='config', action='delete_alert_rule',
+            title=f'删除网络告警规则：{name}', resource_type='network_alert_rule', resource_name=name,
+        )
+
+    def handle_exception(self, exc):
+        if isinstance(exc, ProtectedError):
+            return Response({'detail': '内置告警规则不可删除，如需停用请关闭启用开关。'}, status=status.HTTP_400_BAD_REQUEST)
+        return super().handle_exception(exc)
+
+
+class NetworkAlertViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
+    serializer_class = NetworkAlertSerializer
+    rbac_permissions = {
+        'list': ['network.alert.view'],
+        'retrieve': ['network.alert.view'],
+        'acknowledge': ['network.alert.manage'],
+    }
+
+    def get_queryset(self):
+        queryset = Alert.objects.filter(source=ALERT_SOURCE)
+        params = self.request.query_params
+        status_param = params.get('status', '').strip()
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        level = params.get('level', '').strip()
+        if level:
+            queryset = queryset.filter(level=level)
+        device = params.get('device', '').strip()
+        if device:
+            queryset = queryset.filter(labels__device=device)
+        search = params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(Q(title__icontains=search) | Q(resource__icontains=search))
+        return queryset
+
+    @action(detail=True, methods=['post'])
+    def acknowledge(self, request, pk=None):
+        alert = self.get_object()
+        apply_alert_action(alert, AlertAction.ACTION_ACKNOWLEDGE, actor=request.user.username, request=request)
+        alert.refresh_from_db()
+        return Response(NetworkAlertSerializer(alert).data)
+
+
 class NetworkOverviewView(APIView):
     permission_classes = [build_rbac_permission('network.monitor.view')]
 
@@ -279,6 +367,18 @@ class NetworkOverviewView(APIView):
             }
             for event in EventRecord.objects.filter(module='network').order_by('-occurred_at')[:10]
         ]
+        network_alerts = Alert.objects.filter(source=ALERT_SOURCE)
+        active_alerts = network_alerts.filter(status=Alert.STATUS_ACTIVE)
+        recent_alerts = [
+            {
+                'id': alert.pk, 'title': alert.title, 'level': alert.level, 'status': alert.status,
+                'resource': alert.resource, 'metric_name': alert.metric_name,
+                'is_acknowledged': alert.is_acknowledged,
+                'starts_at': alert.starts_at.isoformat() if alert.starts_at else None,
+                'created_at': alert.created_at.isoformat(),
+            }
+            for alert in network_alerts.order_by('-created_at')[:10]
+        ]
         return Response({
             'devices': {
                 'total': devices.count(),
@@ -297,4 +397,11 @@ class NetworkOverviewView(APIView):
             'traffic': {'in_bps': traffic['in_bps'] or 0, 'out_bps': traffic['out_bps'] or 0},
             'top_utilization': top_util,
             'recent_events': recent_events,
+            'alerts': {
+                'active': active_alerts.count(),
+                'critical': active_alerts.filter(level='critical').count(),
+                'warning': active_alerts.filter(level='warning').count(),
+                'acknowledged': active_alerts.filter(is_acknowledged=True).count(),
+            },
+            'recent_alerts': recent_alerts,
         })

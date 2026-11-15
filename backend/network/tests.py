@@ -11,10 +11,12 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from eventwall.models import EventRecord
+from ops.models import Alert
 from rbac.models import Role
 from rbac.services import ensure_builtin_rbac
 
 from . import oids
+from .alerting import evaluate_device_alerts, evaluate_interface_alerts
 from .collector import (
     collect_device_interfaces,
     collect_device_system,
@@ -23,7 +25,7 @@ from .collector import (
     detect_vendor,
 )
 from .crypto import NetworkSecretDecryptionError, decrypt_secret, encrypt_secret
-from .models import DeviceMetricSample, InterfaceMetricSample, NetworkDevice, NetworkInterface, SnmpCredential
+from .models import DeviceMetricSample, InterfaceMetricSample, NetworkAlertRule, NetworkAlertState, NetworkDevice, NetworkInterface, SnmpCredential
 from .poller import prune_expired_samples, select_due_devices
 from .snmp import SnmpError
 
@@ -471,3 +473,204 @@ class ApiTests(TestCase):
         self.assertEqual(response.data['interfaces']['down'], 1)
         self.assertEqual(response.data['top_utilization'][0]['name'], 'uplink')
         self.assertEqual(response.data['traffic']['in_bps'], 4.2e8)
+
+
+class AlertEngineTests(TestCase):
+    def setUp(self):
+        self.credential = make_credential(name='alert-cred')
+        self.device = make_device(name='alert-sw', ip='10.0.0.9', credential=self.credential)
+        NetworkAlertRule.objects.all().delete()
+
+    def make_rule(self, **kwargs):
+        defaults = {'name': 'r', 'target': 'device', 'metric': 'cpu_pct', 'operator': 'gt', 'threshold': 90, 'severity': 'critical', 'for_seconds': 0}
+        defaults.update(kwargs)
+        return NetworkAlertRule.objects.create(**defaults)
+
+    def test_immediate_fire_creates_alert_and_event(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        alert = Alert.objects.get(source='network-snmp')
+        self.assertEqual(alert.status, Alert.STATUS_ACTIVE)
+        self.assertEqual(alert.level, 'critical')
+        self.assertEqual(alert.metric_name, 'cpu_pct')
+        state = NetworkAlertState.objects.get()
+        self.assertTrue(state.fired)
+        self.assertEqual(state.alert_id, alert.pk)
+        self.assertTrue(EventRecord.objects.filter(module='network', action='alert_firing').exists())
+
+    def test_below_threshold_no_alert(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 50})
+        self.assertFalse(Alert.objects.exists())
+        self.assertFalse(NetworkAlertState.objects.exists())
+
+    def test_for_seconds_pending_then_fire(self):
+        self.make_rule(name='cpu', for_seconds=120)
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        self.assertFalse(Alert.objects.exists())
+        state = NetworkAlertState.objects.get()
+        self.assertFalse(state.fired)
+        state.first_breach_at = timezone.now() - timedelta(seconds=130)
+        state.save()
+        evaluate_device_alerts(self.device, {'cpu_pct': 96})
+        self.assertTrue(Alert.objects.filter(status=Alert.STATUS_ACTIVE).exists())
+        state.refresh_from_db()
+        self.assertTrue(state.fired)
+
+    def test_resolve_clears_state_and_alert(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        evaluate_device_alerts(self.device, {'cpu_pct': 50})
+        alert = Alert.objects.get(source='network-snmp')
+        self.assertEqual(alert.status, Alert.STATUS_RESOLVED)
+        self.assertIsNotNone(alert.ends_at)
+        self.assertFalse(NetworkAlertState.objects.exists())
+        self.assertTrue(EventRecord.objects.filter(action='alert_resolved').exists())
+
+    def test_dedup_single_alert_tracks_peak(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        evaluate_device_alerts(self.device, {'cpu_pct': 97})
+        self.assertEqual(Alert.objects.count(), 1)
+        alert = Alert.objects.get()
+        self.assertEqual(alert.occurrence_count, 1)
+        self.assertEqual(EventRecord.objects.filter(action='alert_firing').count(), 1)
+        self.assertEqual(NetworkAlertState.objects.get().peak_value, 97)
+
+    def test_refire_after_resolve_reactivates(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        evaluate_device_alerts(self.device, {'cpu_pct': 50})
+        evaluate_device_alerts(self.device, {'cpu_pct': 99})
+        alert = Alert.objects.get()
+        self.assertEqual(alert.status, Alert.STATUS_ACTIVE)
+        self.assertEqual(alert.occurrence_count, 3)
+        self.assertEqual(EventRecord.objects.filter(action='alert_firing').count(), 2)
+
+    def test_device_scope_limits_rule(self):
+        other = make_device(name='other-sw', ip='10.0.0.10', credential=self.credential)
+        self.make_rule(name='cpu', device=self.device)
+        evaluate_device_alerts(other, {'cpu_pct': 99})
+        self.assertFalse(Alert.objects.exists())
+        evaluate_device_alerts(self.device, {'cpu_pct': 99})
+        self.assertEqual(Alert.objects.count(), 1)
+
+    def test_missing_value_resolves_fired_alert(self):
+        self.make_rule(name='cpu')
+        evaluate_device_alerts(self.device, {'cpu_pct': 95})
+        evaluate_device_alerts(self.device, {})
+        self.assertEqual(Alert.objects.get().status, Alert.STATUS_RESOLVED)
+
+    def test_offline_metric_fires_on_status(self):
+        self.make_rule(name='offline', metric='offline', operator='gte', threshold=1)
+        self.device.status = NetworkDevice.STATUS_OFFLINE
+        self.device.save()
+        evaluate_device_alerts(self.device, {})
+        alert = Alert.objects.get()
+        self.assertEqual(alert.metric_name, 'offline')
+        self.assertEqual(alert.status, Alert.STATUS_ACTIVE)
+
+    def test_interface_util_fire(self):
+        self.make_rule(name='util', target='interface', metric='in_util', threshold=80, severity='warning')
+        interface = NetworkInterface.objects.create(device=self.device, if_index=1, name='GE0/0/1', in_util=90)
+        evaluate_interface_alerts(interface)
+        alert = Alert.objects.get()
+        self.assertEqual(alert.resource_type, 'network_interface')
+        self.assertEqual(alert.level, 'warning')
+        self.assertEqual(alert.status, Alert.STATUS_ACTIVE)
+
+    def test_interface_down_fire(self):
+        self.make_rule(name='down', target='interface', metric='down', operator='gte', threshold=1)
+        interface = NetworkInterface.objects.create(device=self.device, if_index=1, name='GE0/0/1', admin_status=1, oper_status=2)
+        evaluate_interface_alerts(interface)
+        self.assertTrue(Alert.objects.filter(metric_name='down', status=Alert.STATUS_ACTIVE).exists())
+
+    def test_interface_errors_use_sample_delta(self):
+        self.make_rule(name='err', target='interface', metric='in_errors', threshold=100, severity='warning')
+        interface = NetworkInterface.objects.create(device=self.device, if_index=1, name='GE0/0/1')
+        sample = InterfaceMetricSample.objects.create(interface=interface, sampled_at=timezone.now(), in_errors=200)
+        evaluate_interface_alerts(interface, sample)
+        self.assertTrue(Alert.objects.filter(metric_name='in_errors', status=Alert.STATUS_ACTIVE).exists())
+
+
+class AlertApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        ensure_builtin_rbac()
+        cls.admin = User.objects.create_superuser(username='alert-admin', password='x')
+        cls.viewer = User.objects.create_user(username='alert-viewer', password='x')
+        cls.viewer.rbac_roles.add(Role.objects.get(code='read-only'))
+        cls.noperm = User.objects.create_user(username='alert-noperm', password='x')
+        cls.credential = make_credential(name='alert-api-cred')
+        cls.device = make_device(name='alert-api-sw', ip='10.0.0.20', credential=cls.credential)
+
+    def client_as(self, user):
+        client = APIClient()
+        client.force_authenticate(user=user)
+        return client
+
+    def test_rule_crud_and_audit(self):
+        client = self.client_as(self.admin)
+        response = client.post('/api/network/alert-rules/', {
+            'name': 'CPU 高', 'target': 'device', 'metric': 'cpu_pct', 'operator': 'gt',
+            'threshold': 90, 'severity': 'critical', 'for_seconds': 60,
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        rule_id = response.data['id']
+        self.assertTrue(EventRecord.objects.filter(action='create_alert_rule').exists())
+        response = client.patch(f'/api/network/alert-rules/{rule_id}/', {'threshold': 95}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['threshold'], 95)
+        response = client.delete(f'/api/network/alert-rules/{rule_id}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(NetworkAlertRule.objects.filter(pk=rule_id).exists())
+
+    def test_rule_metric_must_match_target(self):
+        response = self.client_as(self.admin).post('/api/network/alert-rules/', {
+            'name': 'bad', 'target': 'device', 'metric': 'in_util', 'threshold': 80,
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_builtin_rule_cannot_delete(self):
+        rule = NetworkAlertRule.objects.create(name='builtin-x', target='device', metric='cpu_pct', threshold=90, is_builtin=True)
+        response = self.client_as(self.admin).delete(f'/api/network/alert-rules/{rule.pk}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(NetworkAlertRule.objects.filter(pk=rule.pk).exists())
+
+    def test_viewer_can_list_but_not_create(self):
+        self.assertEqual(self.client_as(self.viewer).get('/api/network/alert-rules/').status_code, 200)
+        response = self.client_as(self.viewer).post('/api/network/alert-rules/', {
+            'name': 'nope', 'target': 'device', 'metric': 'cpu_pct', 'threshold': 90,
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_noperm_forbidden(self):
+        self.assertEqual(self.client_as(self.noperm).get('/api/network/alert-rules/').status_code, 403)
+        self.assertEqual(self.client_as(self.noperm).get('/api/network/alerts/').status_code, 403)
+
+    def test_alert_list_and_acknowledge(self):
+        alert = Alert.objects.create(
+            title='网络告警：CPU 高', level='critical', status=Alert.STATUS_ACTIVE,
+            source='network-snmp', source_type=Alert.SOURCE_GENERIC, message='x',
+            resource_type='network_device', resource='alert-api-sw', metric_name='cpu_pct',
+        )
+        response = self.client_as(self.viewer).get('/api/network/alerts/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        response = self.client_as(self.admin).post(f'/api/network/alerts/{alert.pk}/acknowledge/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['is_acknowledged'])
+        alert.refresh_from_db()
+        self.assertEqual(alert.acknowledged_by, 'alert-admin')
+
+    def test_alert_list_excludes_other_sources(self):
+        Alert.objects.create(title='other', level='info', status=Alert.STATUS_ACTIVE, source='prometheus', message='x')
+        response = self.client_as(self.viewer).get('/api/network/alerts/')
+        self.assertEqual(response.data['count'], 0)
+
+    def test_overview_includes_alert_summary(self):
+        Alert.objects.create(title='网络告警：CPU 高', level='critical', status=Alert.STATUS_ACTIVE, source='network-snmp', message='x')
+        response = self.client_as(self.viewer).get('/api/network/overview/')
+        self.assertEqual(response.data['alerts']['active'], 1)
+        self.assertEqual(response.data['alerts']['critical'], 1)
+        self.assertEqual(len(response.data['recent_alerts']), 1)

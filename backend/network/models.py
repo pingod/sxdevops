@@ -179,3 +179,67 @@ class DeviceMetricSample(models.Model):
         verbose_name_plural = '设备指标样本'
         ordering = ['-sampled_at']
         indexes = [models.Index(fields=['device', 'sampled_at'], name='net_devsample_dev_time_idx')]
+
+
+class NetworkAlertRule(models.Model):
+    TARGET_DEVICE = 'device'
+    TARGET_INTERFACE = 'interface'
+    TARGET_CHOICES = [(TARGET_DEVICE, '设备'), (TARGET_INTERFACE, '接口')]
+
+    DEVICE_METRICS = [
+        ('cpu_pct', 'CPU 使用率(%)'), ('mem_pct', '内存使用率(%)'),
+        ('temperature', '温度(℃)'), ('offline', '设备离线'),
+    ]
+    INTERFACE_METRICS = [
+        ('in_util', '入向利用率(%)'), ('out_util', '出向利用率(%)'),
+        ('in_errors', '入向错包增量'), ('out_errors', '出向错包增量'), ('down', '接口中断'),
+    ]
+    METRIC_CHOICES = DEVICE_METRICS + INTERFACE_METRICS
+
+    OPERATOR_CHOICES = [('gt', '>'), ('gte', '>='), ('lt', '<'), ('lte', '<=')]
+    SEVERITY_CHOICES = [('critical', '严重'), ('warning', '警告'), ('info', '信息')]
+
+    name = models.CharField('规则名称', max_length=100, unique=True)
+    target = models.CharField('对象类型', max_length=16, choices=TARGET_CHOICES, default=TARGET_DEVICE)
+    metric = models.CharField('指标', max_length=32, choices=METRIC_CHOICES)
+    operator = models.CharField('比较符', max_length=8, choices=OPERATOR_CHOICES, default='gt')
+    threshold = models.FloatField('阈值', default=0)
+    severity = models.CharField('严重级', max_length=16, choices=SEVERITY_CHOICES, default='warning')
+    for_seconds = models.PositiveIntegerField('持续时长(秒)', default=0, help_text='指标持续越限达到该时长才触发，0 表示立即触发，用于防抖。')
+    device = models.ForeignKey(NetworkDevice, on_delete=models.CASCADE, null=True, blank=True, related_name='alert_rules', verbose_name='限定设备', help_text='留空表示作用于全部设备。')
+    enabled = models.BooleanField('启用', default=True)
+    is_builtin = models.BooleanField('内置规则', default=False)
+    description = models.CharField('描述', max_length=255, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '网络告警规则'
+        verbose_name_plural = '网络告警规则'
+        ordering = ['target', 'metric', 'name']
+
+    def __str__(self):
+        return f'{self.name} ({self.get_metric_display()} {self.get_operator_display()} {self.threshold})'
+
+
+class NetworkAlertState(models.Model):
+    """告警评估的防抖状态：每个 (规则,设备,接口) 一行，越限清除即删除，历史告警留存于 ops.Alert。"""
+    rule = models.ForeignKey(NetworkAlertRule, on_delete=models.CASCADE, related_name='states', verbose_name='规则')
+    device = models.ForeignKey(NetworkDevice, on_delete=models.CASCADE, related_name='alert_states', verbose_name='设备')
+    interface = models.ForeignKey(NetworkInterface, on_delete=models.CASCADE, null=True, blank=True, related_name='alert_states', verbose_name='接口')
+    dedup_key = models.CharField('去重键', max_length=128, unique=True)
+    first_breach_at = models.DateTimeField('首次越限时间')
+    fired_at = models.DateTimeField('触发时间', null=True, blank=True)
+    last_value = models.FloatField('最近值', null=True, blank=True)
+    peak_value = models.FloatField('峰值', null=True, blank=True)
+    fired = models.BooleanField('已触发', default=False)
+    alert = models.ForeignKey('ops.Alert', on_delete=models.SET_NULL, null=True, blank=True, related_name='network_states', verbose_name='关联告警')
+    last_evaluated_at = models.DateTimeField('最近评估时间', null=True, blank=True)
+
+    class Meta:
+        verbose_name = '网络告警状态'
+        verbose_name_plural = '网络告警状态'
+        ordering = ['-last_evaluated_at']
+
+    def __str__(self):
+        return self.dedup_key

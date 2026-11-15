@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from .models import DeviceMetricSample, InterfaceMetricSample, NetworkDevice, NetworkInterface, SnmpCredential
+from ops.models import Alert
+
+from .models import DeviceMetricSample, InterfaceMetricSample, NetworkAlertRule, NetworkDevice, NetworkInterface, SnmpCredential
 
 
 class SnmpCredentialSerializer(serializers.ModelSerializer):
@@ -123,3 +125,46 @@ class DeviceMetricSampleSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceMetricSample
         fields = ['id', 'device', 'sampled_at', 'cpu_pct', 'mem_pct', 'temperature', 'uptime_seconds']
+
+
+class NetworkAlertRuleSerializer(serializers.ModelSerializer):
+    device_name = serializers.CharField(source='device.name', read_only=True)
+    target_display = serializers.CharField(source='get_target_display', read_only=True)
+    metric_display = serializers.CharField(source='get_metric_display', read_only=True)
+    operator_display = serializers.CharField(source='get_operator_display', read_only=True)
+    severity_display = serializers.CharField(source='get_severity_display', read_only=True)
+
+    class Meta:
+        model = NetworkAlertRule
+        fields = [
+            'id', 'name', 'target', 'target_display', 'metric', 'metric_display',
+            'operator', 'operator_display', 'threshold', 'severity', 'severity_display',
+            'for_seconds', 'device', 'device_name', 'enabled', 'is_builtin', 'description',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['is_builtin', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        target = attrs.get('target') or (self.instance.target if self.instance else NetworkAlertRule.TARGET_DEVICE)
+        metric = attrs.get('metric') or (self.instance.metric if self.instance else '')
+        device_metrics = {key for key, _ in NetworkAlertRule.DEVICE_METRICS}
+        interface_metrics = {key for key, _ in NetworkAlertRule.INTERFACE_METRICS}
+        if target == NetworkAlertRule.TARGET_DEVICE and metric not in device_metrics:
+            raise serializers.ValidationError({'metric': '设备规则只能选择设备级指标（CPU/内存/温度/离线）。'})
+        if target == NetworkAlertRule.TARGET_INTERFACE and metric not in interface_metrics:
+            raise serializers.ValidationError({'metric': '接口规则只能选择接口级指标（利用率/错包/中断）。'})
+        return attrs
+
+
+class NetworkAlertSerializer(serializers.ModelSerializer):
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Alert
+        fields = [
+            'id', 'title', 'level', 'level_display', 'status', 'status_display', 'source',
+            'message', 'resource_type', 'resource', 'metric_name', 'labels', 'annotations',
+            'is_acknowledged', 'acknowledged_by', 'acknowledged_at', 'occurrence_count',
+            'starts_at', 'ends_at', 'last_received_at', 'created_at',
+        ]

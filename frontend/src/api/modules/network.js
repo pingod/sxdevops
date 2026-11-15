@@ -21,3 +21,12 @@ export const deleteSnmpCredential = (id) => request.delete(`/network/credentials
 
 export const listNetworkInterfaces = (params) => request.get('/network/interfaces/', { params })
 export const getInterfaceMetrics = (id, params) => request.get(`/network/interfaces/${id}/metrics/`, { params })
+
+export const listNetworkAlertRules = (params) => request.get('/network/alert-rules/', { params })
+export const createNetworkAlertRule = (data) => request.post('/network/alert-rules/', data)
+export const updateNetworkAlertRule = (id, data) => request.put(`/network/alert-rules/${id}/`, data)
+export const patchNetworkAlertRule = (id, data) => request.patch(`/network/alert-rules/${id}/`, data)
+export const deleteNetworkAlertRule = (id) => request.delete(`/network/alert-rules/${id}/`)
+
+export const listNetworkAlerts = (params) => request.get('/network/alerts/', { params })
+export const acknowledgeNetworkAlert = (id) => request.post(`/network/alerts/${id}/acknowledge/`)
