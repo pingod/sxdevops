@@ -63,17 +63,18 @@ describe('parseHash', () => {
     }
   });
 
-  it('TAB_KEYS 是十二个且不重复', () => {
+  it('TAB_KEYS 是十三个且不重复', () => {
     // 这条断言故意写死数量：新增页签时必须回来改这里。
     // 否则 `TAB_KEYS` 加了新 tab 而别处的白名单忘同步，
     // 就会出现「点页签能切、按浏览器后退键切不过去」的缺陷 —— 实测踩过。
     //
-    // 12 = v0.1~v0.12 的十一页签 + v1.0 的 3D 机房。
-    expect(TAB_KEYS).toHaveLength(12);
-    expect(new Set(TAB_KEYS).size).toBe(12);
+    // 13 = v0.1~v0.12 的十一页签 + v1.0 的 3D 机房 + 网段级 IP 规划。
+    expect(TAB_KEYS).toHaveLength(13);
+    expect(new Set(TAB_KEYS).size).toBe(13);
     expect(TAB_KEYS).toContain('design');
     expect(TAB_KEYS).toContain('projects');
     expect(TAB_KEYS).toContain('consumables');
+    expect(TAB_KEYS).toContain('ipplan');
     expect(TAB_KEYS).toContain('compare');
     expect(TAB_KEYS).toContain('ledger');
     expect(TAB_KEYS).toContain('models');

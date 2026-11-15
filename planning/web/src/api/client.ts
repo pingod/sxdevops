@@ -258,6 +258,55 @@ export interface ConsumablesPayload {
   notes: string[];
 }
 
+/** 网段级 IP 规划（FR-3.8 轻量版）的一条登记网段。 */
+export interface IpPlanSegment {
+  purpose: string;
+  raw: string;
+  /** `cidr`=单个网段；`range`=同前缀连续子网区间。 */
+  kind: 'cidr' | 'range';
+  subnetCount: number;
+  addressCount: number;
+  start: string;
+  end: string;
+}
+
+export interface IpPlanPurpose {
+  purpose: string;
+  segmentCount: number;
+  subnetCount: number;
+  addressCount: number;
+}
+
+export interface IpPlanConflict {
+  aPurpose: string;
+  aRaw: string;
+  bPurpose: string;
+  bRaw: string;
+  /** 重叠的子网对数。 */
+  shared: number;
+  /** 其中一个重叠子网（示例）。 */
+  example: string;
+}
+
+export interface IpPlanPayload {
+  segments: IpPlanSegment[];
+  byPurpose: IpPlanPurpose[];
+  totals: { segments: number; purposes: number; subnets: number; addresses: number };
+  utilization: {
+    /** 最小覆盖超网（使用率分母）。 */
+    supernet: string;
+    capacity: number;
+    planned: number;
+    /** 规划占用率 = planned / capacity，**不是实际分配率**。 */
+    ratio: number;
+  };
+  conflicts: IpPlanConflict[];
+  issues: string[];
+  /** 口径披露文案，必须原样显示。 */
+  notes: string[];
+  source: string;
+}
+
 /** 接线意图 → 布线表的生成结果（v0.3 主功能）。 */
 export interface DesignIntentVolume {
   racks: number;
@@ -793,6 +842,7 @@ export const api = {
   policies: () => getJson<PolicyPayload>('/api/policies'),
   consumables: (params?: { phase?: string }) =>
     getJson<ConsumablesPayload>('/api/consumables', params),
+  ipplan: () => getJson<IpPlanPayload>('/api/ipplan'),
   portUtilization: () => getJson<PortUtilization>('/api/ports/utilization'),
   ledger: (params?: {
     devices?: boolean;

@@ -62,6 +62,7 @@ from ..application.services.projects import (
 from ..application.services.drawing import build_rack_sheet, render_rack_sheet
 from ..domain.exporting.svg import render_racks, render_to_html
 from ..application.services.scene import scene_payload
+from ..application.services.ipplan import ipplan_export_rows, ipplan_payload
 from ..application.services.views import (
     ProjectViews,
     build_views,
@@ -111,6 +112,7 @@ from ..application.services.impact import (
 from ..infrastructure.config.empirical_loader import load_empirical_table
 from ..infrastructure.xlsx.sources import XlsxProjectSource
 from ..infrastructure.xlsx.stock_reader import XlsxStockReader
+from ..infrastructure.xlsx.ipplan_sheet import build_ip_plan_workbook, read_ip_plan_rows
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查器
     # `Intent` 只在函数体里用作类型注解（`source_format` 分支决定来源），
@@ -606,6 +608,58 @@ def create_app() -> FastAPI:
         """
         views, _ = views_and_report()
         return consumable_payload(views, phase=phase or None)
+
+    # ---------------- 网段级 IP 规划（FR-3.8 轻量版）----------------
+    #
+    # ## 为什么独立读 sheet 而不走 views_and_report()
+    #
+    # IP 规划与布线几何无关，源是「IP地址段规划」这张独立表。走共享会话会让
+    # 首屏多读一张低频表。这里按需读、读完即关（见 ipplan_sheet docstring）。
+    #
+    # ## 为什么不做 IPAM
+    #
+    # 产品规划明确不做逐地址分配（过度设计）。这里只做网段级：容量、使用率、
+    # 重叠冲突。使用率是「规划占用 / 最小覆盖超网容量」，不是实际分配率 ——
+    # payload.notes 强制随响应披露，界面照此标注，避免用户误读成「已用多少 IP」。
+
+    @app.get("/api/ipplan")
+    def ipplan() -> dict[str, Any]:
+        """网段级 IP 规划：网段明细 + 按用途汇总 + 容量/使用率 + 冲突校验。"""
+        source = _source_from_env()
+        rows, warnings = read_ip_plan_rows(source)
+        payload = ipplan_payload(rows, source=f"{source.name} · IP地址段规划")
+        if warnings:
+            payload["issues"] = list(payload["issues"]) + list(warnings)
+        return payload
+
+    @app.get("/api/ipplan/export")
+    def ipplan_export() -> Any:
+        """导出回写「IP地址段规划」两列表（.xlsx），版式与源表一致。
+
+        与布线表导出（verify_export 守护的 24 列铁线）完全无关 —— 这是另一张
+        独立小表，导出它不会碰到布线生成的任何一格。
+        """
+        from io import BytesIO
+        from urllib.parse import quote
+
+        from fastapi.responses import Response
+
+        source = _source_from_env()
+        rows, _ = read_ip_plan_rows(source)
+        wb = build_ip_plan_workbook(ipplan_export_rows(rows))
+        buf = BytesIO()
+        wb.save(buf)
+        # 中文文件名走 RFC 5987，否则 starlette 编码响应头时抛 latin-1 UnicodeEncodeError
+        utf8_name = quote("IP地址段规划.xlsx")
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": (
+                    f"attachment; filename=ipplan.xlsx; filename*=UTF-8''{utf8_name}"
+                )
+            },
+        )
 
     # ---------------- 施工图导出（FR-6.7）----------------
     #

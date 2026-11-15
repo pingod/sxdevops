@@ -19,7 +19,7 @@
 cd /path/to/NetMon-Agent-Platform/planning
 
 # 五条验收（全绿才能动代码）
-cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -p no:warnings   # 1328 passed
+cd backend && env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -p no:warnings   # 1378 passed
 env -u PYTHONHOME -u PYTHONPATH .venv/bin/lint-imports                                          # 5 kept
 env -u PYTHONHOME -u PYTHONPATH .venv/bin/python scripts/verify_export.py                        # 0 格差异 ★
 cd ../web && ./node_modules/.bin/vitest run                                                      # 255 passed
@@ -45,7 +45,7 @@ cd ../web && ./node_modules/.bin/vitest run                                     
 | **GitHub/pypi 直连时好时坏** | HEAD 200 但 body 超时；容器出口 IP 还会被 TUNA 403 | PBS 走 npmmirror（`--python-mirror`）；pip 走阿里云（`--pip-mirror` / `PIP_INDEX_URL`）；**sha256 无条件校验** |
 | **`pkill -f <pat>` 在 `bash -c` 里自杀** | pattern 字符串就在自己的命令行上，SIGTERM 掉执行它的 shell | 放进脚本文件执行，或 `ss -ltnp` 查到 pid 再 kill |
 
-`scripts/run.sh` 起服务：`bash scripts/run.sh`（默认 8000）。深链 `#scene3d|#floor|#design|#cables|#health|#ports|#consumables|#projects|#compare|#ledger|#models|#labels`；平面图拖设备加 `?edit=1`。
+`scripts/run.sh` 起服务：`bash scripts/run.sh`（默认 8000）。深链 `#scene3d|#floor|#design|#cables|#health|#ports|#consumables|#ipplan|#projects|#compare|#ledger|#models|#labels`；平面图拖设备加 `?edit=1`。
 
 ---
 
@@ -282,6 +282,7 @@ v0.11 给**批量**路径加了名字白名单（「布局段设备的实例名�
 | 意图分解增量更新 | ⬜ | 全量重建 824 台下 200ms 可接受，上万台才需要 |
 | 多人同时编辑 | ⬜ v0.3+ | Q4：先「1 主编辑 + N 只读」 |
 | ~~Docker / 绿色包~~ | ✅ v1.0 已做 | `scripts/package_green.sh` 绿色包（嵌入式 Python 3.12 双平台合并包 67MB，`自检.sh` 断网验 AC-8）+ Docker 形态②。依赖清单以 pyproject `[infra,api]` 为准（v1.0 才补上，此前是散装） |
+| **网段级 IP 规划** | ✅ 已做（`domain/ipplan` + `#ipplan` 页签） | 解析 V13「IP地址段规划」表（单 CIDR + 同前缀区间），算容量/使用率/重叠冲突，可导出回写。**不做 IPAM**（逐地址分配）：使用率是「规划占用 / 最小覆盖超网」口径，非实际分配率，界面与 `notes` 强制披露 |
 
 ---
 
@@ -307,11 +308,12 @@ backend/idcbox/
     geometry/      ← 平面图解析（362 柜位）
     exporting/     ← contract25/labels/consumables/svg/stockdiff
     validation/    ← 体检 11 规则
+    ipplan/        ← 网段级 IP 规划（解析/容量/使用率/冲突，零 IO）
   application/     ← L2 services + 8 个 Protocol（含 scene.py = 3D 场景）
   infrastructure/  ← L0 db(36 表)/xlsx/config
-  api/main.py      ← L3 40 个端点 + SPA 托管
+  api/main.py      ← L3 42 个端点 + SPA 托管
   cli.py           ← 17 个子命令
-web/src/           ← React 19 + TS + Vite，十二页签（含 3D，three 懒加载）
+web/src/           ← React 19 + TS + Vite，十三页签（含 3D，three 懒加载）
 projects/v13/      ← intent_full.json（949 行意图）
 rules/             ← len_empirical_v1.json（经验表）
 信息港部署上架/     ← 客户原始交付物（只读，勿改）

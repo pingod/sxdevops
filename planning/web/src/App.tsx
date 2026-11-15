@@ -25,6 +25,7 @@ import { LedgerView } from './views/LedgerView';
 import { ModelsView } from './views/ModelsView';
 import { LabelsView } from './views/LabelsView';
 import { ConsumablesView } from './views/ConsumablesView';
+import { IpPlanView } from './views/IpPlanView';
 import { ProjectsView } from './views/ProjectsView';
 import { DesignView } from './views/DesignView';
 import { FloorView } from './views/FloorView';
@@ -57,6 +58,7 @@ const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: 'health', label: '数据体检', hint: '导入即体检' },
   { key: 'ports', label: '端口与策略', hint: '端口使用率 + 长度来源' },
   { key: 'consumables', label: '耗材清单', hint: '要买多少根线 / 多少个模块' },
+  { key: 'ipplan', label: 'IP 规划', hint: '网段级地址规划 + 使用率 + 冲突校验' },
   { key: 'projects', label: '项目与版本', hint: '改了能存、能比、能回退' },
   { key: 'compare', label: '版本对比', hint: 'V8→V13 六版 Excel 差了什么' },
   { key: 'ledger', label: '设备台账', hint: '每台设备用了几个口、还剩几个' },
@@ -187,6 +189,7 @@ export function App(): JSX.Element {
         {tab === 'health' && <HealthView />}
         {tab === 'ports' && <PortsView />}
         {tab === 'consumables' && <ConsumablesView />}
+        {tab === 'ipplan' && <IpPlanView />}
         {tab === 'projects' && <ProjectsView />}
         {tab === 'compare' && <CompareView />}
         {tab === 'ledger' && <LedgerView />}

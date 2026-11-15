@@ -36,6 +36,7 @@ export type TabKey =
   | 'health'
   | 'ports'
   | 'consumables'
+  | 'ipplan'
   | 'projects'
   | 'compare'
   | 'ledger'
@@ -101,6 +102,7 @@ export const TAB_KEYS: TabKey[] = [
   'health',
   'ports',
   'consumables',
+  'ipplan',
   'projects',
   'compare',
   'ledger',

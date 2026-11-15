@@ -1935,6 +1935,117 @@ label.grow {
 }
 
 /* ------------------------------------------------------------------ */
+/* 网段级 IP 规划页（FR-3.8 轻量版）                                     */
+/* ------------------------------------------------------------------ */
+
+.ipplan-view .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.ipplan-view .panel h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ipplan-actions button {
+  padding: 5px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ipplan-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ipplan-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 网段明细 6 列，比耗材表宽；网段原文与地址用等宽字体便于逐字符核对 */
+.ip-seg-table {
+  min-width: 720px;
+}
+
+.ip-conflict-table {
+  min-width: 720px;
+}
+
+.ip-raw {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--fg);
+}
+
+.ip-addr {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.ip-kind {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-faint);
+}
+
+.ip-kind-range {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.ip-kind-cidr {
+  color: var(--fg-dim);
+  border-color: var(--border-strong);
+}
+
+/* 冲突行：红底 + 左边框，与正常行一眼分开 */
+.consume-table tr.conflict-row td {
+  background: rgba(227, 92, 92, 0.1);
+  box-shadow: inset 2px 0 0 var(--error);
+}
+
+.ip-badge {
+  padding: 2px 9px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ip-badge-ok {
+  color: var(--ok);
+  background: rgba(69, 199, 138, 0.12);
+  border: 1px solid rgba(69, 199, 138, 0.4);
+}
+
+.ip-badge-bad {
+  color: var(--error);
+  background: rgba(227, 92, 92, 0.12);
+  border: 1px solid rgba(227, 92, 92, 0.4);
+}
+
+.callout.ip-ok {
+  border-left-color: var(--ok);
+  background: rgba(69, 199, 138, 0.07);
+  color: #a9d8bf;
+}
+
+/* ------------------------------------------------------------------ */
 /* 项目与版本页（v0.4）                                                */
 /* ------------------------------------------------------------------ */
 
@@ -4087,4 +4198,11 @@ button.rack-export {
 
 .app.is-embedded.is-light .coverage-track {
   background: #e6ebf4;
+}
+
+/* 浅色嵌入下 callout 文字改用中性自适应色：原 #a9d8bf/#d8c9a0 是为深色底
+   挑的浅色，落在浅色 tint 底上对比不足。语义仍由左边框与底色承担。 */
+.app.is-embedded.is-light .callout.ip-ok,
+.app.is-embedded.is-light .callout.warn {
+  color: var(--fg-dim);
 }
