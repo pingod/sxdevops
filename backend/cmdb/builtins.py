@@ -1335,7 +1335,10 @@ def _merge_obsolete_ci_types(ci_types):
 
 
 def _retire_obsolete_ci_types():
-    purge_type_q = Q(code__in=OBSOLETE_CI_TYPE_PURGE_CODES) | Q(name__in=OBSOLETE_CI_TYPE_PURGE_NAMES)
+    # 按名称兜底时必须限定为内置模型：否则用户自建/改名的同类型模型会连同其资产被静默硬删。
+    purge_type_q = Q(code__in=OBSOLETE_CI_TYPE_PURGE_CODES) | Q(
+        name__in=OBSOLETE_CI_TYPE_PURGE_NAMES, is_builtin=True
+    )
     purge_type_ids = list(CIType.objects.filter(purge_type_q).values_list('id', flat=True))
     if purge_type_ids:
         ConfigItem.objects.filter(ci_type_id__in=purge_type_ids).delete()

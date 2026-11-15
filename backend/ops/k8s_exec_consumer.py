@@ -12,6 +12,7 @@ from rest_framework.authtoken.models import Token
 from ops.models import K8sCluster
 from ops.k8s_views import _get_k8s_client, _is_demo
 from ops.k8s_shell import interactive_shell_command
+from ops.webshell_guard import WebShellGuard, handle_guard_events, load_rules
 from rbac.services import user_has_permissions
 from rbac.k8s_access import can_access_k8s
 
@@ -55,6 +56,7 @@ class K8sExecConsumer(WebsocketConsumer):
         if not can_access_k8s(self.user, self.cluster_id, self.namespace, execute=True):
             self.close(code=4403)
             return
+        self.guard = WebShellGuard(load_rules())
         self.accept()
 
         if _is_demo(self.cluster):
@@ -84,7 +86,8 @@ class K8sExecConsumer(WebsocketConsumer):
                 'stdout': True,
                 'tty': True,
                 '_preload_content': False,
-                '_request_timeout': (3, 20),
+                # websocket 通道只接受标量超时（元组会触发 run_forever TypeError）。
+                '_request_timeout': 20,
             }
             if self.container:
                 kwargs['container'] = self.container
@@ -133,7 +136,16 @@ class K8sExecConsumer(WebsocketConsumer):
 
         try:
             if msg_type == 'input':
-                self.exec_stream.write_stdin(data.get('data', ''))
+                forward, events = self.guard.process(str(data.get('data', '')))
+                if forward:
+                    self.exec_stream.write_stdin(forward)
+                if events:
+                    handle_guard_events(
+                        events, user=self.user, resource_type='k8s_pod',
+                        resource_id=self.cluster_id,
+                        resource_name=f'{self.namespace}/{self.pod_name}',
+                        send_text=lambda text: self.send(text_data=json.dumps({'type': 'output', 'data': text})),
+                    )
             elif msg_type == 'resize':
                 cols = min(500, max(20, int(data.get('cols', 120) or 120)))
                 rows = min(300, max(5, int(data.get('rows', 40) or 40)))

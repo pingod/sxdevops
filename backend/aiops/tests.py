@@ -158,6 +158,29 @@ class AIOpsSystemPostureDisabledTests(TestCase):
         self.assertNotEqual(env.get('PATH'), 'malicious')
         self.assertEqual(env.get('SW_USERNAME'), 'readonly')
 
+    def test_mcp_stdio_serializer_rejects_unsafe_command(self):
+        from .serializers import AIOpsMCPServerSerializer
+
+        serializer = AIOpsMCPServerSerializer(data={
+            'name': 'evil-stdio',
+            'server_type': AIOpsMCPServer.SERVER_STDIO,
+            'endpoint_or_command': 'python -c "import os"',
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('endpoint_or_command', serializer.errors)
+
+    def test_mcp_stdio_serializer_accepts_safe_command(self):
+        from .serializers import AIOpsMCPServerSerializer
+
+        serializer = AIOpsMCPServerSerializer(data={
+            'name': 'n9e-stdio',
+            'server_type': AIOpsMCPServer.SERVER_STDIO,
+            'endpoint_or_command': 'npx -y @n9e/n9e-mcp-server stdio',
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        instance = serializer.save()
+        self.assertEqual(instance.server_type, AIOpsMCPServer.SERVER_STDIO)
+
     def test_knowledge_graph_omits_posture_nodes_when_feature_disabled(self):
         AIOpsKnowledgeEnvironment.objects.create(name='prod', alert_environments=['prod'], posture_environments=['prod'])
         SystemPostureEnvironment.objects.create(key='prod', name='生产态势', is_enabled=True)
@@ -172,14 +195,34 @@ class AIOpsSystemPostureDisabledTests(TestCase):
         import ops.urls
         import sxdevops.urls
 
-        importlib.reload(ops.urls)
-        importlib.reload(sxdevops.urls)
-        clear_url_caches()
         try:
-            with self.assertRaises(NoReverseMatch):
-                reverse('observability-system-posture')
-            with self.assertRaises(NoReverseMatch):
-                reverse('observability-system-posture-history')
+            with override_settings(SYSTEM_POSTURE_ENABLED=False):
+                importlib.reload(ops.urls)
+                importlib.reload(sxdevops.urls)
+                clear_url_caches()
+                with self.assertRaises(NoReverseMatch):
+                    reverse('observability-system-posture')
+                with self.assertRaises(NoReverseMatch):
+                    reverse('observability-system-posture-history')
+        finally:
+            # 必须在 override 退出后再恢复路由，否则会把禁用态 URLconf 泄漏给后续测试。
+            importlib.reload(ops.urls)
+            importlib.reload(sxdevops.urls)
+            clear_url_caches()
+
+
+class AIOpsSystemPostureUrlRegistrationTests(TestCase):
+    def test_system_posture_urls_are_registered_when_feature_enabled(self):
+        import ops.urls
+        import sxdevops.urls
+
+        try:
+            with override_settings(SYSTEM_POSTURE_ENABLED=True):
+                importlib.reload(ops.urls)
+                importlib.reload(sxdevops.urls)
+                clear_url_caches()
+                self.assertTrue(reverse('observability-system-posture'))
+                self.assertTrue(reverse('observability-system-posture-history'))
         finally:
             importlib.reload(ops.urls)
             importlib.reload(sxdevops.urls)

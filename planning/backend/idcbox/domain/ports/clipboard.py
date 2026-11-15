@@ -413,7 +413,12 @@ def format_for_clipboard(
         for col_index in range(cell_range.col_start, cell_range.col_end + 1):
             column = columns[col_index] if col_index < len(columns) else ""
             value = row.get(column) if isinstance(row, Mapping) and column else None
-            cells.append(_escape_cell("" if value is None else str(value)))
+            if isinstance(value, (list, tuple)):
+                # 交换机组实例是列表：复制出去要与粘贴/Excel 的分号形式对称。
+                text_value = "; ".join(str(item) for item in value)
+            else:
+                text_value = "" if value is None else str(value)
+            cells.append(_escape_cell(text_value))
         lines.append("\t".join(cells))
     return "\r\n".join(lines)
 

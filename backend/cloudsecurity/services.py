@@ -682,7 +682,9 @@ def _describe_security_event_records(client, models, instance_id, region_id, sta
     payload = _body_map(client.describe_security_event_logs(request))
     raw_items = list(payload.get('SecurityEventLogs') or [])
     total = int(payload.get('SecurityEventLogsTotalCount') or 0)
-    for remote_page in range(2, ceil(total / 100) + 1):
+    # 翻页上限：大时间窗下全量串行翻页会打满云 API 配额并长时间占用 worker。
+    max_pages = min(ceil(total / 100), 10)
+    for remote_page in range(2, max_pages + 1):
         paged_request = models.DescribeSecurityEventLogsRequest(
             instance_id=instance_id,
             region_id=region_id,

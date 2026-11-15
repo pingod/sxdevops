@@ -49,6 +49,7 @@ import CmdbHostsPanel from '@/components/cmdb/CmdbHostsPanel.vue'
 import CmdbHostScheduleCenter from '@/components/cmdb/CmdbHostScheduleCenter.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getHosts, getHostTaskScheduleStats } from '@/api/modules/ops'
+import { getResourceNodeTree } from '@/api/modules/cmdb'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,7 +99,12 @@ const summaryCards = computed(() => {
 })
 
 async function fetchResourceTree() {
-  resourceTree.value = []
+  try {
+    const tree = await getResourceNodeTree()
+    resourceTree.value = Array.isArray(tree) ? tree : []
+  } catch {
+    resourceTree.value = []
+  }
 }
 
 async function fetchHostSummary() {

@@ -449,7 +449,7 @@ COLUMN_TYPES: dict[str, dict[str, str]] = {
                 "u": "int", "uSpan": "int"},
     "routes": {"nodeModel": "str", "nic": "str", "switchModel": "str"},
     "chains": {"channel": "int", "switchModel": "str", "nic": "str", "capacity": "int",
-               "order": "str"},
+               "instances": "list", "order": "str"},
     "explicitLinks": {"cableType": "str"},
 }
 
@@ -470,6 +470,15 @@ def coerce_cell(section: str, column: str, raw: Any) -> tuple[Any, str | None]:
     """
     types = COLUMN_TYPES.get(section, {})
     want = types.get(column, "str")
+    if want == "list":
+        # 交换机组实例：界面/Excel 都按分号（或逗号）分隔，粘贴路径必须同样拆开，
+        # 否则会存成字符串，`intent_from_dict` 迭代字符串得到一堆假实例。
+        if raw is None:
+            return [], None
+        if isinstance(raw, (list, tuple)):
+            return [str(item).strip() for item in raw if str(item).strip()], None
+        parts = re.split(r"[;；,，]", str(raw))
+        return [part.strip() for part in parts if part.strip()], None
     if want == "int":
         if raw is None or (isinstance(raw, str) and not raw.strip()):
             return None, None
@@ -508,8 +517,6 @@ def apply_cell(
     value, err = coerce_cell(section, column, raw)
     if err:
         return False, err
-    if column == "instances" and section == "chains":
-        return False, "交换机组实例请用「分号分隔」在整行里编辑"
     row[column] = value
     return True, None
 

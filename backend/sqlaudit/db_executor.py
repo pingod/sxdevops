@@ -3,13 +3,14 @@
 支持 MySQL、PostgreSQL 与 MongoDB。
 """
 import json
+import re
 import time
 
 import pymysql
 import psycopg
 import sqlparse
 from psycopg.rows import dict_row
-from pymysql.cursors import DictCursor
+from pymysql.cursors import DictCursor, SSDictCursor
 
 try:
     from pymongo import MongoClient
@@ -53,15 +54,39 @@ def _get_demo_profile(datasource):
     return DEMO_DATASOURCE_PROFILES.get(getattr(datasource, 'name', ''))
 
 
+MONGODB_FORBIDDEN_OPERATORS = {'$out', '$merge', '$function', '$accumulator', '$where'}
+
+
+def _find_mongodb_forbidden(node):
+    """递归查找只读查询里不应出现的写阶段/服务端脚本操作符。"""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in MONGODB_FORBIDDEN_OPERATORS:
+                return key
+            found = _find_mongodb_forbidden(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_mongodb_forbidden(item)
+            if found:
+                return found
+    return ''
+
+
 def validate_query_content(datasource, sql_content):
     db_type = _get_db_type(datasource)
     if db_type == MONGODB_TYPE:
         try:
-            action, _ = _parse_mongodb_command(sql_content)
+            action, payload = _parse_mongodb_command(sql_content)
         except ValueError as exc:
             return str(exc)
         if action not in MONGODB_READ_ACTIONS:
             return 'MongoDB 查询仅允许 find / aggregate / count / distinct 命令'
+        # $out/$merge 会写库，$function/$accumulator/$where 可执行服务端 JS，均不属于只读查询。
+        forbidden = _find_mongodb_forbidden(payload)
+        if forbidden:
+            return f'MongoDB 只读查询不允许使用 {forbidden}'
         return None
 
     if db_type == 'postgresql':
@@ -81,6 +106,10 @@ def validate_query_content(datasource, sql_content):
     upper = sql_content.strip().upper()
     if not upper.startswith('SELECT') and not upper.startswith('SHOW') and not upper.startswith('DESC'):
         return '查询工单只允许 SELECT / SHOW / DESC 语句'
+    # 与 PostgreSQL 对齐：拦截文件读写/加锁等“只读查询”不该具备的能力。
+    compact = re.sub(r'\s+', ' ', upper)
+    if re.search(r'\bINTO\s+(OUTFILE|DUMPFILE)\b', compact) or 'LOAD_FILE(' in upper.replace(' ', '') or 'FOR UPDATE' in compact or 'FOR SHARE' in compact:
+        return '查询工单不允许 INTO OUTFILE/DUMPFILE、LOAD_FILE 或加行锁等操作'
     return None
 
 
@@ -144,7 +173,7 @@ def execute_query(datasource, database, sql_content, limit=200):
     return False, [], [], 0, 0, f'暂不支持的数据源类型: {db_type}'
 
 
-def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, autocommit=None, timeout=5):
+def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, autocommit=None, timeout=5, read_timeout=None):
     kwargs = {
         'host': datasource.host,
         'port': datasource.port,
@@ -153,6 +182,8 @@ def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, aut
         'charset': datasource.charset,
         'connect_timeout': timeout,
     }
+    if read_timeout:
+        kwargs['read_timeout'] = read_timeout
     if database:
         kwargs['database'] = database
     if cursorclass:
@@ -218,26 +249,39 @@ def _execute_mysql_sql(datasource, database, sql_content):
 
 def _execute_mysql_query(datasource, database, sql_content, limit):
     start = time.time()
+    conn = None
     try:
+        # 流式游标：execute 不再把整个结果集读进内存，fetchmany(limit) 才真正限量；
+        # 同时加读超时与会话级最长执行时间，避免 SELECT SLEEP()/大表拖死 worker。
         conn = pymysql.connect(
             **_build_mysql_connect_kwargs(
                 datasource,
                 database=database,
-                cursorclass=DictCursor,
+                cursorclass=SSDictCursor,
                 timeout=10,
+                read_timeout=60,
             ),
         )
         with conn.cursor() as cursor:
+            try:
+                cursor.execute('SET SESSION max_execution_time=30000')
+            except pymysql.Error:
+                pass
             cursor.execute(sql_content)
             rows = cursor.fetchmany(limit)
-            count = cursor.rowcount
+            count = cursor.rowcount if cursor.rowcount is not None and cursor.rowcount >= 0 else len(rows)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
         duration = int((time.time() - start) * 1000)
         return True, columns, rows, count, duration, None
     except Exception as exc:
         duration = int((time.time() - start) * 1000)
         return False, [], [], 0, duration, str(exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _postgresql_connect_kwargs(datasource, database=None):

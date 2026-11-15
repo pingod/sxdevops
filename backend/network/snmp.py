@@ -86,9 +86,13 @@ def _normalize(value):
     if hasattr(value, 'asOctets'):
         raw = value.asOctets()
         try:
-            return raw.decode('utf-8')
+            text = raw.decode('utf-8')
         except UnicodeDecodeError:
             return raw
+        # 含控制字符说明是二进制值（如 MAC 的 OctetString），保留原始字节交给 format_mac 转十六进制。
+        if any(char < ' ' and char not in '\t\n\r' for char in text):
+            return raw
+        return text
     return str(value)
 
 

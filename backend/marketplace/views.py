@@ -10,6 +10,8 @@ from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
 from eventwall.services import build_resource, record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.services import user_has_permissions
+from rbac.k8s_access import can_access_k8s
 
 from . import deployer
 from .models import ServiceDeployment, ServiceTemplate
@@ -55,7 +57,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     }
 
     def eventwall_should_record(self, action, instance=None):
-        return False
+        return True
 
     def eventwall_related_resources(self, instance):
         related = [build_resource('marketplace', 'service_template', instance.template_id, instance.template.name)]
@@ -153,7 +155,11 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
-        tail = int(request.query_params.get('tail', 100))
+        try:
+            tail = int(request.query_params.get('tail', 100))
+        except (TypeError, ValueError):
+            tail = 100
+        tail = max(1, min(tail, 5000))
         return Response({'logs': deployer.get_service_logs(deployment, tail=tail)})
 
 
@@ -189,6 +195,8 @@ def deploy_service_view(request):
             host = Host.objects.get(pk=data['host_id'])
         except Host.DoesNotExist:
             return Response({'detail': '目标主机不存在'}, status=status.HTTP_404_NOT_FOUND)
+        if not user_has_permissions(request.user, ['ops.host.manage']):
+            return Response({'detail': '部署到主机需要主机管理权限'}, status=status.HTTP_403_FORBIDDEN)
 
         if ServiceDeployment.objects.filter(
             template=template,
@@ -209,6 +217,8 @@ def deploy_service_view(request):
             return Response({'detail': '目标集群不存在'}, status=status.HTTP_404_NOT_FOUND)
 
         namespace = data.get('namespace') or 'default'
+        if not can_access_k8s(request.user, cluster.id, namespace, execute=True):
+            return Response({'detail': '当前账号无权在该集群/命名空间部署'}, status=status.HTTP_403_FORBIDDEN)
         if ServiceDeployment.objects.filter(
             template=template,
             cluster=cluster,

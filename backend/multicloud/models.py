@@ -31,6 +31,7 @@ class CloudCredential(models.Model):
     access_key_id = models.CharField('Access Key ID', max_length=255, blank=True, default='')
     access_key_secret = models.CharField('Access Key Secret', max_length=255, blank=True, default='')
     project_id = models.CharField('项目 / 租户', max_length=128, blank=True, default='')
+    verify_ssl = models.BooleanField('校验 TLS 证书', default=True)
     role_arn = models.CharField('角色 ARN', max_length=255, blank=True, default='')
     external_id = models.CharField('External ID', max_length=255, blank=True, default='')
     default_region = models.CharField('默认区域', max_length=64, blank=True, default='')

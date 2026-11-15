@@ -196,6 +196,7 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
     @action(detail=True, methods=['post'])
     def test_connection(self, request, pk=None):
         host = self.get_object()
+        client = None
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -208,7 +209,6 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
             )
             stdin, stdout, stderr = client.exec_command('uname -a', timeout=5)
             uname = stdout.read().decode('utf-8', errors='replace').strip()
-            client.close()
             record_event(
                 request=request,
                 module='ops',
@@ -244,10 +244,14 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
                 metadata={'ip_address': host.ip_address, 'error': str(exc)},
             )
             return Response({'success': False, 'message': f'\u8fde\u63a5\u5931\u8d25: {str(exc)}'})
+        finally:
+            if client is not None:
+                client.close()
 
     @action(detail=True, methods=['post'])
     def refresh_info(self, request, pk=None):
         host = self.get_object()
+        client = None
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -278,7 +282,6 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
 
             host.status = 'online'
             host.save(update_fields=['cpu_usage', 'memory_usage', 'disk_usage', 'status'])
-            client.close()
             record_event(
                 request=request,
                 module='ops',
@@ -320,6 +323,9 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
                 metadata={'error': str(exc)},
             )
             return Response({'detail': f'\u83b7\u53d6\u4fe1\u606f\u5931\u8d25: {str(exc)}'}, status=400)
+        finally:
+            if client is not None:
+                client.close()
 
 
 class TaskResourceGroupViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):
@@ -1702,7 +1708,11 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
-        tail = int(request.query_params.get('tail', 100))
+        try:
+            tail = int(request.query_params.get('tail', 100))
+        except (TypeError, ValueError):
+            tail = 100
+        tail = max(1, min(tail, 5000))
         return Response({'logs': deployer.get_service_logs(deployment, tail=tail)})
 
     @action(detail=True, methods=['get'])

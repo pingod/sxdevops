@@ -341,11 +341,7 @@ def _ensure_default_event_sources():
             if key in item and getattr(source, key) != item[key]:
                 setattr(source, key, item[key])
                 update_fields.append(key)
-        if source.source_kind == EventSource.KIND_BUILTIN:
-            for key in ('enabled', 'status'):
-                if getattr(source, key) != item[key]:
-                    setattr(source, key, item[key])
-                    update_fields.append(key)
+        # 只同步元数据，不回写 enabled/status：否则用户停用内置事件源后，任何一次 GET 都会被静默恢复。
         if update_fields:
             update_fields.append('updated_at')
             source.save(update_fields=update_fields)
@@ -706,7 +702,9 @@ def _build_window(queryset, params, default_days=7):
 
     days = params.get('days', '').strip()
     if days.isdigit():
-        start = timezone.now() - timedelta(days=int(days))
+        # 超大 days 会让 timedelta 抛 OverflowError（500），这里收敛到可用区间。
+        day_count = max(1, min(int(days), 3650))
+        start = timezone.now() - timedelta(days=day_count)
         return queryset.filter(occurred_at__gte=start), start, None
 
     if default_days is not None:
@@ -1276,6 +1274,38 @@ class EventSourceViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             return Response({'detail': '平台内置事件源不允许删除。'}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
 
+    def perform_create(self, serializer):
+        source = serializer.save()
+        record_event(
+            request=self.request, module='eventwall', category='config',
+            action='create_event_source', title=f'新建事件源：{source.name}',
+            summary=f'事件源 {source.name}（{source.code}）已创建',
+            resource_type='event_source', resource_id=source.pk, resource_name=source.name,
+            metadata={'code': source.code, 'source_kind': source.source_kind},
+        )
+
+    def perform_update(self, serializer):
+        source = serializer.save()
+        record_event(
+            request=self.request, module='eventwall', category='config',
+            action='update_event_source', title=f'更新事件源：{source.name}',
+            summary=f'事件源 {source.name}（{source.code}）已更新',
+            resource_type='event_source', resource_id=source.pk, resource_name=source.name,
+            metadata={'code': source.code},
+        )
+
+    def perform_destroy(self, instance):
+        name, code, pk = instance.name, instance.code, instance.pk
+        super().perform_destroy(instance)
+        record_event(
+            request=self.request, module='eventwall', category='config',
+            action='delete_event_source', title=f'删除事件源：{name}',
+            summary=f'事件源 {name}（{code}）已删除',
+            severity=EventRecord.SEVERITY_WARNING,
+            resource_type='event_source', resource_id=pk, resource_name=name,
+            metadata={'code': code},
+        )
+
     @action(detail=True, methods=['post'])
     def issue_token(self, request, code=None):
         source = self.get_object()
@@ -1286,6 +1316,19 @@ class EventSourceViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         source.status = EventSource.STATUS_HEALTHY
         source.last_error = ''
         source.save(update_fields=['token_hash', 'token_preview', 'enabled', 'status', 'last_error', 'updated_at'])
+        record_event(
+            request=request,
+            module='eventwall',
+            category='config',
+            action='issue_token',
+            title=f'签发事件源接入令牌：{source.name}',
+            summary=f'事件源 {source.name}（{source.code}）的接入令牌已重新签发并启用',
+            severity=EventRecord.SEVERITY_WARNING,
+            resource_type='event_source',
+            resource_id=source.pk,
+            resource_name=source.name,
+            metadata={'code': source.code, 'token_preview': source.token_preview},
+        )
         return Response({'token': token, 'token_preview': source.token_preview})
 
     @action(detail=True, methods=['post'])
@@ -1297,6 +1340,19 @@ class EventSourceViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         elif not source.enabled:
             source.status = EventSource.STATUS_DISABLED
         source.save(update_fields=['enabled', 'status', 'updated_at'])
+        record_event(
+            request=request,
+            module='eventwall',
+            category='config',
+            action='toggle_event_source',
+            title=f'{"启用" if source.enabled else "停用"}事件源：{source.name}',
+            summary=f'事件源 {source.name}（{source.code}）已{"启用" if source.enabled else "停用"}',
+            severity=EventRecord.SEVERITY_INFO if source.enabled else EventRecord.SEVERITY_WARNING,
+            resource_type='event_source',
+            resource_id=source.pk,
+            resource_name=source.name,
+            metadata={'code': source.code, 'enabled': source.enabled},
+        )
         return Response(self.get_serializer(source).data)
 
 

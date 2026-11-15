@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import threading
+import re
 from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -198,7 +199,7 @@ INTENT_SECTION_COLUMNS: dict[str, tuple[str, ...]] = {
     "switches": ("instance", "model", "channel", "rack", "u", "uSpan"),
     "devices": ("instance", "model", "channel", "rack", "u", "uSpan"),
     "routes": ("nodeModel", "nic", "switchModel"),
-    "chains": ("channel", "switchModel", "nic", "instances", "capacity"),
+    "chains": ("channel", "switchModel", "nic", "instances", "capacity", "order"),
     "explicitLinks": ("a", "b", "cableType"),
 }
 
@@ -273,8 +274,21 @@ def _models_dir(project_name: str) -> Path:
 
     所以统一放 `<仓库>/projects/<项目名>/models.json`，与意图 JSON 同层。
     """
-    root = Path(__file__).resolve().parents[3] / "projects"
-    return root / project_name
+    root = (Path(__file__).resolve().parents[3] / "projects").resolve()
+    name = str(project_name or "").strip()
+    # 项目名来自请求体，直接拼路径会被 `..`/绝对路径穿越到任意目录写 models.json。
+    if (
+        not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or not re.fullmatch(r"[A-Za-z0-9._\u4e00-\u9fa5-]{1,64}", name)
+    ):
+        raise ValueError(f"非法项目名：{project_name!r}")
+    candidate = (root / name).resolve()
+    if root not in candidate.parents:
+        raise ValueError(f"非法项目名：{project_name!r}")
+    return candidate
 
 
 def _library_for(project_name: str):
@@ -448,7 +462,10 @@ def create_app() -> FastAPI:
         """
         store = _project_store()
         chosen = project or default_project_name(store) or ""
-        lib = _library_for(chosen)
+        try:
+            lib = _library_for(chosen)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         payload = library_payload(lib, with_ports=ports)
         payload["project"] = chosen
         return payload
@@ -491,7 +508,10 @@ def create_app() -> FastAPI:
         """
         store = _project_store()
         chosen = project or default_project_name(store) or ""
-        lib = _library_for(chosen)
+        try:
+            lib = _library_for(chosen)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"project": chosen, "doc": model_export_json(lib, only_user=not all)}
 
     @app.get("/api/labels")
@@ -1528,11 +1548,22 @@ def create_app() -> FastAPI:
         目录里还躺着 `政务外网区交换机连线表-0606.xlsx` 与
         `11+12冷通道（示例）.xlsx` —— 它们是**别的项目**（不同机房/规模），
         不该出现在「版本对比」下拉里，但用户确实会想拿它们跟主体比
-        接线风格或复用配置。所以清单只列主体，路径参数不做白名单限制
-        （本地单机工具，能读到文件就是用户的文件）。
+        接线风格或复用配置。所以清单只列主体，路径参数允许传目录内任意文件；
+        该模块已挂在 Django 认证反代后面，路径必须收敛在 `信息港部署上架/`
+        子树内，避免只读角色读到服务器上任意 xlsx。
 
         路径不存在时返回 404 并带上路径原文：用户手打时多半是笔误。
         """
+        base = stock_dir().resolve()
+        for raw in (leftPath, rightPath):
+            target = Path(raw).resolve()
+            if target != base and base not in target.parents and target.is_file():
+                # 只拦"确实存在的越界文件"；不存在的路径继续交给 compare_files 报 404，
+                # 否则用户手打笔误会被 403 掩盖成权限问题。
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"只允许比较 {base.name} 目录内的表格：{raw}",
+                )
         try:
             return compare_files(
                 (leftPath, leftSheet),

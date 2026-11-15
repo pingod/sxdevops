@@ -28,7 +28,11 @@ def _render_template(template_str, context):
     """简易模板渲染：将 {{key}} 替换为 context[key]"""
     result = template_str or ''
     for key, value in context.items():
-        result = result.replace('{{' + key + '}}', str(value))
+        text = str(value)
+        if '\n' in text or '\r' in text:
+            # 换行会在 compose YAML 里闭合标量并注入 privileged/volumes 等键。
+            raise ValueError(f'部署参数 {key} 不能包含换行')
+        result = result.replace('{{' + key + '}}', text)
     return re.sub(r'\{\{[^}]+\}\}', '', result)
 
 
@@ -267,7 +271,7 @@ def _scale_k8s_workloads(deployment, replicas):
 
 
 def deploy_service(deployment_id):
-    """????????"""
+    """执行服务部署任务（后台线程）"""
     close_old_connections()
 
     try:
@@ -279,20 +283,20 @@ def deploy_service(deployment_id):
     deployment.status = 'deploying'
     deployment.deploy_log = ''
     deployment.save(update_fields=['status', 'deploy_log'])
-    log_lines = [f'[INFO] ????: {deployment.get_deploy_mode_display()}']
+    log_lines = [f'[INFO] 部署方式: {deployment.get_deploy_mode_display()}']
     try:
         if deployment.deploy_mode == 'k8s':
             _deploy_k8s(deployment, log_lines)
         else:
             _deploy_docker_compose(deployment, log_lines)
         deployment.status = 'running'
-        log_lines.append('[SUCCESS] ????')
+        log_lines.append('[SUCCESS] 部署成功')
         record_event(
             module='marketplace',
             category='execution',
             action='deploy_finish',
-            title='????????',
-            summary=f'?? {deployment.template.name} ????',
+            title='服务部署完成通知',
+            summary=f'服务 {deployment.template.name} 部署完成',
             result=EventRecord.RESULT_SUCCESS,
             source_type=EventRecord.SOURCE_ASYNC,
             actor_type=EventRecord.ACTOR_SYSTEM,
@@ -308,14 +312,14 @@ def deploy_service(deployment_id):
         )
     except Exception as exc:
         deployment.status = 'failed'
-        log_lines.append(f'[ERROR] ????: {str(exc)}')
+        log_lines.append(f'[ERROR] 部署失败: {str(exc)}')
         logger.exception('deploy_service error')
         record_event(
             module='marketplace',
             category='execution',
             action='deploy_finish',
-            title='????????',
-            summary=f'?? {deployment.template.name} ????',
+            title='服务部署完成通知',
+            summary=f'服务 {deployment.template.name} 部署完成',
             result=EventRecord.RESULT_FAILED,
             severity=EventRecord.SEVERITY_WARNING,
             source_type=EventRecord.SOURCE_ASYNC,

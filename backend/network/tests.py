@@ -475,6 +475,7 @@ class ApiTests(TestCase):
         self.assertEqual(response.data['traffic']['in_bps'], 4.2e8)
 
 
+@override_settings(CMDB_PASSWORD_ENCRYPTION_KEY=TEST_KEY)
 class AlertEngineTests(TestCase):
     def setUp(self):
         self.credential = make_credential(name='alert-cred')
@@ -593,6 +594,7 @@ class AlertEngineTests(TestCase):
         self.assertTrue(Alert.objects.filter(metric_name='in_errors', status=Alert.STATUS_ACTIVE).exists())
 
 
+@override_settings(CMDB_PASSWORD_ENCRYPTION_KEY=TEST_KEY)
 class AlertApiTests(TestCase):
     @classmethod
     def setUpTestData(cls):

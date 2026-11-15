@@ -28,7 +28,8 @@ def can_access_k8s(user, cluster_id, namespace=None, *, execute=False, shell=Fal
     if scope is None:
         return False
     if shell:
-        return scope['role'] == 'admin' and not scope['namespaces']
+        # 集群终端等价于在该集群执行任意 kubectl，必须同时满足 allow_exec。
+        return scope['role'] == 'admin' and not scope['namespaces'] and bool(scope.get('allow_exec'))
     if execute and (scope['role'] == 'viewer' or not scope['allow_exec']):
         return False
     return not scope['namespaces'] or namespace in scope['namespaces']

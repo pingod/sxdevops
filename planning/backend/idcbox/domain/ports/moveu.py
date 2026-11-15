@@ -11,7 +11,7 @@
   > ⚠️ **这句话曾被误读成「所以拖动是安全的」（v0.12 纠正）**。
   > 它只说明**线长**不变，而端口号会变：`端口号 = 组内位次 + base`，
   > 位次按 `(机柜, U)` 升序 —— 换柜或换槽位就换位次，**同组排在后面的
-  > 设备端口号整体前移**。实测跨柜挪一台 = **91 行端口号变了、6 行线长变了**，
+  > 设备端口号整体前移**。实测跨柜挪一台 = **84 行端口号变了、6 行线长变了**，
   > 而且连「同柜内挪」都可能改（3U→39U 改了 56 行）。
   > 所以每个移动入口都必须返回影响面（见 `gen_diff.py` 与
   > `application/services/impact.py`），不能按「同柜 = 安全」跳过。
@@ -146,12 +146,33 @@ def is_layout_generated(
     return False
 
 
+def row_span(row: Mapping[str, Any], section: str) -> int:
+    """一行声明的 U 高度。
+
+    `switches` 段缺省 1U、`devices` 段缺省 **2U** —— 必须与
+    `intent.py` 的 `SwitchSpec`/`DeviceSpec` 缺省保持一致，否则
+    2U 的防火墙会被当成只占 1U，另一台能"合法"叠进它的第二个 U。
+    """
+    span = row.get("uSpan")
+    if isinstance(span, int) and span >= 1:
+        return span
+    return 2 if section == "devices" else 1
+
+
 def occupied_spans(
-    doc: Mapping[str, Any], *, channel_no: int, rack_no: int, skip: tuple[str, int] | None = None
+    doc: Mapping[str, Any],
+    *,
+    channel_no: int,
+    rack_no: int,
+    skip: tuple[str, int] | None = None,
+    exclude_node: str | None = None,
 ) -> list[tuple[int, int, str]]:
     """列出该机柜已被占用的 U 区间 `(起, 止, 名字)`。
 
     `skip` 用于排除「正在移动的这台自己」—— 否则它的旧位置会和自己冲突。
+    `exclude_node` 用于按槽位 id 精确排除一台布局段设备（含它的
+    `devices` 覆盖行与 `_layout_spans` 里的排布），跨柜拖动时不能按
+    「型号 + U 位」猜，否则会把目的柜里同型号的邻居误当成自己剔掉。
     """
     out: list[tuple[int, int, str]] = []
     for section in ("switches", "devices"):
@@ -163,20 +184,21 @@ def occupied_spans(
                 continue
             if skip is not None and skip == (section, idx):
                 continue
+            if exclude_node is not None and str(row.get("instance") or "") == exclude_node:
+                continue
             if row.get("channel") != channel_no or row.get("rack") != rack_no:
                 continue
             u = row.get("u")
             if not isinstance(u, int):
                 continue
-            span = row.get("uSpan")
-            size = span if isinstance(span, int) and span >= 1 else 1
+            size = row_span(row, section)
             out.append((u, u + size - 1, str(row.get("instance") or row.get("model") or "")))
-    out.extend(_layout_spans(doc, channel_no=channel_no, rack_no=rack_no))
+    out.extend(_layout_spans(doc, channel_no=channel_no, rack_no=rack_no, exclude_node=exclude_node))
     return out
 
 
 def _layout_spans(
-    doc: Mapping[str, Any], *, channel_no: int, rack_no: int
+    doc: Mapping[str, Any], *, channel_no: int, rack_no: int, exclude_node: str | None = None
 ) -> list[tuple[int, int, str]]:
     """布局段在**这个机柜**里排出的所有 U 区间。
 
@@ -210,6 +232,8 @@ def _layout_spans(
     out: list[tuple[int, int, str]] = []
     for pl in placements:
         if pl.channel_no != channel_no or pl.rack_no != rack_no:
+            continue
+        if exclude_node is not None and pl.node_id == exclude_node:
             continue
         out.append((pl.u_start, pl.u_start + 1, pl.model))
     return out
@@ -308,8 +332,7 @@ def move_device(
     row = rows[row_no]
     assert isinstance(row, dict)
 
-    size = row.get("uSpan")
-    span = size if isinstance(size, int) and size >= 1 else 1
+    span = row_span(row, section)
     end_u = new_u + span - 1
     if end_u > RACK_U_HEIGHT:
         return MoveResult(
@@ -485,20 +508,12 @@ def _move_layout_device(
             doc=dict(doc),
         )
 
-    spans = occupied_spans(doc, channel_no=channel_no, rack_no=dest_rack)
-    # 自己原来的位置要排除：`occupied_spans` 会把布局段里它自己算进去
-    home_u = _current_u(doc, slot_id, channel_no, rack_no)
-    if dest_rack == rack_no:
-        # 同柜内挪：旧位置那一条是它自己，必须排掉，否则永远撞自己
-        spans = [sp for sp in spans if sp[0] != home_u]
-    else:
-        # 跨柜：目的柜里若已有一条指向同一槽位 id 的旧覆盖（拖过去又拖回来），
-        # 那也是它自己，同样排掉。
-        spans = [
-            sp
-            for sp in spans
-            if not (sp[0] == home_u and norm_name(sp[2]) == norm_name(model))
-        ]
+    # 自己原来的位置要排除：`occupied_spans` 会把布局段里它自己算进去。
+    # 必须按槽位 id 精确排除 —— 跨柜时目的柜里可能有同型号的邻居正占着同一个 U，
+    # 按「型号 + U 位」排除会把那位邻居误当成自己，于是两台设备叠在同一 U 段。
+    spans = occupied_spans(
+        doc, channel_no=channel_no, rack_no=dest_rack, exclude_node=slot_id
+    )
     hits = _overlaps(new_u, end_u, spans)
     if hits and not allow_overlap:
         return MoveResult(
@@ -591,8 +606,7 @@ def _identity(
         u = row.get("u")
         if not isinstance(u, int):
             return None
-        span = row.get("uSpan")
-        size = span if isinstance(span, int) and span >= 1 else 1
+        size = row_span(row, section)
         return ("declared", f"{section}#{row_no}", u, size)
 
     if t.current_u is None:

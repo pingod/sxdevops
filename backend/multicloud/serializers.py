@@ -29,7 +29,7 @@ class CloudCredentialSerializer(serializers.ModelSerializer):
         model = CloudCredential
         fields = [
             'id', 'provider', 'provider_label', 'name', 'account_id', 'account_name', 'auth_mode', 'auth_mode_label',
-            'access_key_id', 'access_key_secret', 'masked_secret', 'project_id', 'role_arn', 'external_id',
+            'access_key_id', 'access_key_secret', 'masked_secret', 'project_id', 'verify_ssl', 'role_arn', 'external_id',
             'default_region', 'owner', 'description', 'tags', 'is_enabled', 'demo_mode', 'last_test_status',
             'last_test_message', 'last_sync_at', 'environment_count', 'asset_count', 'created_by', 'updated_by',
             'created_at', 'updated_at',

@@ -1,6 +1,7 @@
 ﻿import json
 import logging
 import re
+import shlex
 import threading
 
 import paramiko
@@ -422,7 +423,7 @@ def _deploy_docker_compose(deployment, log_lines):
     client = _get_ssh_client(docker_target)
     try:
         log_lines.append(f'[INFO] SSH 连接成功: {_docker_target_name(docker_target)} ({docker_target.ip_address})')
-        _ssh_exec(client, f'mkdir -p {service_dir}')
+        _ssh_exec(client, f'mkdir -p {shlex.quote(service_dir)}')
         log_lines.append(f'[INFO] 创建目录: {service_dir}')
         sftp = client.open_sftp()
         with sftp.file(f'{service_dir}/docker-compose.yml', 'w') as file_obj:
@@ -432,7 +433,7 @@ def _deploy_docker_compose(deployment, log_lines):
 
         code, out, err = _ssh_exec(
             client,
-            f'cd {service_dir} && docker-compose up -d 2>&1 || docker compose up -d 2>&1',
+            f'cd {shlex.quote(service_dir)} && docker-compose up -d 2>&1 || docker compose up -d 2>&1',
         )
         log_lines.append('[CMD] docker-compose up -d')
         if out.strip():
@@ -633,7 +634,7 @@ def stop_service(deployment):
     docker_target = _docker_target(deployment)
     client = _get_ssh_client(docker_target)
     try:
-        _, out, err = _ssh_exec(client, f'cd {deployment.deploy_dir} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
         deployment.status = 'stopped'
         deployment.deploy_log += f'\n[SUCCESS] 应用已停止\n{out}{err}'
     except Exception as exc:
@@ -672,7 +673,7 @@ def start_service(deployment):
     docker_target = _docker_target(deployment)
     client = _get_ssh_client(docker_target)
     try:
-        _, out, err = _ssh_exec(client, f'cd {deployment.deploy_dir} && docker-compose start 2>&1 || docker compose start 2>&1')
+        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
         deployment.status = 'running'
         deployment.deploy_log += f'\n[SUCCESS] 应用已启动\n{out}{err}'
     except Exception as exc:
@@ -730,8 +731,8 @@ def remove_service(deployment):
     docker_target = _docker_target(deployment)
     client = _get_ssh_client(docker_target)
     try:
-        _, out, err = _ssh_exec(client, f'cd {deployment.deploy_dir} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
-        _ssh_exec(client, f'rm -rf {deployment.deploy_dir}')
+        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        _ssh_exec(client, f'rm -rf {shlex.quote(deployment.deploy_dir)}')
         deployment.deploy_log += f'\n[SUCCESS] 应用已下线\n{out}{err}'
         deployment.status = 'removed'
         deployment.is_current = False
@@ -802,7 +803,7 @@ def get_service_logs(deployment, tail=100):
     try:
         docker_target = _docker_target(deployment)
         client = _get_ssh_client(docker_target)
-        _, out, err = _ssh_exec(client, f'cd {deployment.deploy_dir} && docker-compose logs --tail={tail} 2>&1 || docker compose logs --tail={tail} 2>&1')
+        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose logs --tail={int(tail)} 2>&1 || docker compose logs --tail={int(tail)} 2>&1')
         client.close()
         return out or err
     except Exception as exc:
@@ -842,7 +843,7 @@ def _docker_runtime_status(deployment):
     try:
         _, out, err = _ssh_exec(
             client,
-            f'cd {deployment.deploy_dir} && (docker compose ps --all --format json 2>/dev/null || docker-compose ps 2>&1 || docker compose ps 2>&1)',
+            f'cd {shlex.quote(deployment.deploy_dir)} && (docker compose ps --all --format json 2>/dev/null || docker-compose ps 2>&1 || docker compose ps 2>&1)',
         )
     finally:
         client.close()

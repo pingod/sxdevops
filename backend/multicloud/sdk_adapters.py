@@ -559,7 +559,8 @@ class VSphereCloudAdapter(BaseCloudAdapter):
                 user=username,
                 pwd=password,
                 port=port,
-                sslContext=ssl._create_unverified_context(),
+                # 默认走系统 CA 校验；仅当账号显式关闭校验时才接受自签证书。
+                sslContext=None if getattr(self.credential, 'verify_ssl', True) else ssl._create_unverified_context(),
             )
         except socket.gaierror as exc:
             raise CloudAdapterError(f'无法解析 vSphere 地址「{host}」，请确认后端服务器能访问该地址，或填写可解析的 IP/域名。') from exc

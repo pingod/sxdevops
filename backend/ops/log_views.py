@@ -20,6 +20,7 @@ from eventwall.services import record_event
 from .models import LogDataSource
 from .serializers import LogDataSourceSerializer
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.services import user_has_permissions
 
 
 REQUEST_TIMEOUT = 30
@@ -122,7 +123,16 @@ def _merge_config(provider, incoming=None):
     return merged
 
 
-def _resolve_provider_and_config(payload):
+#: 这些键决定「请求打到哪里、用什么凭据」，请求级覆盖等于任意 SSRF/凭据外发。
+CONNECTION_CONFIG_KEYS = {
+    'endpoint', 'query_url', 'url', 'host', 'base_url', 'project', 'region', 'logstore',
+    'access_key_id', 'access_key_secret', 'access_key', 'secret_key', 'secret',
+    'username', 'password', 'api_key', 'bearer_token', 'token', 'headers', 'verify_ssl',
+    'index_pattern', 'time_field', 'auth_type', 'tenant_id',
+}
+
+
+def _resolve_provider_and_config(payload, user=None):
     datasource = None
     datasource_id = payload.get('datasource_id')
 
@@ -140,8 +150,18 @@ def _resolve_provider_and_config(payload):
     if datasource and provider != datasource.provider:
         raise ProviderError('provider 与数据源类型不一致')
 
+    request_config = payload.get('config') if isinstance(payload.get('config'), dict) else {}
+    overrides = {key for key in request_config if key in CONNECTION_CONFIG_KEYS}
+    if overrides and not user_has_permissions(user, ['ops.log.datasource.manage']):
+        raise ProviderError(
+            '仅日志数据源管理员可在查询时自定义连接参数，请改用已保存的日志数据源。',
+            status.HTTP_403_FORBIDDEN,
+        )
+    if datasource and overrides:
+        # 已保存的数据源以其自身配置为准，不允许请求体改指向别的主机。
+        request_config = {key: value for key, value in request_config.items() if key not in CONNECTION_CONFIG_KEYS}
     config = _merge_config(provider, getattr(datasource, 'config', None))
-    config = _merge_config(provider, {**config, **(payload.get('config') or {})})
+    config = _merge_config(provider, {**config, **request_config})
     return provider, config, datasource
 
 
@@ -1511,7 +1531,7 @@ def log_providers(request):
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.log.query')])
 def log_provider_catalog(request, provider):
     try:
-        resolved_provider, config, _ = _resolve_provider_and_config({**request.data, 'provider': provider})
+        resolved_provider, config, _ = _resolve_provider_and_config({**request.data, 'provider': provider}, user=request.user)
         if resolved_provider != provider:
             raise ProviderError('provider 与数据源类型不一致')
         return Response(_get_catalog(provider, config, request.data))
@@ -1528,7 +1548,7 @@ def log_provider_catalog(request, provider):
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.log.query')])
 def log_query(request):
     try:
-        provider, config, datasource = _resolve_provider_and_config(request.data)
+        provider, config, datasource = _resolve_provider_and_config(request.data, user=request.user)
         payload = dict(request.data)
         if datasource and provider == 'sls':
             payload.setdefault('source', datasource.config.get('logstore'))

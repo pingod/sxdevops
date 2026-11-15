@@ -47,6 +47,8 @@ K8S_KUBECTL_BLOCKED_OPTIONS = {
     '--certificate-authority', '--client-certificate', '--client-key',
     '--insecure-skip-tls-verify', '--cache-dir', '--kuberc', '-f', '--filename',
     '-k', '--kustomize',
+    # 这些能把服务器本地文件内容读进命令输出（configmap/secret 生成、patch 文件）。
+    '--from-file', '--from-env-file', '--patch-file', '--raw', '--from-literal',
 }
 
 
@@ -153,6 +155,8 @@ def _parse_kubectl_command(command):
         raise ValueError('仅支持以 kubectl 开头的命令')
     if len(args) == 1:
         raise ValueError('请输入 kubectl 子命令')
+    if args[1] in ('config',):
+        raise ValueError('控制台不允许使用 kubectl config，集群凭据由平台托管')
     if any(any(char in arg for char in ';|&$`\n\r') for arg in args):
         raise ValueError('命令中不允许使用 shell 控制符')
     for arg in args[1:]:
@@ -1992,6 +1996,8 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
                 'stdin': False,
                 'stdout': True,
                 'tty': False,
+                # websocket 通道把 _request_timeout 当 run_forever 的标量超时，不能传 (connect, read) 元组。
+                '_request_timeout': K8S_KUBECTL_TIMEOUT,
             }
             if container:
                 kwargs['container'] = container

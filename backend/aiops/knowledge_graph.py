@@ -326,7 +326,7 @@ def _cached_external_batch(items, ttl=EXTERNAL_DISCOVERY_CACHE_TTL, timeout=FAST
     return results
 
 
-def _graph_cache_key(params):
+def _graph_cache_key(params, user=None):
     query_items = []
     if params:
         try:
@@ -337,6 +337,9 @@ def _graph_cache_key(params):
             ]
         except AttributeError:
             query_items = sorted((params or {}).items())
+    if user is not None:
+        # 知识图谱含集群/主机 IP，缓存必须按用户隔离，避免把越权视角的结果复用给他人。
+        query_items = list(query_items) + [('__user', str(getattr(user, 'pk', '')) )]
     latest_config = (
         AIOpsKnowledgeEnvironment.objects
         .order_by('-updated_at')
@@ -1508,8 +1511,8 @@ def _persist_environment_snapshots(configs, nodes, edges):
     )
 
 
-def build_knowledge_graph(params=None):
-    cache_key = _graph_cache_key(params)
+def build_knowledge_graph(params=None, user=None):
+    cache_key = _graph_cache_key(params, user=user)
     cached_graph = _cache_get(cache_key)
     if cached_graph is not None:
         return cached_graph
@@ -1764,6 +1767,20 @@ def build_knowledge_graph(params=None):
     k8s_clusters = list(K8sCluster.objects.filter(id__in=selected_k8s_cluster_ids).order_by('name', 'id')) if use_knowledge_env and selected_k8s_cluster_ids else []
     docker_hosts = list(DockerHost.objects.filter(id__in=selected_docker_host_ids).order_by('name', 'id')) if use_knowledge_env and selected_docker_host_ids else []
     task_resource_env_groups = list(TaskResourceGroup.objects.filter(id__in=selected_task_resource_environment_ids, group_type=TaskResourceGroup.GROUP_ENVIRONMENT).order_by('sort_order', 'name', 'id')) if use_knowledge_env and selected_task_resource_environment_ids else []
+    if user is not None:
+        # 与 catalog 一致：平台权限是上限，K8sUserAccess 只能再收窄；
+        # 无 docker / 任务资源查看权限时不下发对应清单（含 IP）。
+        from rbac.k8s_access import get_k8s_grants
+        from rbac.services import user_has_permissions as _user_has_permissions
+
+        grants = get_k8s_grants(user)
+        if grants is not None:
+            allowed_cluster_ids = set(grants.keys())
+            k8s_clusters = [cluster for cluster in k8s_clusters if cluster.id in allowed_cluster_ids]
+        if not _user_has_permissions(user, ['ops.docker.view']):
+            docker_hosts = []
+        if not _user_has_permissions(user, ['ops.task.resource.view']):
+            task_resource_env_groups = []
     infrastructure_inventory = _cached_external_batch([
         (
             ('k8s_pods', cluster.id),

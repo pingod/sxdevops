@@ -269,7 +269,8 @@ MCP_TOOL_NAME_MAX_CHARS = 64
 MCP_TOOL_DESCRIPTION_MAX_CHARS = 1200
 MCP_RESULT_TEXT_MAX_CHARS = 800
 MCP_READ_ONLY_DENY_PATTERN = re.compile(
-    r'^(create|update|delete|remove|write|patch|mutate|execute|run|apply|drop|truncate|grant|revoke)([_\-.]|$)',
+    r'^(create|update|delete|remove|write|patch|mutate|execute|run|apply|drop|truncate|grant|revoke'
+    r'|add|insert|set|upsert|import|send|publish|restart|push|upload|post|put|enable|disable|start|stop|kill|scale|rollback)([_\-.]|$)',
     re.IGNORECASE,
 )
 MCP_CREDENTIAL_PATTERN = re.compile(
@@ -3377,7 +3378,8 @@ def _query_live_log_datasources(knowledge_environment, query='', service='', lev
         elif datasource.provider == 'elk':
             clauses = []
             if service:
-                clauses.append(f'(service.name:"{service}" OR service:"{service}" OR container:"{service}")')
+                safe_service = _safe_log_service(service) or '__invalid_service__'
+                clauses.append(f'(service.name:"{safe_service}" OR service:"{safe_service}" OR container:"{safe_service}")')
             if resolved_levels:
                 level_clauses = []
                 for item in resolved_levels:
@@ -3394,7 +3396,7 @@ def _query_live_log_datasources(knowledge_environment, query='', service='', lev
         elif datasource.provider == 'sls':
             clauses = []
             if service:
-                clauses.append(service)
+                clauses.append(_safe_log_service(service) or '__invalid_service__')
             for item in resolved_levels:
                 clauses.extend(_log_level_query_terms('sls', item)[:2])
             payload['query'] = ' AND '.join(clauses) or '*'
@@ -5355,12 +5357,8 @@ def query_alert_metrics(session, user_message, user, query='', alert_id=None, fi
             setattr(alert, key, parse_datetime(_alert_snapshot[key]) if _alert_snapshot.get(key) else None)
     elif alert_id:
         alert = queryset.filter(id=alert_id).order_by('-last_received_at', '-created_at', '-id').first()
-        if not alert:
-            alert = Alert.objects.filter(id=alert_id).order_by('-last_received_at', '-created_at', '-id').first()
     elif fingerprint:
         alert = queryset.filter(fingerprint=fingerprint).order_by('-last_received_at', '-created_at', '-id').first()
-        if not alert:
-            alert = Alert.objects.filter(fingerprint=fingerprint).order_by('-last_received_at', '-created_at', '-id').first()
     else:
         alert = queryset.order_by('-last_received_at', '-created_at', '-id').first() if latest else None
     if not alert:
@@ -5713,12 +5711,8 @@ def query_alert_root_cause(session, user_message, user, query='', fingerprint=''
     queryset = _alert_scope_queryset(knowledge_environment)
     if alert_id:
         alert = queryset.filter(id=alert_id).order_by('-last_received_at', '-created_at', '-id').first()
-        if not alert:
-            alert = Alert.objects.select_related('host').filter(id=alert_id).order_by('-last_received_at', '-created_at', '-id').first()
     elif fingerprint:
         alert = queryset.filter(fingerprint=fingerprint).order_by('-last_received_at', '-created_at', '-id').first()
-        if not alert:
-            alert = Alert.objects.select_related('host').filter(fingerprint=fingerprint).order_by('-last_received_at', '-created_at', '-id').first()
     else:
         alert = queryset.order_by('-last_received_at', '-created_at', '-id').first() if latest else None
     if not alert:
@@ -14949,43 +14943,44 @@ def confirm_action(action, user, request=None, payload=None):
     action.action_payload = normalized_payload
     if normalized_payload.get('name') and (not action.title or _is_generic_task_title(action.title)):
         action.title = normalized_payload['name']
-    action.status = AIOpsPendingAction.STATUS_CONFIRMED
-    action.confirmed_by = user.username
-    action.confirmed_at = timezone.now()
-    action.save(update_fields=['title', 'action_payload', 'status', 'confirmed_by', 'confirmed_at', 'updated_at'])
-
+    # 先构造草稿：构造失败（目标主机被删等）时动作仍停在 pending，可重试，
+    # 不会出现"状态已 confirmed 但没有草稿"的永久卡死。
     task_draft = _build_task_center_draft_from_aiops_draft(action.action_payload or {}, action=action)
-    record_event(
-        request=request,
-        module='aiops',
-        category='execution',
-        action='prepare_host_task_draft',
-        title='AIOps 载入任务中心草稿',
-        summary=f'已将任务草稿 {task_draft["name"]} 载入任务中心，等待人工编辑后执行',
-        result=EventRecord.RESULT_PENDING,
-        resource_type='aiops_action',
-        resource_id=action.id,
-        resource_name=action.title,
-        correlation_id=f'aiops-action:{action.id}',
-        metadata={
-            'trigger_source': HostTask.TRIGGER_SOURCE_AIOPS,
-            'session_id': action.session_id,
-            'pending_action_id': action.id,
-            'task_name': task_draft['name'],
-            'task_type': task_draft['task_type'],
-            'target_type': task_draft['target_type'],
-            'host_count': task_draft['host_count'],
-            'confirmed_by': user.username,
-        },
-    )
-    action.status = AIOpsPendingAction.STATUS_EXECUTED
-    action.result_payload = {
+    result_payload = {
         'draft_ready': True,
         'task_name': task_draft['name'],
         'materialized_in_task_center': False,
         'task_draft': task_draft,
     }
-    action.save(update_fields=['status', 'result_payload', 'updated_at'])
+    with transaction.atomic():
+        action.status = AIOpsPendingAction.STATUS_EXECUTED
+        action.confirmed_by = user.username
+        action.confirmed_at = timezone.now()
+        action.result_payload = result_payload
+        action.save(update_fields=['title', 'action_payload', 'status', 'confirmed_by', 'confirmed_at', 'result_payload', 'updated_at'])
+        record_event(
+            request=request,
+            module='aiops',
+            category='execution',
+            action='prepare_host_task_draft',
+            title='AIOps 载入任务中心草稿',
+            summary=f'已将任务草稿 {task_draft["name"]} 载入任务中心，等待人工编辑后执行',
+            result=EventRecord.RESULT_PENDING,
+            resource_type='aiops_action',
+            resource_id=action.id,
+            resource_name=action.title,
+            correlation_id=f'aiops-action:{action.id}',
+            metadata={
+                'trigger_source': HostTask.TRIGGER_SOURCE_AIOPS,
+                'session_id': action.session_id,
+                'pending_action_id': action.id,
+                'task_name': task_draft['name'],
+                'task_type': task_draft['task_type'],
+                'target_type': task_draft['target_type'],
+                'host_count': task_draft['host_count'],
+                'confirmed_by': user.username,
+            },
+        )
     return task_draft
 
 
@@ -15975,7 +15970,9 @@ def _build_safe_mcp_stdio_env(auth_config):
         for key, value in os.environ.items()
         if key in MCP_SAFE_STDIO_ENV_KEYS or key.startswith('XDG_')
     }
-    explicit_env = (auth_config or {}).get('env') or {}
+    explicit_env = (auth_config if isinstance(auth_config, dict) else {}).get('env') or {}
+    if not isinstance(explicit_env, dict):
+        explicit_env = {}
     for key, value in explicit_env.items():
         key = str(key)
         if key.upper() in MCP_BLOCKED_ENV_KEYS or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', key):
@@ -15990,7 +15987,11 @@ def _validate_mcp_stdio_command(command_text):
     command = shlex.split(command_text, posix=False)
     if not command:
         raise ValueError('MCP STDIO command is empty')
-    executable = Path(command[0]).stem.lower()
+    raw_executable = command[0]
+    # 禁止带路径的可执行文件，否则任意路径下同名二进制可绕过白名单（如 /tmp/x/npx）。
+    if raw_executable != Path(raw_executable).name or '\\' in raw_executable:
+        raise ValueError('MCP STDIO 可执行文件不能包含路径分隔符。')
+    executable = Path(raw_executable).stem.lower()
     if executable not in MCP_ALLOWED_STDIO_EXECUTABLES:
         raise ValueError(f'MCP STDIO executable is not allowed: {executable}')
     if executable == 'npx':

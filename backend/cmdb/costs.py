@@ -1,7 +1,7 @@
 import calendar
 import importlib
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 
 from django.db import transaction
@@ -272,7 +272,10 @@ def _months_in_service_period(start_value, end_value):
         end = date.fromisoformat(str(end_value)[:10])
     except (TypeError, ValueError):
         return []
-    count = max(1, (end.year - start.year) * 12 + end.month - start.month)
+    # 账单服务期结束日通常是「含当日的到期时间」，按 +1 天归一后再算月数；
+    # 这样「2025-01-01 ~ 2025-12-31」得到 12 个月，而不是 11 个月。
+    end_inclusive = end + timedelta(days=1)
+    count = max(1, (end_inclusive.year - start.year) * 12 + end_inclusive.month - start.month)
     return [_month_shift(start.strftime('%Y-%m'), index) for index in range(count)]
 
 
@@ -412,9 +415,12 @@ def _subscription_costs_for_orders(
             )
             allocation_index = 0
             for resource_id in resource_ids:
+                cis = ci_by_resource_id.get(resource_id) or []
                 for service_month in service_months:
-                    for ci in ci_by_resource_id.get(resource_id, []):
-                        key = (ci.id, service_month)
+                    # 同一资源 ID 可能对应多条 CI（重复导入/合并前记录）；
+                    # 分片只记给主 CI，否则同一笔费用会按 CI 数重复入账。
+                    if cis:
+                        key = (cis[0].id, service_month)
                         costs[key] = costs.get(key, Decimal('0')) + allocations[allocation_index]
                     allocation_index += 1
     return costs, order_count, errors

@@ -633,6 +633,9 @@ def match_matchers(alert, matchers):
 
 
 def apply_alert_suppression(alert):
+    # 已恢复/已关闭的告警不再参与屏蔽/抑制：否则恢复通知会被改写为 fire，且告警永久停在 muted。
+    if alert.status in {Alert.STATUS_RESOLVED, Alert.STATUS_CLOSED}:
+        return alert
     now = timezone.now()
     changed = False
     mute = AlertMuteRule.objects.filter(is_enabled=True).filter(

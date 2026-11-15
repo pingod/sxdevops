@@ -203,8 +203,6 @@ def record_event(
     is_demo=False,
     occurred_at=None,
 ):
-    if result == EventRecord.RESULT_REJECTED:
-        return None
     try:
         context = build_request_context(request)
         event_metadata = dict(metadata or {})

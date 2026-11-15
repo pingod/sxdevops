@@ -367,7 +367,8 @@ def _scan_subnet(subnet, timeout_ms=700):
 
 
 def _current_month():
-    return timezone.now().strftime('%Y-%m')
+    # 必须用本地日期：timezone.now() 返回 UTC，在上海时区每月 1 日 00:00-08:00 会取到上个月。
+    return timezone.localdate().strftime('%Y-%m')
 
 
 def _normalize_month(value):
@@ -750,6 +751,9 @@ def _ci_scope_q_for_user(user, permission='view'):
 
     scope_q = Q(pk__in=[])
     for policy in policies:
+        if not (policy.business_line or policy.environment or policy.ci_type_id):
+            # 全空策略表示“全部资源”，与 _resource_matches_authorization_policy 的全量放行语义一致。
+            return None
         item_q = Q()
         if policy.business_line:
             item_q &= Q(business_line=policy.business_line)
@@ -1980,7 +1984,7 @@ def _sync_job_snapshot(job):
     }
 
 
-def _resolve_ci_type_from_payload(payload):
+def _resolve_ci_type_from_payload(payload, user=None):
     type_code = (payload.get('ci_type_code') or payload.get('model_code') or payload.get('type_code') or '').strip()
     type_name = normalize_ci_type_name(
         payload.get('ci_type_name')
@@ -1995,6 +1999,12 @@ def _resolve_ci_type_from_payload(payload):
         ci_type = CIType.objects.filter(code=type_code).first()
         if ci_type:
             return ci_type
+    existing = CIType.objects.filter(name=type_name).first()
+    if existing:
+        return existing
+    # 隐式新建模型会绕过「cmdb.model.manage」：导入/同步的用户必须先由模型管理员建好模型。
+    if user is not None and not user_has_permissions(user, ['cmdb.model.manage']):
+        raise ValueError(f'模型「{type_name}」不存在，请先由模型管理员在 CMDB 模型中创建')
     ci_type, _ = CIType.objects.get_or_create(
         name=type_name,
         defaults={
@@ -2363,26 +2373,36 @@ def _sync_relation_find_peer_by_tags(hint, peer, role):
     return (ci, 'tags') if ci else (None, '')
 
 
-def _sync_relation_find_peer(hint, role, current_source):
+def _ci_peer_visible(user, ci):
+    """操作者的 manage 授权范围是否覆盖该对端资产。"""
+    if ci is None or user is None:
+        return True
+    scope_q = _ci_scope_q_for_user(user, permission='manage')
+    if scope_q is None:
+        return True
+    return ConfigItem.objects.filter(pk=ci.pk).filter(scope_q).exists()
+
+
+def _sync_relation_find_peer(hint, role, current_source, *, user=None):
     peer = _sync_relation_peer_payload(hint, role)
     ci_id = hint.get(f'{role}_ci_id') or peer.get('ci_id')
     if ci_id not in (None, '') and str(ci_id).isdigit():
         ci = ConfigItem.objects.select_related('ci_type').filter(id=ci_id).first()
-        if ci:
+        if ci and _ci_peer_visible(user, ci):
             return ci, 'ci_id'
 
     source = _sync_relation_peer_source(hint, role, current_source)
     if source['source_unique_id'] and source['source_type']:
         ci = _find_config_item_for_source(source)
-        if ci:
+        if ci and _ci_peer_visible(user, ci):
             return ci, 'source_mapping'
 
     ci, matched_by = _sync_relation_find_peer_by_attribute(hint, peer, role)
-    if ci:
+    if ci and _ci_peer_visible(user, ci):
         return ci, matched_by
 
     ci, matched_by = _sync_relation_find_peer_by_tags(hint, peer, role)
-    if ci:
+    if ci and _ci_peer_visible(user, ci):
         return ci, matched_by
 
     name = (
@@ -2398,12 +2418,12 @@ def _sync_relation_find_peer(hint, role, current_source):
         if ci_type:
             qs = qs.filter(ci_type=ci_type)
         ci = qs.order_by('id').first()
-        if ci:
+        if ci and _ci_peer_visible(user, ci):
             return ci, 'name'
     return None, ''
 
 
-def _sync_relations_from_payload(config_item, payload, *, job=None, source=None, operator='', dry_run=False):
+def _sync_relations_from_payload(config_item, payload, *, job=None, source=None, operator='', dry_run=False, user=None):
     hints = _sync_relation_hint_rows(payload)
     if not hints:
         return {'total': 0, 'created': 0, 'skipped': 0, 'failed': 0, 'relations': [], 'errors': []}
@@ -2413,7 +2433,7 @@ def _sync_relations_from_payload(config_item, payload, *, job=None, source=None,
         relation_type = str(hint.get('relation_type') or hint.get('type') or hint.get('relation') or 'depends_on').strip()
         direction = str(hint.get('direction') or 'outgoing').strip().lower()
         peer_role = 'source' if direction == 'incoming' else 'target'
-        peer, matched_by = _sync_relation_find_peer(hint, peer_role, source)
+        peer, matched_by = _sync_relation_find_peer(hint, peer_role, source, user=user)
         if peer is None:
             summary['failed'] += 1
             summary['errors'].append({
@@ -3452,7 +3472,7 @@ def _resolve_cloud_resource_node_for_source(source):
 def _upsert_config_item_from_payload(payload, *, job=None, dry_run=False, operator='', actor=None, sync_context=None):
     if not isinstance(payload, dict):
         raise ValueError('同步数据必须是对象')
-    ci_type = _resolve_ci_type_from_payload(payload)
+    ci_type = _resolve_ci_type_from_payload(payload, user=actor)
     source = _source_values(payload, default_source_type=(job.source_type if job else 'manual'))
     if not source['source_unique_id']:
         raise ValueError('缺少来源唯一标识')
@@ -3544,7 +3564,7 @@ def _upsert_config_item_from_payload(payload, *, job=None, dry_run=False, operat
     diff = _dict_diff(before, after_preview)
     if dry_run:
         relation_summary = (
-            _sync_relations_from_payload(config_item, payload, job=job, source=source, operator=operator, dry_run=True)
+            _sync_relations_from_payload(config_item, payload, job=job, source=source, operator=operator, dry_run=True, user=actor)
             if config_item is not None
             else {'total': len(_sync_relation_hint_rows(payload)), 'created': 0, 'skipped': 0, 'failed': 0, 'relations': [], 'errors': []}
         )
@@ -3599,6 +3619,7 @@ def _upsert_config_item_from_payload(payload, *, job=None, dry_run=False, operat
             job=job,
             source=source,
             operator=operator,
+            user=actor,
         )
     after = _config_item_snapshot(config_item)
     diff = _dict_diff(before, after)
@@ -3917,7 +3938,10 @@ def _due_collection_jobs():
             continue
         seen_job_keys.add(job_key)
         next_run_at = _collection_next_run_at(job)
-        if next_run_at is not None and next_run_at > now:
+        if next_run_at is None:
+            # 未配置采集间隔（interval<=0）的调度任务不应被每轮轮询当作“已到期”重复执行。
+            continue
+        if next_run_at > now:
             continue
         due_jobs.append(job)
     return due_jobs
@@ -4074,14 +4098,23 @@ def _items_for_bulk_import(request_data=None):
     if items is None:
         text = request_data.get('text') or request_data.get('csv_text') or ''
         import_format = (request_data.get('format') or '').strip().lower()
-        if import_format == 'csv' or text.lstrip().splitlines()[:1] and ',' in text.lstrip().splitlines()[0]:
+        if import_format == 'json':
+            try:
+                items = json.loads(text)
+            except ValueError as exc:
+                raise ValueError('导入内容需要是合法的 JSON 数组') from exc
+        elif import_format == 'csv':
             items = _parse_csv_import_items(text)
         elif text.strip():
-            try:
-                parsed = json.loads(text)
-            except ValueError as exc:
-                raise ValueError('导入内容需要是 JSON 数组或带表头的 CSV 文本') from exc
-            items = parsed
+            # 无显式 format 时才做启发式：先按 JSON 起始符判定，避免单行 JSON 被当成 CSV。
+            stripped = text.lstrip()
+            if stripped.startswith(('[', '{')):
+                try:
+                    items = json.loads(text)
+                except ValueError as exc:
+                    raise ValueError('导入内容需要是 JSON 数组或带表头的 CSV 文本') from exc
+            else:
+                items = _parse_csv_import_items(text)
         else:
             items = []
     if not isinstance(items, list):
@@ -4230,9 +4263,9 @@ def _sample_value_for_import_field(field):
     if field.field_type == 'boolean':
         return 'true'
     if field.field_type == 'date':
-        return timezone.now().date().isoformat()
+        return timezone.localdate().isoformat()
     if field.field_type == 'datetime':
-        return timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+        return timezone.localtime().strftime('%Y-%m-%d %H:%M:%S')
     if field.field_type == 'json':
         return '{}'
     if field.options:
@@ -4994,6 +5027,7 @@ def _run_sync_items(job, items, operator='', user=None, create_missing_archive_c
             job=job,
             source=result['source'],
             operator=operator,
+            user=user,
         )
         resolved_count = retry_summary.get('created', 0) + retry_summary.get('skipped', 0)
         if retry_summary.get('created'):
@@ -5008,7 +5042,9 @@ def _run_sync_items(job, items, operator='', user=None, create_missing_archive_c
         after['_sync_relations'] = merged_summary
         record.after = after
         record.save(update_fields=['after'])
-    if create_missing_archive_candidates:
+    # 本次批次有失败/冲突时不能把「没同步到」当作「源端已删除」：
+    # 那会把一条校验失败的资产误判缺失并置为下线。
+    if create_missing_archive_candidates and not (summary.get('fail') or summary.get('conflict')):
         archive_records = _create_archive_candidates_for_full_sync(job, seen_sources, batch_id=batch_id)
         if archive_records:
             summary['archive_candidate'] += len(archive_records)
@@ -5141,7 +5177,7 @@ def _mark_sync_record_relation_retry(record, relation_summary, retry_summary, op
     ])
 
 
-def _retry_sync_record_relations(record, *, job, operator=''):
+def _retry_sync_record_relations(record, *, job, operator='', user=None):
     initial_summary = _sync_record_relation_summary(record)
     payload = record.after if isinstance(record.after, dict) else {}
     retry_payload = _sync_relation_failed_hint_payload(payload, initial_summary)
@@ -5154,6 +5190,7 @@ def _retry_sync_record_relations(record, *, job, operator=''):
         job=job,
         source=_source_values(payload, default_source_type=job.source_type),
         operator=operator,
+        user=user,
     )
     merged_summary = _sync_relation_merge_retry_summary(initial_summary, retry_summary)
     _mark_sync_record_relation_retry(record, merged_summary, retry_summary, operator=operator)
@@ -6001,8 +6038,8 @@ class ConfigItemViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             )
             bucket['count'] += 1
         by_type = sorted(by_type_map.values(), key=lambda entry: entry['count'], reverse=True)
-        by_status = dict(qs.values_list('status').annotate(count=Count('id')))
-        by_env = dict(qs.values_list('environment').annotate(count=Count('id')))
+        by_status = dict(qs.order_by().values_list('status').annotate(count=Count('id')))
+        by_env = dict(qs.order_by().values_list('environment').annotate(count=Count('id')))
         return Response({
             'total': qs.count(),
             'by_type': by_type,
@@ -7539,6 +7576,8 @@ class CISyncJobViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         try:
             items = _items_for_sync_job(job, request.data)
         except ValueError as exc:
+            # 参数/账号解析失败时也要把 job 落回失败态，避免永久停在 running。
+            _mark_sync_job_collection_failed(job, exc, batch_id=batch_id)
             return Response({'detail': str(exc)}, status=400)
         except Exception as exc:
             result = _mark_sync_job_collection_failed(job, exc, batch_id=batch_id)
@@ -7662,14 +7701,17 @@ class CISyncJobViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         records = []
         if failed_records:
             failed_payloads = [record.after for record in failed_records]
-            result = _run_sync_items(job, failed_payloads, operator=operator, user=request.user)
+            result = _run_sync_items(
+                job, failed_payloads, operator=operator, user=request.user,
+                create_missing_archive_candidates=False,
+            )
             _mark_failed_records_from_retry_result(failed_records, result['records'][:len(failed_records)], operator=operator)
             for key, value in result['summary'].items():
                 summary[key] += value
             records.extend(result['records'])
 
         for record in relation_records:
-            result = _retry_sync_record_relations(record, job=job, operator=operator)
+            result = _retry_sync_record_relations(record, job=job, operator=operator, user=request.user)
             if result.get('skipped'):
                 skipped_count += 1
                 continue
@@ -7937,7 +7979,10 @@ class CISyncRecordViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
         if not isinstance(record.after, dict) or not record.after:
             return Response({'detail': '同步记录缺少可重试的原始数据'}, status=400)
         operator = getattr(request.user, 'username', '')
-        result = _run_sync_items(record.job, [record.after], operator=operator, user=request.user)
+        result = _run_sync_items(
+            record.job, [record.after], operator=operator, user=request.user,
+            create_missing_archive_candidates=False,
+        )
         _mark_sync_record_retry(record, result['records'][0] if result['records'] else None, operator=operator)
         return Response({
             'summary': result['summary'],
@@ -9239,28 +9284,45 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         before = _resource_request_snapshot(obj)
         specs = dict(obj.specs or {})
         previous = specs.get('provisioning') if isinstance(specs.get('provisioning'), dict) else {}
-        specs['provisioning'] = {
-            **previous,
-            'status': 'running',
-            'operator': operator,
-            'started_at': timezone.now().isoformat(),
-            'attempts': int(previous.get('attempts') or 0) + 1,
-            'error': '',
+        # 云侧已经建出来的实例：失败重试时只能补入库，绝不能再建一批。
+        reusable_resources = [
+            item for item in (previous.get('resources') or [])
+            if isinstance(item, dict) and item.get('instance_id')
+        ]
+        running_specs = {
+            **specs,
+            'provisioning': {
+                **previous,
+                'status': 'running',
+                'operator': operator,
+                'started_at': timezone.now().isoformat(),
+                'attempts': int(previous.get('attempts') or 0) + 1,
+                'error': '',
+            },
         }
-        obj.status = 'provisioning'
-        obj.specs = specs
-        obj.save(update_fields=['status', 'specs', 'updated_at'])
+        # 原子占位：并发/连点只能有一个请求进入交付，其余直接 409。
+        claimed = ResourceRequest.objects.filter(
+            pk=obj.pk, status__in=['approved', 'failed']
+        ).update(status='provisioning', specs=running_specs, updated_at=timezone.now())
+        if not claimed:
+            return Response({'detail': '该申请正在交付中，请刷新后查看结果'}, status=409)
+        obj.refresh_from_db()
         _record_request_change(
             obj,
-            'request_provision_start',
+            'request_provision_resume' if reusable_resources else 'request_provision_start',
             before,
             _resource_request_snapshot(obj),
             operator=operator,
         )
 
+        credential = None
         resources = []
         try:
-            credential, resources = provision_resource_request(obj)
+            if reusable_resources:
+                # 复用已创建的实例，只补齐 CMDB 资产与主机台账。
+                resources = reusable_resources
+            else:
+                credential, resources = provision_resource_request(obj)
             with transaction.atomic():
                 obj.refresh_from_db()
                 specs = dict(obj.specs or {})
@@ -9280,16 +9342,26 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                     }
                     for item in resources
                 ]
-                specs['provisioning'] = {
+                provision_meta = {
                     **(specs.get('provisioning') or {}),
                     'status': 'success',
                     'completed_at': timezone.now().isoformat(),
-                    'credential_id': credential.id,
-                    'credential_name': credential.name,
-                    'provider': credential.provider,
                     'resources': resources,
                     'error': '',
                 }
+                if credential is not None:
+                    provision_meta.update({
+                        'credential_id': credential.id,
+                        'credential_name': credential.name,
+                        'provider': credential.provider,
+                    })
+                else:
+                    provision_meta.update({
+                        'credential_id': previous.get('credential_id'),
+                        'credential_name': previous.get('credential_name'),
+                        'provider': previous.get('provider') or specs.get('provider') or '',
+                    })
+                specs['provisioning'] = provision_meta
                 obj.specs = specs
                 self._sync_request_to_host_assets(
                     obj,

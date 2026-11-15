@@ -1,4 +1,4 @@
-﻿from rest_framework import viewsets, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -140,6 +140,23 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         order.review_comment = request.data.get('comment', '')
         order.reviewed_at = timezone.now()
         order.save()
+        record_event(
+            request=request,
+            module='sqlaudit',
+            category='workflow',
+            action='approve',
+            title='审核通过 SQL 工单',
+            summary=f'SQL 工单 {order.title} 已审核通过',
+            result=EventRecord.RESULT_SUCCESS,
+            severity=EventRecord.SEVERITY_INFO,
+            resource_type='sql_order',
+            resource_id=order.id,
+            resource_name=order.title,
+            application=order.database,
+            correlation_id=f'sql-order:{order.id}',
+            related_resources=[build_resource('sqlaudit', 'sql_datasource', order.datasource_id, order.datasource.name)],
+            metadata={'database': order.database},
+        )
         return Response(SqlOrderSerializer(order).data)
 
     @action(detail=True, methods=['post'])

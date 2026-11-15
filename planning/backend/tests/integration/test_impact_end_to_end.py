@@ -5,7 +5,7 @@
 域层用例证明「diff 算得对」，服务层用例证明「失败时说什么」。
 这里证明的是**真数据上的数字**，以及一件域层测不到的事：
 
-**拖一台设备会改掉别人 91 行。**
+**拖一台设备会改掉别人 84 行。**
 
 这条数字是 v0.12 的存在理由。它不是估算 —— 是把 `N02-01-S0` 从
 通道2 机柜1 挪到机柜5 之后，逐行比出来的真实结果。锁住它有两个作用：
@@ -14,7 +14,7 @@
 
 ## 为什么用真实意图文件
 
-合成意图只有两三行，算不出「91 行」。而 91 这个数是产品要对用户
+合成意图只有两三行，算不出「84 行」。而 84 这个数是产品要对用户
 说清楚的事实 —— 它决定了「拖动要不要先问一句」。
 """
 
@@ -64,7 +64,9 @@ CROSS_RACK = {
     "channel": 2,
     "rack": 1,
     "instance": "计算节点A（ARM）",
-    "newU": 3,
+    # 目的 U 位必须空闲：机柜5 的 U3-4 已被 N02-05-S0（同型号）占用，
+    # 拖进去属于真实重叠，现在会被拒绝。U35-36 是空闲位。
+    "newU": 35,
     "currentU": 3,
     "targetRack": 5,
 }
@@ -73,8 +75,8 @@ CROSS_RACK = {
 class TestDryRun:
     """干跑端点：不改 doc，只报影响面。"""
 
-    def test_reports_91_port_changes(self, client: TestClient, doc: dict) -> None:
-        """★ 跨柜拖一台 = 91 行端口号变了，涉及 7 台交换机。
+    def test_reports_port_changes(self, client: TestClient, doc: dict) -> None:
+        """★ 跨柜拖一台 = 84 行端口号变了，涉及 7 台交换机。
 
         这个数字是可复现的事实，不是上限也不是估计。它由端口分配规则
         决定：组 = (交换机型号, 实例名, 对端型号)，组内按
@@ -89,7 +91,7 @@ class TestDryRun:
         payload = res.json()
         assert payload["ok"] is True, payload["error"]
         assert payload["hasHiddenImpact"] is True
-        assert payload["counts"]["portChanges"] == 91
+        assert payload["counts"]["portChanges"] == 84
         assert payload["counts"]["affectedSwitches"] == 7
         assert payload["counts"]["added"] == 0
         assert payload["counts"]["removed"] == 0
@@ -146,7 +148,7 @@ class TestDeepFlag:
         assert payload["lengthChecked"] is False
         assert payload["counts"]["lengthChanges"] == 0
         # 端口与位置照样报 —— 只有线长被跳过
-        assert payload["counts"]["portChanges"] == 91
+        assert payload["counts"]["portChanges"] == 84
         assert payload["counts"]["positionChanges"] == 7
 
     def test_deep_true_is_default(self, client: TestClient, doc: dict) -> None:
@@ -178,6 +180,20 @@ class TestFailure:
         assert all(v == 0 for v in payload["counts"].values()), payload["counts"]
         assert payload["hasHiddenImpact"] is False
 
+    def test_cross_rack_into_occupied_slot_is_rejected(self, client: TestClient, doc: dict) -> None:
+        """★ 跨柜拖进已被同型号邻居占用的 U 段必须拒绝。
+
+        旧实现按「同型号 + 原 U 位」把目的柜的邻居误当成自己剔掉，
+        导致两台设备叠在同一 U 段却报成功。
+        """
+        payload = client.post(
+            "/api/intent/impact",
+            json={"doc": doc, "move": {**CROSS_RACK, "newU": 3}},
+        ).json()
+        assert payload["ok"] is False
+        assert payload["error"]
+        assert "已被占用" in payload["error"]
+
     def test_unknown_device_failure(self, client: TestClient, doc: dict) -> None:
         payload = client.post(
             "/api/intent/impact",
@@ -203,7 +219,7 @@ class TestMoveCarriesImpact:
         assert res.status_code == 200
         payload = res.json()
         assert payload["ok"] is True
-        assert payload["impact"]["counts"]["portChanges"] == 91
+        assert payload["impact"]["counts"]["portChanges"] == 84
         # 与干跑端点算出来的必须一致，否则界面上「预览」和「实际」会打架
         dry = client.post(
             "/api/intent/impact", json={"doc": doc, "move": CROSS_RACK}
@@ -267,7 +283,7 @@ class TestSmallMoves:
         """同一槽位内挪 2U（3→5）：端口不变、线长不变。
 
         这条守的是「提示不能滥用」：如果每次拖动都报一堆影响，
-        用户很快学会无视它，那 91 行那次也就没人看了。
+        用户很快学会无视它，那 84 行那次也就没人看了。
         """
         payload = client.post(
             "/api/intent/impact",

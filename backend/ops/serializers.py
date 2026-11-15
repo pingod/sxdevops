@@ -128,7 +128,15 @@ def validate_host_task_payload(task_type, payload):
 
 def normalize_schedule_hosts(value):
     value = value or []
-    return list(dict.fromkeys(int(item) for item in value if item))
+    normalized = []
+    for item in value:
+        if item in (None, ''):
+            continue
+        try:
+            normalized.append(int(item))
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({'target_host_ids': '主机 ID 必须是整数'}) from None
+    return list(dict.fromkeys(normalized))
 
 
 def validate_schedule_definition(attrs, instance=None):
@@ -178,6 +186,10 @@ class HostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Host
         fields = '__all__'
+        # SSH 密码只写不读，避免列表/详情/refresh_info 响应回吐明文凭据。
+        extra_kwargs = {
+            'ssh_password': {'write_only': True, 'required': False, 'allow_blank': True},
+        }
 
     def get_environment_display(self, obj):
         return obj.get_environment_display() if obj.environment else ''

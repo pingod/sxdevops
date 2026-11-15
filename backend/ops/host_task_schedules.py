@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import math
@@ -92,9 +92,12 @@ def _expand_cron_field(field, minimum, maximum, aliases=None):
             start = _cron_value(start_text, aliases)
             end = _cron_value(end_text, aliases)
         else:
-            start = end = _cron_value(base, aliases)
+            start = _cron_value(base, aliases)
+            # 单值 + 步长（如 0/15）表示从该值起每 step 一次直到字段上限，而不是只取单值。
+            end = maximum if '/' in part else start
 
-        if aliases is CRON_WEEKDAY_ALIASES:
+        # 仅对单值归一 7→0（周日）；区间（如 0-7）需保留到后面统一归一，否则退化为只含周日。
+        if aliases is CRON_WEEKDAY_ALIASES and '-' not in base and '/' not in part:
             if start == 7:
                 start = 0
             if end == 7:

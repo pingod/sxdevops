@@ -307,7 +307,7 @@ def _build_command_text(task):
         return 'metrics: cpu/memory/disk refresh'
     if task.task_type == HostTask.TASK_RUN_PLAYBOOK:
         playbook_name = ((task.payload or {}).get('playbook_name') or '').strip() or 'inline-playbook.yml'
-        return f'ansible-playbook {playbook_name}'
+        return f'ansible-playbook {shlex.quote(playbook_name)}'
     if task.task_type == HostTask.TASK_SERVICE_STATUS:
         service_name = (task.payload or {}).get('service_name', '').strip()
         return f"systemctl status {shlex.quote(service_name)} --no-pager --lines=12"
@@ -1327,6 +1327,8 @@ def _run_k8s_pod_exec(task, cluster, target):
         'stdin': False,
         'stdout': True,
         'tty': False,
+        # websocket 通道把 _request_timeout 当 run_forever 的标量超时，不能传元组。
+        '_request_timeout': 30,
     }
     if container:
         kwargs['container'] = container

@@ -27,6 +27,7 @@ from .services import (
     _resolve_question_category_action,
     _ensure_task_draft_title,
     _is_generic_task_title,
+    _validate_mcp_stdio_command,
     get_model_provider_setup_hint,
 )
 
@@ -140,7 +141,7 @@ class AIOpsMCPServerSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         actor = getattr(self.context.get('request'), 'user', None)
         if not user_has_permissions(actor, ['aiops.config.manage']):
-            config = instance.auth_config or {}
+            config = instance.auth_config if isinstance(instance.auth_config, dict) else {}
             data['auth_config'] = {'configured': bool(config), 'allow_write': bool(config.get('allow_write'))}
             data['endpoint_or_command'] = 'configured' if instance.endpoint_or_command else ''
         return data
@@ -159,12 +160,22 @@ class AIOpsMCPServerSerializer(serializers.ModelSerializer):
         auth_config = attrs.get('auth_config')
         if auth_config is None and self.instance:
             auth_config = self.instance.auth_config
-        explicit_env = (auth_config or {}).get('env') or {}
+        explicit_env = (auth_config if isinstance(auth_config, dict) else {}).get('env') or {}
+        if not isinstance(explicit_env, dict):
+            explicit_env = {}
         blocked_keys = {'PATH', 'PATHEXT', 'PYTHONPATH', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'}
         invalid_keys = [str(key) for key in explicit_env if str(key).upper() in blocked_keys]
         if invalid_keys:
             raise serializers.ValidationError({'auth_config': f'禁止设置受保护的环境变量：{", ".join(invalid_keys)}'})
         return attrs
+
+    def validate_auth_config(self, value):
+        # JSONField 允许任意 JSON，但下游一律按对象读取；非对象会触发 AttributeError。
+        if value in (None, ''):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('auth_config 必须是 JSON 对象')
+        return value
 
     def update(self, instance, validated_data):
         if instance.is_builtin:
@@ -742,7 +753,8 @@ class AIOpsRunbookSerializer(serializers.ModelSerializer):
             'version_count', 'content', 'evidence', 'tags', 'source_refs', 'source_task', 'source_session',
             'created_by', 'updated_by', 'published_at', 'archived_at', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['version', 'version_count', 'created_by', 'updated_by', 'published_at', 'archived_at', 'created_at', 'updated_at']
+        # status 只能经 publish/archive 动作迁移，避免 PATCH 绕过版本快照与发布时间。
+        read_only_fields = ['status', 'version', 'version_count', 'created_by', 'updated_by', 'published_at', 'archived_at', 'created_at', 'updated_at']
 
     def validate(self, attrs):
         for field in ['evidence', 'tags', 'source_refs']:

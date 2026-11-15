@@ -516,6 +516,7 @@ import { Plus, Promotion, RefreshRight } from '@element-plus/icons-vue'
 import { getDockerHosts, getK8sClusters } from '@/api/modules/container'
 import { advanceDeploymentBatch, approveDeployment, createDeployment, createDeploymentApprovalFlow, deleteDeploymentApprovalFlow, getDeploymentApprovalFlows, getDeployments, getDeploymentStatus, getUsers, rejectDeployment, removeDeployment, rerunDeployment, rollbackDeployment, startDeployment, updateDeploymentApprovalFlow } from '@/api/modules/ops'
 import { getGroups, getRoles } from '@/api/modules/rbac'
+import { getResourceNodeTree } from '@/api/modules/cmdb'
 import { useAuthStore } from '@/stores/auth'
 import { WORK_ORDER_TYPE_OPTIONS, enrichWorkOrderFlows, getFlowTicketTypes, saveFlowTicketTypes } from '@/utils/workorderFlows'
 
@@ -723,13 +724,14 @@ async function fetchFlows() {
 }
 
 async function fetchLookups() {
-  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes] = await Promise.allSettled([getDockerHosts(), getK8sClusters(), getUsers(), getRoles(), getGroups()])
+  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes, resourceTreeRes] = await Promise.allSettled([getDockerHosts(), getK8sClusters(), getUsers(), getRoles(), getGroups(), getResourceNodeTree()])
   dockerHosts.value = dockerHostRes.status === 'fulfilled' ? safeList(dockerHostRes.value) : []
   clusters.value = clusterRes.status === 'fulfilled' ? safeList(clusterRes.value) : []
   users.value = userRes.status === 'fulfilled' ? safeList(userRes.value) : []
   roles.value = roleRes.status === 'fulfilled' ? safeList(roleRes.value) : []
   groups.value = groupRes.status === 'fulfilled' ? safeList(groupRes.value) : []
-  resourceTree.value = []
+  // 系统/环境下拉依赖资源树；缺了它「请选择系统」永远无法通过。
+  resourceTree.value = resourceTreeRes.status === 'fulfilled' ? safeList(resourceTreeRes.value) : []
 }
 
 const releaseDialogVisible = ref(false)

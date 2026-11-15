@@ -1852,6 +1852,9 @@ def _system_posture_time_context(params):
     end = _parse_system_posture_datetime(params.get('end') or params.get('end_time') or params.get('to')) or now
     start = _parse_system_posture_datetime(params.get('start') or params.get('start_time') or params.get('from'))
     window_text = str(params.get('window') or '').strip()
+    # window 会拼进 PromQL 的 [{window}]，只接受 <数字><单位>，否则回退到按时间范围推导，避免注入。
+    if window_text and not re.fullmatch(r'\d+[smhd]', window_text):
+        window_text = ''
     if start and start >= end:
         start = None
     if not start:
@@ -2792,7 +2795,8 @@ def _ecommerce_inventory_conflict_status(snapshot, rule_config):
         return '', '', matched_rule
     if not _config_bool(matched_rule.get('count_as_fault'), False):
         return '', matched_rule.get('warning_message') or '', matched_rule
-    if _config_bool(matched_rule.get('count_as_fault'), False) and (conflict_rate >= critical_rate or conflict_rate >= min_rate or (matched_rule.get('zero_success_is_critical') and success_rate == 0)):
+    # 到达此处已保证 conflict_rate >= min_rate；不能再以 >= min_rate 判 critical，否则 critical_rate 形同虚设。
+    if _config_bool(matched_rule.get('count_as_fault'), False) and (conflict_rate >= critical_rate or (matched_rule.get('zero_success_is_critical') and success_rate == 0)):
         return 'critical', matched_rule.get('critical_message') or matched_rule.get('warning_message') or '', matched_rule
     return '', matched_rule.get('warning_message') or '', matched_rule
 
@@ -4711,6 +4715,10 @@ def metrics_promql_query(request):
     range_query = str(request.data.get('range') or request.data.get('query_type') or '').lower() in {'1', 'true', 'range', 'query_range'}
     if request.data.get('range_query') is not None:
         range_query = bool(request.data.get('range_query'))
+    grafana_url = request.data.get('grafana_url') or ''
+    # 请求级 grafana_url 可把出站请求指向内网任意主机；只允许 Grafana 管理员覆盖。
+    if grafana_url and not user_has_permissions(request.user, ['ops.grafana.manage']):
+        grafana_url = ''
     try:
         payload = execute_promql_query(
             query,
@@ -4783,7 +4791,7 @@ def grafana_promql_query(request):
             step=request.data.get('step') or 60,
             datasource_uid=request.data.get('datasource_uid') or '',
             datasource_id=request.data.get('datasource_id') or '',
-            grafana_url=request.data.get('grafana_url') or '',
+            grafana_url=grafana_url,
             metric_datasource_id=request.data.get('metric_datasource_id') or '',
             environment=request.data.get('environment') or '',
         )
@@ -4836,6 +4844,9 @@ def observability_system_posture_history(request):
     days = (latest_day - start_day).days + 1
     force_refresh = str(request.query_params.get('refresh') or '').lower() in {'1', 'true', 'yes'}
     backfill_enabled = str(request.query_params.get('backfill') or '').lower() in {'1', 'true', 'yes'}
+    if (force_refresh or backfill_enabled) and not user_has_permissions(request.user, ['ops.observability.system_posture.manage']):
+        # refresh/backfill 会写库、删历史行并触发外部查询，不能只靠 view 权限用 GET 触发。
+        return Response({'detail': '需要系统态势管理权限才能刷新或回填历史'}, status=status.HTTP_403_FORBIDDEN)
 
     templates = _system_posture_templates()
     current_sla_by_key = {}

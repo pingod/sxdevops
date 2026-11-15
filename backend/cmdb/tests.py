@@ -637,9 +637,9 @@ class CollectedAssetEnvironmentTests(TestCase):
 class CmdbCostAnalysisTests(AuthenticatedTestCase):
     def setUp(self):
         super().setUp()
-        self.current_month = timezone.now().strftime('%Y-%m')
+        self.current_month = timezone.localdate().strftime('%Y-%m')
         self.previous_month = (
-            timezone.now().replace(day=1) - timezone.timedelta(days=1)
+            timezone.localtime().replace(day=1) - timezone.timedelta(days=1)
         ).strftime('%Y-%m')
 
         host_type = CIType.objects.create(name='Host')
@@ -3630,7 +3630,7 @@ class CmdbSearchAndSyncTests(AuthenticatedTestCase):
         )
         CIRelation.objects.create(source=payment_app, target=payment_host, relation_type='runs_on')
         CIRelation.objects.create(source=payment_app, target=hr_host, relation_type='runs_on')
-        current_month = timezone.now().strftime('%Y-%m')
+        current_month = timezone.localdate().strftime('%Y-%m')
         CostRecord.objects.create(ci=payment_host, month=current_month, amount=Decimal('1200.00'), provider='aliyun')
         CostRecord.objects.create(ci=hr_host, month=current_month, amount=Decimal('9000.00'), provider='aliyun')
         payment_log = CIChangeLog.objects.create(
@@ -6577,7 +6577,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
         )
         CICompletionIssue.objects.create(ci=ci, missing_fields=[{'code': 'owner', 'name': '负责人'}])
         CIArchiveCandidate.objects.create(ci=ci, source_type='aliyun_ecs', reason='source missing')
-        CostRecord.objects.create(ci=ci, month=timezone.now().strftime('%Y-%m'), amount=Decimal('88.00'), provider='aliyun')
+        CostRecord.objects.create(ci=ci, month=timezone.localdate().strftime('%Y-%m'), amount=Decimal('88.00'), provider='aliyun')
         job = CISyncJob.objects.create(name='删除保护同步', source_type='aliyun_ecs')
         CISyncRecord.objects.create(job=job, ci=ci, action='update', status='success', source_unique_id='i-delete-guard')
 

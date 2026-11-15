@@ -1186,12 +1186,29 @@ def sync_environment_to_cmdb(environment, operator=''):
         task.finished_at = now
         task.save(update_fields=['status', 'summary', 'result', 'finished_at'])
         return task
+    try:
+        return _sync_environment_to_cmdb_body(environment, task, operator=operator)
+    except Exception as exc:
+        task.status = 'failed'
+        task.summary = f'CMDB sync failed: {environment.name}'
+        task.result = {
+            'environment': environment.name,
+            'provider': environment.credential.provider,
+            'error': str(exc),
+        }
+        task.finished_at = timezone.now()
+        task.save(update_fields=['status', 'summary', 'result', 'finished_at'])
+        return task
+
+
+def _sync_environment_to_cmdb_body(environment, task, *, operator=''):
+    now = task.started_at or timezone.now()
     asset_qs = environment.assets.all()
     if not asset_qs.exists():
         sync_environment_inventory(environment, operator=operator or 'system', task_type='inventory')
         asset_qs = environment.assets.all()
 
-    current_month = timezone.now().strftime('%Y-%m')
+    current_month = timezone.localdate().strftime('%Y-%m')
     created_count = 0
     updated_count = 0
     for asset in asset_qs:
@@ -1239,11 +1256,10 @@ def sync_environment_to_cmdb(environment, operator=''):
                 setattr(ci, field, value)
             ci.save()
         else:
-            ci, created = ConfigItem.objects.update_or_create(
-                name=asset.name,
-                ci_type=ci_type,
-                defaults=defaults,
-            )
+            # 不能按 (name, ci_type) 归并：同名的手工 CI 或另一账号的 CI 会被静默改写。
+            # 统一按 resource_id 定位（`_find_existing_cmdb_item_for_asset`），查不到就新建。
+            ci = ConfigItem.objects.create(name=asset.name, ci_type=ci_type, **defaults)
+            created = True
         created_count += int(created)
         updated_count += int(not created)
         CostRecord.objects.update_or_create(

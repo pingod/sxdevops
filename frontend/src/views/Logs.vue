@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="logs-page">
     <section class="hero panel">
       <div>
@@ -593,11 +593,12 @@ function formatMessage(message) {
   const words = query
     .split(/\s+/)
     .filter((item) => item && !['AND', 'OR', 'NOT'].includes(item.toUpperCase()))
+    .map((item) => escapeRegex(escapeHtml(item)))
+    .filter(Boolean)
     .slice(0, 4)
-  return words.reduce(
-    (content, word) => content.replace(new RegExp(`(${escapeRegex(escapeHtml(word))})`, 'gi'), '<mark>$1</mark>'),
-    safe
-  )
+  if (!words.length) return safe
+  // 单次替换：分次 replace 会命中上一次插入的 <mark> 标签，产出畸形 HTML。
+  return safe.replace(new RegExp(`(${words.join('|')})`, 'gi'), '<mark>$1</mark>')
 }
 
 function escapeHtml(value) {

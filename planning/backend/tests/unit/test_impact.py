@@ -162,7 +162,7 @@ class TestHiddenImpact:
             channel_no=2,
             rack_no=1,
             instance="计算节点A（ARM）",
-            new_u=3,
+            new_u=35,
             current_u=3,
             target_rack_no=2,
             geometry=geo,
@@ -170,6 +170,21 @@ class TestHiddenImpact:
         assert rep.ok, rep.error
         assert rep.port_rows > 0, "换柜后端口位次应改变"
         assert rep.has_hidden_impact
+
+    def test_cross_rack_into_occupied_slot_rejected(self, doc: dict, geo) -> None:
+        """跨柜 U3 已被同型号邻居占用，必须拒绝而不是叠在一起。"""
+        rep = preview_move(
+            doc,
+            channel_no=2,
+            rack_no=1,
+            instance="计算节点A（ARM）",
+            new_u=3,
+            current_u=3,
+            target_rack_no=2,
+            geometry=geo,
+        )
+        assert not rep.ok
+        assert "已被占用" in (rep.error or "")
 
     def test_deep_false_skips_length(self, doc: dict, geo) -> None:
         """`deep=False` 不算线长，且必须标出来 —— 不能让它看起来像「没变」。
@@ -183,7 +198,7 @@ class TestHiddenImpact:
             channel_no=2,
             rack_no=1,
             instance="计算节点A（ARM）",
-            new_u=3,
+            new_u=35,
             current_u=3,
             target_rack_no=2,
             geometry=geo,
@@ -207,7 +222,7 @@ class TestHiddenImpact:
             channel_no=2,
             rack_no=1,
             instance="计算节点A（ARM）",
-            new_u=3,
+            new_u=35,
             current_u=3,
             target_rack_no=2,
             geometry=None,
@@ -229,14 +244,14 @@ class TestPayload:
         """
         rep = preview_move(
             doc, channel_no=2, rack_no=1, instance="计算节点A（ARM）",
-            new_u=3, current_u=3, target_rack_no=2, geometry=geo,
+            new_u=35, current_u=3, target_rack_no=2, geometry=geo,
         )
         assert "doc" in impact_payload(rep)
 
     def test_samples_bounded_by_limit(self, doc: dict, geo) -> None:
         rep = preview_move(
             doc, channel_no=2, rack_no=1, instance="计算节点A（ARM）",
-            new_u=3, current_u=3, target_rack_no=2, geometry=geo,
+            new_u=35, current_u=3, target_rack_no=2, geometry=geo,
         )
         p = impact_payload(rep, limit=1)
         assert len(p["portSamples"]) <= 1
@@ -247,7 +262,7 @@ class TestPayload:
     def test_counts_has_all_keys(self, doc: dict, geo) -> None:
         rep = preview_move(
             doc, channel_no=2, rack_no=1, instance="计算节点A（ARM）",
-            new_u=3, current_u=3, target_rack_no=2, geometry=geo,
+            new_u=35, current_u=3, target_rack_no=2, geometry=geo,
         )
         counts = impact_payload(rep)["counts"]
         assert set(counts) == {

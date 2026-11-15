@@ -29,6 +29,7 @@ class WebShellGuard:
         self.rules = rules
         self.buffer = ''
         self._escape = False
+        self._overflow = False
 
     def match(self, command):
         for rule, pattern in self.rules:
@@ -51,9 +52,12 @@ class WebShellGuard:
                 continue
             if char in '\r\n':
                 command = self.buffer.strip()
+                overflowed = self._overflow
                 self.buffer = ''
+                self._overflow = False
                 rule = self.match(command) if command else None
-                if rule and rule.action == ACTION_BLOCK:
+                # 缓冲溢出说明未能完整还原命令，无法可靠判定 → 一并拦截，避免超长前缀绕过规则。
+                if overflowed or (rule and rule.action == ACTION_BLOCK):
                     # 清掉远端已输入的命令，回车不下发 → 命令不执行
                     forward.append('\x15')
                     events.append({'action': ACTION_BLOCK, 'command': command, 'rule': rule})
@@ -68,11 +72,14 @@ class WebShellGuard:
                 continue
             if char in ('\x03', '\x15'):
                 self.buffer = ''
+                self._overflow = False
                 forward.append(char)
                 continue
             if char.isprintable():
                 if len(self.buffer) < MAX_COMMAND_LENGTH:
                     self.buffer += char
+                else:
+                    self._overflow = True
                 forward.append(char)
                 continue
             forward.append(char)
@@ -93,11 +100,13 @@ def load_rules():
 
 
 def blocked_message(rule, command):
-    return f'\r\n\x1b[31m[安全拦截] 命令「{command}」命中高危规则「{rule.name}」，已被阻止执行。\x1b[0m\r\n'
+    rule_name = getattr(rule, 'name', '') or '缓冲区超限'
+    return f'\r\n\x1b[31m[安全拦截] 命令「{command}」命中高危规则「{rule_name}」，已被阻止执行。\x1b[0m\r\n'
 
 
 def warn_message(rule, command):
-    return f'\r\n\x1b[33m[安全告警] 命令「{command}」命中规则「{rule.name}」，已放行并记录审计。\x1b[0m\r\n'
+    rule_name = getattr(rule, 'name', '') or '缓冲区超限'
+    return f'\r\n\x1b[33m[安全告警] 命令「{command}」命中规则「{rule_name}」，已放行并记录审计。\x1b[0m\r\n'
 
 
 _EVENT_SEVERITY = {'critical': 'danger', 'warning': 'warning', 'info': 'info'}
@@ -109,30 +118,34 @@ def handle_guard_events(events, *, user, resource_type, resource_name, send_text
     from eventwall.services import record_event
 
     for event in events:
-        rule = event['rule']
+        rule = event.get('rule')
         command = event['command']
         action = event['action']
+        rule_name = getattr(rule, 'name', '') or '缓冲区超限'
+        rule_severity = getattr(rule, 'severity', 'warning')
+        rule_pk = getattr(rule, 'pk', 0)
+        rule_pattern = getattr(rule, 'pattern', '')
         if action == ACTION_BLOCK:
             send_text(blocked_message(rule, command))
             record_event(
                 module='ops', category='security', action='webshell_block',
-                title=f'拦截高危命令：{rule.name}',
-                summary=f'命令「{command}」命中规则「{rule.name}」，已阻止执行',
-                result=EventRecord.RESULT_FAILED, severity=_EVENT_SEVERITY.get(rule.severity, 'warning'),
+                title=f'拦截高危命令：{rule_name}',
+                summary=f'命令「{command}」命中规则「{rule_name}」，已阻止执行',
+                result=EventRecord.RESULT_FAILED, severity=_EVENT_SEVERITY.get(rule_severity, 'warning'),
                 actor_username=user.username, resource_type=resource_type,
                 resource_id=resource_id, resource_name=resource_name,
-                metadata={'command': command, 'rule_id': rule.pk, 'pattern': rule.pattern},
+                metadata={'command': command, 'rule_id': rule_pk, 'pattern': rule_pattern},
             )
         elif action == ACTION_WARN:
             send_text(warn_message(rule, command))
             record_event(
                 module='ops', category='security', action='webshell_warn',
-                title=f'高危命令告警：{rule.name}',
-                summary=f'命令「{command}」命中规则「{rule.name}」，已放行并审计',
-                result=EventRecord.RESULT_SUCCESS, severity=_EVENT_SEVERITY.get(rule.severity, 'warning'),
+                title=f'高危命令告警：{rule_name}',
+                summary=f'命令「{command}」命中规则「{rule_name}」，已放行并审计',
+                result=EventRecord.RESULT_SUCCESS, severity=_EVENT_SEVERITY.get(rule_severity, 'warning'),
                 actor_username=user.username, resource_type=resource_type,
                 resource_id=resource_id, resource_name=resource_name,
-                metadata={'command': command, 'rule_id': rule.pk},
+                metadata={'command': command, 'rule_id': rule_pk},
             )
         else:
             record_event(

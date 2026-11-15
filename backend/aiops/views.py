@@ -101,6 +101,14 @@ K8S_NAMESPACE_OPTIONS_STALE_CACHE_TTL = 300
 AUDIT_RECENT_PAGE_SIZE = 20
 
 
+def _safe_pk(value):
+    """把请求里的关联 ID 安全转换为整数；非法值返回 None 而不是抛 ValueError。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class AIOpsModelProviderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     queryset = AIOpsModelProvider.objects.all()
     serializer_class = AIOpsModelProviderSerializer
@@ -779,6 +787,13 @@ class AIOpsKnowledgeEnvironmentViewSet(RBACPermissionMixin, viewsets.ModelViewSe
                 getattr(item.tracing_datasource, 'name', ''),
             )
         ]
+        can_view_docker = user_has_permissions(request.user, ['ops.docker.view'])
+        can_view_task_resources = user_has_permissions(request.user, ['ops.task.resource.view'])
+        docker_host_queryset = DockerHost.objects.order_by('name', 'id') if can_view_docker else DockerHost.objects.none()
+        task_env_queryset = (
+            TaskResourceGroup.objects.filter(group_type=TaskResourceGroup.GROUP_ENVIRONMENT).order_by('sort_order', 'name', 'id')
+            if can_view_task_resources else TaskResourceGroup.objects.none()
+        )
         k8s_clusters = [
             {
                 'id': item.id,
@@ -799,7 +814,7 @@ class AIOpsKnowledgeEnvironmentViewSet(RBACPermissionMixin, viewsets.ModelViewSe
                 'status': item.status,
                 'description': item.description,
             }
-            for item in DockerHost.objects.order_by('name', 'id')
+            for item in docker_host_queryset
             if not _is_demoish_catalog_item(item.name, item.description, item.ip_address)
         ]
         resource_counts = TaskResource.objects.values('environment_id').annotate(total=Count('id'))
@@ -814,7 +829,7 @@ class AIOpsKnowledgeEnvironmentViewSet(RBACPermissionMixin, viewsets.ModelViewSe
                 'description': item.description,
                 'resource_count': env_counts.get(item.id, 0),
             }
-            for item in TaskResourceGroup.objects.filter(group_type=TaskResourceGroup.GROUP_ENVIRONMENT).order_by('sort_order', 'name', 'id')
+            for item in task_env_queryset
         ]
 
         folder_map = {}
@@ -1643,11 +1658,11 @@ class AIOpsRunbookViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def draft(self, request):
         source_task = None
-        source_task_id = request.data.get('source_task')
+        source_task_id = _safe_pk(request.data.get('source_task'))
         if source_task_id:
             source_task = AIOpsExternalTask.objects.filter(id=source_task_id).first()
         source_session = None
-        source_session_id = request.data.get('source_session')
+        source_session_id = _safe_pk(request.data.get('source_session'))
         if source_session_id:
             source_session = AIOpsChatSession.objects.filter(id=source_session_id).first()
         runbook = build_runbook_draft_from_payload(
@@ -1672,8 +1687,8 @@ class AIOpsRunbookViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='from-session')
     def from_session(self, request):
-        source_session_id = request.data.get('source_session') or request.data.get('session_id')
-        source_session = AIOpsChatSession.objects.filter(id=source_session_id).first()
+        source_session_id = _safe_pk(request.data.get('source_session') or request.data.get('session_id'))
+        source_session = AIOpsChatSession.objects.filter(id=source_session_id).first() if source_session_id else None
         if not source_session:
             return Response({'detail': '来源会话不存在'}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -1786,12 +1801,15 @@ class AIOpsReviewKnowledgeViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         source_session = None
         source_task = None
         source_runbook = None
-        if request.data.get('source_session'):
-            source_session = AIOpsChatSession.objects.filter(id=request.data.get('source_session')).first()
-        if request.data.get('source_task'):
-            source_task = AIOpsExternalTask.objects.filter(id=request.data.get('source_task')).first()
-        if request.data.get('source_runbook'):
-            source_runbook = AIOpsRunbook.objects.filter(id=request.data.get('source_runbook')).first()
+        source_session_pk = _safe_pk(request.data.get('source_session'))
+        if source_session_pk:
+            source_session = AIOpsChatSession.objects.filter(id=source_session_pk).first()
+        source_task_pk = _safe_pk(request.data.get('source_task'))
+        if source_task_pk:
+            source_task = AIOpsExternalTask.objects.filter(id=source_task_pk).first()
+        source_runbook_pk = _safe_pk(request.data.get('source_runbook'))
+        if source_runbook_pk:
+            source_runbook = AIOpsRunbook.objects.filter(id=source_runbook_pk).first()
         if not any([source_session, source_task, source_runbook]):
             return Response({'detail': '请提供可沉淀的会话、协同任务或 Runbook 来源'}, status=status.HTTP_400_BAD_REQUEST)
         knowledge = auto_ingest_review_knowledge(
@@ -1934,7 +1952,7 @@ def bootstrap(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, build_rbac_permission('aiops.knowledge.view')])
 def knowledge_graph(request):
-    return Response(build_knowledge_graph(request.query_params))
+    return Response(build_knowledge_graph(request.query_params, user=request.user))
 
 
 @api_view(['GET', 'PUT'])

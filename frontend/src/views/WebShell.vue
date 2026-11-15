@@ -37,6 +37,7 @@ const statusText = ref('连接中...')
 let term = null
 let fitAddon = null
 let ws = null
+let resizeObserver = null
 
 // 获取主机信息
 async function fetchHostInfo() {
@@ -92,8 +93,8 @@ function initTerminal() {
   })
 
   // 监听窗口变化
-  const resizeObserver = new ResizeObserver(() => {
-    if (fitAddon) {
+  resizeObserver = new ResizeObserver(() => {
+    if (fitAddon && term && terminalRef.value) {
       fitAddon.fit()
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -119,6 +120,7 @@ function connectWebSocket() {
   }
 
   ws.onmessage = (event) => {
+    if (!term) return
     try {
       const msg = JSON.parse(event.data)
       if (msg.type === 'output') {
@@ -142,6 +144,7 @@ function connectWebSocket() {
   ws.onclose = () => {
     wsStatus.value = 'disconnected'
     statusText.value = '连接已断开'
+    if (!term) return
     term.writeln('')
     term.writeln('\x1b[1;33m⚠ 连接已断开，刷新页面可重新连接\x1b[0m')
   }
@@ -160,7 +163,16 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (ws) {
+    // 先解绑回调，避免 close 的异步事件在 term 销毁后仍写终端。
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onclose = null
+    ws.onerror = null
     ws.close()
     ws = null
   }

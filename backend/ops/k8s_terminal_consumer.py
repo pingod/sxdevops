@@ -60,6 +60,15 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
         if not can_access_k8s(token.user, self.cluster_id, shell=True):
             self.close(code=4403)
             return
+        if _is_demo(self.cluster):
+            # demo 集群没有真实 kubeconfig，起本地 shell 只会把应用主机暴露给用户。
+            self.accept()
+            self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': '演示集群不提供真实终端；请连接已配置 kubeconfig 的集群。',
+            }))
+            self.close(code=4400)
+            return
         self.user = token.user
         self.guard = WebShellGuard(load_rules())
         self.accept()
@@ -118,6 +127,49 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
         except (OSError, TypeError, ValueError):
             pass
 
+    def _sandbox_ids(self):
+        """终端进程要降到的非特权身份；拿不到就返回 None（例如本地非 root 开发）。"""
+        if os.geteuid() != 0:
+            return None
+        try:
+            import pwd
+
+            entry = pwd.getpwnam('nobody')
+            return entry.pw_uid, entry.pw_gid
+        except (ImportError, KeyError):
+            return 65534, 65534
+
+    def _sandbox_preexec(self):
+        uid_gid = getattr(self, '_sandbox_uid_gid', None)
+
+        def apply():
+            try:
+                import resource
+
+                limits = (
+                    (resource.RLIMIT_NOFILE, 512),
+                    (resource.RLIMIT_NPROC, 128),
+                    (resource.RLIMIT_CPU, K8S_CLUSTER_TERMINAL_MAX_SECONDS + 60),
+                    (resource.RLIMIT_FSIZE, 32 * 1024 * 1024),
+                )
+                for limit, value in limits:
+                    try:
+                        resource.setrlimit(limit, (value, value))
+                    except (ValueError, OSError):
+                        continue
+            except ImportError:
+                pass
+            if uid_gid is not None:
+                uid, gid = uid_gid
+                try:
+                    os.setgroups([])
+                    os.setgid(gid)
+                    os.setuid(uid)
+                except OSError:
+                    pass
+
+        return apply
+
     def _start_shell(self):
         if pty is None:
             raise RuntimeError('当前运行环境不支持交互式终端')
@@ -126,6 +178,12 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
         with open(kubeconfig_path, 'w', encoding='utf-8') as kubeconfig_file:
             kubeconfig_file.write(_prepare_kubeconfig(self.cluster) if not _is_demo(self.cluster) else '')
         os.chmod(kubeconfig_path, 0o600)
+        self._sandbox_uid_gid = self._sandbox_ids()
+        if self._sandbox_uid_gid is not None:
+            # 目录与 kubeconfig 交给非特权用户，避免它只能读 root 的临时目录。
+            uid, gid = self._sandbox_uid_gid
+            os.chown(self.temp_dir, uid, gid)
+            os.chown(kubeconfig_path, uid, gid)
 
         master_fd, slave_fd = pty.openpty()
         self.master_fd = master_fd
@@ -148,6 +206,7 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             cwd=self.temp_dir,
             env=env,
             close_fds=True,
+            preexec_fn=self._sandbox_preexec(),
         )
         os.close(slave_fd)
         self._resize(120, 36)
@@ -160,8 +219,6 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             'message': f'已连接 {self.cluster.name}；当前 Shell 已绑定该集群的 kubeconfig。',
         }))
         threading.Thread(target=self._read_output, daemon=True).start()
-        if _is_demo(self.cluster):
-            self._write_line('echo "Demo cluster shell: local commands are available; kubectl requires a real kubeconfig."')
 
     def _write_line(self, command):
         if self.master_fd is not None:

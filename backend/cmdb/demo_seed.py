@@ -20,7 +20,7 @@ def _log(stdout, message):
 
 
 def _months(limit=6):
-    base = timezone.now().replace(day=1)
+    base = timezone.localtime().replace(day=1)
     months = []
     for _ in range(limit):
         months.append(base.strftime('%Y-%m'))
