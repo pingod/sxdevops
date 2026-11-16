@@ -319,6 +319,14 @@ import TraceObservability from './TraceObservability.vue'
 
 const route = useRoute()
 const router = useRouter()
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 const chartRef = ref(null)
 const graphPanelRef = ref(null)
 const graphPanelShellRef = ref(null)
@@ -1061,9 +1069,12 @@ function buildOption() {
       textStyle: { color: '#0f172a' },
       extraCssText: 'box-shadow:0 18px 30px rgba(15,23,42,.12);border-radius:12px;padding:10px 12px;',
       formatter: params => {
-        if (params.dataType === 'edge') return `${params.data.edge.label}<br/>${params.data.source} -> ${params.data.target}`
+        // 节点/描述来自资产与 K8s 名称，tooltip 默认按 HTML 渲染，必须转义。
+        if (params.dataType === 'edge') {
+          return `${escapeHtml(params.data.edge.label)}<br/>${escapeHtml(params.data.source)} -> ${escapeHtml(params.data.target)}`
+        }
         const node = params.data.node || {}
-        return `${node.label}<br/>${node.category || node.kind}<br/>${node.description || ''}`
+        return `${escapeHtml(node.label)}<br/>${escapeHtml(node.category || node.kind)}<br/>${escapeHtml(node.description || '')}`
       },
     },
     series: [{

@@ -451,7 +451,8 @@ function onTargetChange(target) {
 }
 
 async function saveRule() {
-  await ruleFormRef.value.validate()
+  const valid = await ruleFormRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
     const payload = { ...ruleForm, device: ruleForm.device || null }
@@ -471,7 +472,11 @@ async function saveRule() {
 }
 
 async function removeRule(row) {
-  await ElMessageBox.confirm(`确认删除规则 ${row.name}？`, '删除规则', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  try {
+    await ElMessageBox.confirm(`确认删除规则 ${row.name}？`, '删除规则', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  } catch {
+    return
+  }
   try {
     await deleteNetworkAlertRule(row.id)
     ElMessage.success('规则已删除')

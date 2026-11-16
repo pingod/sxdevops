@@ -534,8 +534,8 @@
                   </div>
                   <div v-if="row.language || row.repo || row.endpoint || row.description" class="opsany-app-techline">
                     <span v-if="row.language">技术栈：{{ row.language }}</span>
-                    <a v-if="row.repo" :href="row.repo" target="_blank" rel="noreferrer" @click.stop>代码仓库</a>
-                    <a v-if="row.endpoint" :href="row.endpoint" target="_blank" rel="noreferrer" @click.stop>访问入口</a>
+                    <a v-if="row.repo && safeExternalHref(row.repo)" :href="safeExternalHref(row.repo)" target="_blank" rel="noreferrer" @click.stop>代码仓库</a>
+                    <a v-if="row.endpoint && safeExternalHref(row.endpoint)" :href="safeExternalHref(row.endpoint)" target="_blank" rel="noreferrer" @click.stop>访问入口</a>
                     <span v-if="row.description" class="opsany-app-description">{{ row.description }}</span>
                   </div>
                   <div class="opsany-app-health">
@@ -1957,8 +1957,8 @@
               <el-table-column v-if="canManageCi || canSubmitRequest" label="操作" width="210" fixed="right" align="left">
                 <template #default="{ row }">
                   <el-button v-if="isCapacityRisk(row) && canCreateCapacityRequest(row)" link type="primary" @click="openCapacityRequestDialog(row)">申请扩容</el-button>
-                  <el-button link type="primary" @click="openMetricDialog(row)">编辑</el-button>
-                  <el-button link type="danger" @click="deleteMetricRow(row)">删除</el-button>
+                  <el-button v-if="canManageCi" link type="primary" @click="openMetricDialog(row)">编辑</el-button>
+                  <el-button v-if="canManageCi" link type="danger" @click="deleteMetricRow(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -5072,6 +5072,11 @@ const ledgerViewMode = ref('business')
 const ledgerTreeContext = ref(null)
 const ledgerTreeKeyword = ref('')
 let ledgerTreeRequestSeq = 0
+let ledgerRequestSeq = 0
+let ciDetailRequestSeq = 0
+let modelResourceRequestSeq = 0
+let sourceMappingRequestSeq = 0
+let viewsSummaryRequestSeq = 0
 const modelCatalogTreeMode = ref('business')
 const modelCatalogTreeContext = ref(null)
 const modelCatalogTreeKeyword = ref('')
@@ -8738,7 +8743,7 @@ const bulkRelationSuggestions = computed(() => {
 const islandSummaryCards = computed(() => {
   const summary = islandAnalysis.value.summary || {}
   if (governanceScopeContext.value) {
-    const rows = filteredIslandRows.value
+    const rows = islandRows.value
     const countByType = (type) => rows.filter(item => item.issue_type === type).length
     const autoCount = rows.filter(item => islandCanAutoCreate(item)).length
     const manualCount = rows.filter(item => islandNeedsManualRelation(item)).length
@@ -10692,12 +10697,25 @@ const ciDetailSourceText = computed(() => {
   return Array.from(new Set(sources)).join('、') || '-'
 })
 
+function escapeCmdbHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 function normalizeWebAddress(value) {
   const address = String(value || '').trim()
   if (!address) return ''
   if (/^https?:\/\//i.test(address)) return address
   if (/^[a-z][a-z0-9+.-]*:/i.test(address)) return ''
   return `https://${address}`
+}
+
+function safeExternalHref(value) {
+  // 资产属性里的仓库/入口地址可能来自云标签，禁止 javascript: 等可执行协议。
+  return normalizeWebAddress(value)
 }
 
 function openCiDetailWebAddress() {
@@ -10756,20 +10774,21 @@ function renderCiDetailWaterlineChart() {
       borderWidth: 0,
       textStyle: { color: '#f8fafc' },
       formatter: (items) => {
-        const time = items?.[0]?.data?.[0] ? formatTime(items[0].data[0]) : '-'
+        // ECharts 默认按 HTML 渲染 tooltip；来源/单位来自资产属性，必须转义。
+        const time = items?.[0]?.data?.[0] ? escapeCmdbHtml(formatTime(items[0].data[0])) : '-'
         const rows = items.map(item => {
           const snapshot = item.data?.[2]
           const value = snapshot?.usage_percent === null || snapshot?.usage_percent === undefined || snapshot?.usage_percent === ''
             ? formatMetricValue(snapshot)
             : formatPercent(snapshot.usage_percent)
-          return `${item.marker}${item.seriesName}：${value}`
+          return `${item.marker}${escapeCmdbHtml(item.seriesName)}：${escapeCmdbHtml(value)}`
         })
         const sourceLabel = resourceWaterlineSourceLabel([
           ...items.map(item => item.data?.[2]?.source),
           ciDetail.value?.attributes?.metric_collection_source,
           ciDetail.value?.attributes?.metric_datasource,
         ])
-        return [time, ...rows, `采集来源：${sourceLabel}`].join('<br/>')
+        return [time, ...rows, `采集来源：${escapeCmdbHtml(sourceLabel)}`].join('<br/>')
       },
     },
     xAxis: {
@@ -11636,15 +11655,18 @@ async function fetchRepositorySummary() {
 
 async function fetchViewsSummary() {
   if (!canViewCi.value) return
+  const seq = ++viewsSummaryRequestSeq
   viewsLoading.value = true
   try {
     const params = {}
     Object.entries(viewFilters).forEach(([key, value]) => {
       if (value) params[key] = value
     })
-    viewsSummary.value = await getCmdbViewsSummary(params)
+    const summary = await getCmdbViewsSummary(params)
+    if (seq !== viewsSummaryRequestSeq) return
+    viewsSummary.value = summary
   } finally {
-    viewsLoading.value = false
+    if (seq === viewsSummaryRequestSeq) viewsLoading.value = false
   }
 }
 
@@ -11725,6 +11747,7 @@ async function fetchLedger(options = {}) {
   }
   const { preservePage = false, refreshTree = true } = options || {}
   if (!preservePage) ledgerPagination.page = 1
+  const requestSeq = ++ledgerRequestSeq
   ledgerLoading.value = true
   try {
     const params = {
@@ -11737,12 +11760,14 @@ async function fetchLedger(options = {}) {
       fetchLedgerTree()
     }
     const response = await getConfigItems(params)
+    // 快速切换筛选时，慢的旧请求不能覆盖新结果。
+    if (requestSeq !== ledgerRequestSeq) return
     ledgerItems.value = withoutHiddenCiTypes(response)
     ledgerPagination.total = totalOf(response, ledgerItems.value.length)
     ledgerSelection.value = []
     await fetchThirdPartyExpirySummary()
   } finally {
-    ledgerLoading.value = false
+    if (requestSeq === ledgerRequestSeq) ledgerLoading.value = false
   }
 }
 
@@ -11971,11 +11996,14 @@ function currentSourceMappingParams() {
 
 async function fetchSourceMappings() {
   if (!canViewSync.value) return
+  const requestSeq = ++sourceMappingRequestSeq
   sourceMappingLoading.value = true
   try {
-    sourceMappings.value = listOf(await getSourceMappings(currentSourceMappingParams()))
+    const response = await getSourceMappings(currentSourceMappingParams())
+    if (requestSeq !== sourceMappingRequestSeq) return
+    sourceMappings.value = listOf(response)
   } finally {
-    sourceMappingLoading.value = false
+    if (requestSeq === sourceMappingRequestSeq) sourceMappingLoading.value = false
   }
 }
 
@@ -12817,6 +12845,7 @@ function openRepositoryModel(row) {
 function currentLedgerParams() {
   const params = {}
   const allowedKeys = new Set([
+    'search',
     'asset_search',
     'attribute_search',
     'status',
@@ -14153,6 +14182,7 @@ async function fetchModelResources(modelId = selectedModelId.value, options = {}
   }
   const { preservePage = false } = options || {}
   if (!preservePage) modelResourcePagination.page = 1
+  const requestSeq = ++modelResourceRequestSeq
   modelResourceLoading.value = true
   try {
     const response = await getConfigItems({
@@ -14161,11 +14191,12 @@ async function fetchModelResources(modelId = selectedModelId.value, options = {}
       ...currentModelResourceParams(modelId),
       ...modelCatalogContextParams(),
     })
+    if (requestSeq !== modelResourceRequestSeq) return
     modelResourceItems.value = withoutHiddenCiTypes(response)
     modelResourcePagination.total = totalOf(response, modelResourceItems.value.length)
     await fetchModelThirdPartyExpirySummary(modelId)
   } finally {
-    modelResourceLoading.value = false
+    if (requestSeq === modelResourceRequestSeq) modelResourceLoading.value = false
   }
 }
 
@@ -14638,7 +14669,8 @@ async function saveConfigItem() {
       description: ciForm.description || '',
     }
     if (ciForm.monthly_cost === null || ciForm.monthly_cost === undefined || ciForm.monthly_cost === '') {
-      delete attributes.monthly_cost
+      // 后端更新是“合并属性”，删除键不会生效，必须显式写 null 才能清空月成本。
+      attributes.monthly_cost = null
     } else {
       attributes.monthly_cost = Number(ciForm.monthly_cost)
     }
@@ -14656,6 +14688,12 @@ async function saveConfigItem() {
       tags: ciForm.tags || [],
       attributes,
     }
+    if (!ciForm.business_node) {
+      // 没有资源树节点的主机（资源底座/云同步写入）依赖文本字段；只提交 null 节点
+      // 会让后端把 business_line/environment 清空。
+      payload.business_line = ciForm.business_line || ''
+      if (!ciForm.environment_node) payload.environment = ciForm.environment || ''
+    }
     if (ciEditingId.value) {
       const updated = await updateConfigItem(ciEditingId.value, payload)
       ciDetail.value = ciDetail.value?.id === updated.id ? updated : ciDetail.value
@@ -14665,7 +14703,12 @@ async function saveConfigItem() {
       ElMessage.success('配置项已创建')
     }
     ciDialogVisible.value = false
-    await Promise.all([fetchLedger(), fetchDashboard(), fetchGovernance(), fetchTags()])
+    const refreshTasks = [fetchLedger(), fetchDashboard(), fetchGovernance(), fetchTags()]
+    if (isModelDetailRoute.value && selectedModelId.value) {
+      // 模型详情页的资产表来自 modelResourceItems，编辑后必须一起刷新。
+      refreshTasks.push(fetchModelResources(selectedModelId.value, { preservePage: true }))
+    }
+    await Promise.all(refreshTasks)
     if (ciDetailVisible.value && ciDetail.value?.id) await openCiDetail(ciDetail.value, false)
   } finally {
     saving.value = false
@@ -14784,6 +14827,12 @@ async function restoreConfigItemStatus(row) {
 }
 
 async function openCiDetail(row, showDrawer = true) {
+  if (!row?.id) return
+  if (!canViewCi.value) {
+    ElMessage.info('当前账号没有资产详情查看权限')
+    return
+  }
+  const seq = ++ciDetailRequestSeq
   if (showDrawer) ciDetailVisible.value = true
   disposeCiDetailWaterlineChart()
   ciDetailLoading.value = true
@@ -14818,6 +14867,7 @@ async function openCiDetail(row, showDrawer = true) {
       costTask,
       metricTask,
     ])
+    if (seq !== ciDetailRequestSeq) return
     if (detailRes.status === 'fulfilled') ciDetail.value = detailRes.value
     ciDetailMappings.value = mappingRes.status === 'fulfilled' ? listOf(mappingRes.value) : []
     ciDetailChangeLogs.value = changeRes.status === 'fulfilled' ? listOf(changeRes.value) : []
@@ -14827,8 +14877,10 @@ async function openCiDetail(row, showDrawer = true) {
     await nextTick()
     renderCiDetailWaterlineChart()
   } finally {
-    ciDetailLoading.value = false
-    ciDetailCostLoading.value = false
+    if (seq === ciDetailRequestSeq) {
+      ciDetailLoading.value = false
+      ciDetailCostLoading.value = false
+    }
   }
 }
 
@@ -16232,9 +16284,11 @@ function normalizeFieldOptions(options) {
   return (Array.isArray(options) ? options : []).map((item) => {
     if (item && typeof item === 'object') {
       const label = item.label ?? item.name ?? item.value ?? item.key ?? ''
-      return { label: String(label) }
+      // 保留原始 value（如内置枚举的 Running/Stopped），直接丢弃会导致保存时被判定为篡改选项。
+      const value = item.value ?? item.key ?? label
+      return { value: String(value), label: String(label) }
     }
-    return { label: String(item ?? '') }
+    return { value: String(item ?? ''), label: String(item ?? '') }
   })
 }
 
@@ -16275,7 +16329,9 @@ async function saveField() {
       required: fieldForm.required,
       unique: fieldForm.unique,
       is_display: fieldForm.is_display,
-      options: isEnumFieldType(fieldForm.field_type) ? options.map(option => ({ value: option.label.trim(), label: option.label.trim() })) : [],
+      options: isEnumFieldType(fieldForm.field_type)
+        ? options.map(option => ({ value: (option.value || option.label).trim(), label: option.label.trim() }))
+        : [],
       sync_mode: fieldForm.sync_mode || 'source',
       sort_order: fieldForm.sort_order,
       is_active: fieldForm.is_active,

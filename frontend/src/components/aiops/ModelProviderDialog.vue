@@ -130,7 +130,7 @@ watch(visible, (open) => {
   if (!open) { form.api_key = ''; return }
   Object.keys(form).forEach(key => delete form[key])
   Object.assign(form, {
-    name: '', provider_type: 'openai_compatible', provider_preset: '', base_url: '', api_key: '',
+    name: '', provider_type: 'openai_compatible', provider_preset: '', base_url: '',
     default_model: '', backup_model: '', temperature: 0.2, max_tokens: 10000, timeout_seconds: 30,
     price_currency: 'CNY', input_token_price_per_1m: 0, output_token_price_per_1m: 0, is_enabled: true,
     ...props.provider, api_key: '',

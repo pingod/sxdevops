@@ -1823,7 +1823,7 @@ async function fetchStats() {
 async function fetchTemplates() {
   templateLoading.value = true
   try {
-    const res = await getHostTaskTemplates()
+    const res = await getHostTaskTemplates({ page_size: 500 })
     templates.value = res.results || res || []
   } catch (error) {
     ElMessage.error(ui.loadTemplatesFailed)

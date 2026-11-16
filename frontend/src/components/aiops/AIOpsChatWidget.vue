@@ -2025,7 +2025,8 @@ function findProcessingAssistant(list = messages.value) {
 }
 
 async function refreshSessionListOnly() {
-  const response = await getAIOpsSessions()
+  // 侧栏不提供翻页；默认分页只有 20 条，会让更早的会话“消失”并被误判为已删除。
+  const response = await getAIOpsSessions({ page_size: 200 })
   sessions.value = response.results || response || []
 }
 
@@ -2285,12 +2286,10 @@ async function handleSend() {
   }
 
   const rawContent = composer.value
-  const sessionId = await ensureSession()
-  const content = buildQuestionPayload(rawContent)
-
-  composer.value = ''
-  persistDraft(sessionId, '')
+  // 先置位，避免 ensureSession() 的建会话请求期间重复点击/回车开启第二个会话。
   loading.value.send = true
+  let sessionId = currentSessionId.value
+  const content = buildQuestionPayload(rawContent)
   pendingAssistantMessage.value = {
     localKey: `pending-${Date.now()}`,
     role: 'assistant',
@@ -2299,10 +2298,12 @@ async function handleSend() {
     created_at: new Date().toISOString(),
   }
 
-  await nextTick()
-  scrollToBottom(true)
-
   try {
+    sessionId = await ensureSession()
+    composer.value = ''
+    persistDraft(sessionId, '')
+    await nextTick()
+    scrollToBottom(true)
     const response = await sendAIOpsMessageAsync(sessionId, {
       content,
       model: selectedModel.value,
@@ -2310,6 +2311,10 @@ async function handleSend() {
       question_category: questionCategory.value,
       page_context: buildPageContext(),
     }, AIOPS_SESSION_REQUEST_CONFIG)
+    if (currentSessionId.value !== sessionId) {
+      // 用户在请求返回前切换了会话，不能把旧会话的消息追加到新会话里。
+      return
+    }
     messages.value.push(response.user_message)
     messages.value.push(response.assistant_message)
     pendingAssistantMessage.value = null
@@ -2320,7 +2325,7 @@ async function handleSend() {
     focusComposer()
   } catch (error) {
     composer.value = rawContent
-    persistDraft(sessionId, rawContent)
+    if (sessionId) persistDraft(sessionId, rawContent)
     if (isAIOpsSessionMissingError(error)) {
       await handleMissingChatSession(sessionId)
       return
@@ -2532,6 +2537,8 @@ function handleComposerKeydown(event) {
     return
   }
   if (event.key !== 'Enter') return
+  // 中文/日文输入法确认候选词时也会触发 Enter，不能当成发送。
+  if (event.isComposing || event.keyCode === 229) return
   if (event.shiftKey) return
   event.preventDefault()
   handleSend()

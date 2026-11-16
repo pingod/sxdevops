@@ -681,7 +681,7 @@ function parseJsonText(text, fieldName) {
 async function fetchDeployments() {
   loading.value = true
   try {
-    deployments.value = safeList(await getDeployments())
+    deployments.value = safeList(await getDeployments({ page_size: 500 }))
   } finally {
     loading.value = false
   }
@@ -717,14 +717,22 @@ function applyFlowSummaryFilter(key) {
 async function fetchFlows() {
   flowLoading.value = true
   try {
-    flows.value = enrichWorkOrderFlows(safeList(await getDeploymentApprovalFlows()))
+    // 审批流/用户下拉不能只取默认 20 条，否则第 21 个以后的审批人无法选择。
+    flows.value = enrichWorkOrderFlows(safeList(await getDeploymentApprovalFlows({ page_size: 500 })))
   } finally {
     flowLoading.value = false
   }
 }
 
 async function fetchLookups() {
-  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes, resourceTreeRes] = await Promise.allSettled([getDockerHosts(), getK8sClusters(), getUsers(), getRoles(), getGroups(), getResourceNodeTree()])
+  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes, resourceTreeRes] = await Promise.allSettled([
+    getDockerHosts({ page_size: 500 }),
+    getK8sClusters({ page_size: 500 }),
+    getUsers({ page_size: 100 }),
+    getRoles({ page_size: 500 }),
+    getGroups({ page_size: 500 }),
+    getResourceNodeTree(),
+  ])
   dockerHosts.value = dockerHostRes.status === 'fulfilled' ? safeList(dockerHostRes.value) : []
   clusters.value = clusterRes.status === 'fulfilled' ? safeList(clusterRes.value) : []
   users.value = userRes.status === 'fulfilled' ? safeList(userRes.value) : []

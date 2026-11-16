@@ -286,7 +286,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Aim, RefreshRight, Search } from '@element-plus/icons-vue'
 import { getEventSources, getEventWallAnalysis, getEventWallFilterOptions } from '@/api/modules/eventwall'
@@ -321,6 +321,7 @@ const timelineCategoryFilter = ref('all')
 const eventSourceCode = ref('')
 const resultFilter = ref('')
 const keyword = ref('')
+let syncingRoute = false
 const scope = reactive({ system_name: '', environment: '', application: '' })
 const timelineSelection = reactive({ active: false, startPercent: 0, endPercent: 0, label: '' })
 const timelineDrag = reactive({ active: false, source: '', startX: 0, currentX: 0, moved: false, railLeft: 0, railWidth: 0 })
@@ -497,7 +498,14 @@ function categorySearchFields(item) {
 
 function restoreFromRoute() {
   const query = route.query
-  analysisRange.value = defaultAnalysisRange()
+  const faultAt = query.fault_at ? new Date(String(query.fault_at)) : null
+  const lookbackMinutes = Number(query.lookback_minutes)
+  if (faultAt && !Number.isNaN(faultAt.getTime()) && Number.isFinite(lookbackMinutes) && lookbackMinutes > 0) {
+    // 从 URL 恢复用户实际选择的时间窗，刷新/分享链接才能复现同一视图。
+    analysisRange.value = [new Date(faultAt.getTime() - lookbackMinutes * 60000), faultAt]
+  } else {
+    analysisRange.value = defaultAnalysisRange()
+  }
   eventSourceCode.value = String(query.event_source_code || '')
   resultFilter.value = String(query.result || '')
   keyword.value = String(query.search || '')
@@ -550,9 +558,23 @@ async function applyQuery() {
     result: resultFilter.value || undefined,
     search: keyword.value || undefined,
   }
-  await router.replace({ path: '/events/wall', query })
+  syncingRoute = true
+  try {
+    await router.replace({ path: '/events/wall', query })
+  } finally {
+    syncingRoute = false
+  }
   await loadWall()
 }
+
+watch(
+  () => route.fullPath,
+  async () => {
+    if (syncingRoute || route.path !== '/events/wall') return
+    restoreFromRoute()
+    await loadWall()
+  },
+)
 
 async function clearFilter(key) {
   if (key === 'system_name') scope.system_name = ''

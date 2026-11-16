@@ -1008,6 +1008,12 @@ function metricTooltipFormatter(params) {
 
 function renderMetricChart() {
   if (!metricChartRef.value) return
+  // 查询报错/无数据时图表容器会被 v-if 销毁，旧实例指向已脱离 DOM 的 canvas；
+  // 此时必须重新 init，否则后续查询会画在看不见的节点上。
+  if (metricChart && metricChart.getDom() !== metricChartRef.value) {
+    metricChart.dispose()
+    metricChart = null
+  }
   const rows = activeMetricChartRows.value
   if (!rows.length) {
     metricChart?.clear()
@@ -1776,11 +1782,12 @@ watch(
 )
 
 onMounted(async () => {
+  // 先同步注册，避免组件在 loadDataSources 期间卸载时监听器泄漏。
+  window.addEventListener('resize', handleMetricChartResize)
   await loadDataSources()
   await nextTick()
   refreshPromqlSuggestions()
   renderMetricChart()
-  window.addEventListener('resize', handleMetricChartResize)
 })
 onBeforeUnmount(() => {
   if (promqlSuggestCloseTimer) clearTimeout(promqlSuggestCloseTimer)

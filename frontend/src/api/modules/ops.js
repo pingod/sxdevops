@@ -1,6 +1,6 @@
 import request from '../request'
 
-export const getDashboardStats = () => request.get('/dashboard/stats/')
+export const getDashboardStats = (config = {}) => request.get('/dashboard/stats/', { ...config })
 
 export const getHosts = (params) => request.get('/hosts/', { params })
 export const getHost = (id) => request.get(`/hosts/${id}/`)
@@ -57,7 +57,7 @@ export const runHostTaskScheduleNow = (id) => request.post(`/host-task-schedules
 export const getHostTaskScheduleExecutions = (params) => request.get('/host-task-schedule-executions/', { params })
 export const getHostTaskScheduleExecution = (id) => request.get(`/host-task-schedule-executions/${id}/`)
 
-export const getDeployments = (params) => request.get('/deployments/', { params })
+export const getDeployments = (params, config = {}) => request.get('/deployments/', { ...config, params })
 export const createDeployment = (data) => request.post('/deployments/', data)
 export const updateDeployment = (id, data) => request.put(`/deployments/${id}/`, data)
 export const deleteDeployment = (id) => request.delete(`/deployments/${id}/`)
@@ -75,7 +75,7 @@ export const getDeploymentApprovalFlows = (params) => request.get('/deployment-a
 export const createDeploymentApprovalFlow = (data) => request.post('/deployment-approval-flows/', data)
 export const updateDeploymentApprovalFlow = (id, data) => request.put(`/deployment-approval-flows/${id}/`, data)
 export const deleteDeploymentApprovalFlow = (id) => request.delete(`/deployment-approval-flows/${id}/`)
-export const getTransactionTickets = (params) => request.get('/transaction-tickets/', { params })
+export const getTransactionTickets = (params, config = {}) => request.get('/transaction-tickets/', { ...config, params })
 export const createTransactionTicket = (data) => request.post('/transaction-tickets/', data)
 export const updateTransactionTicket = (id, data) => request.patch(`/transaction-tickets/${id}/`, data)
 export const deleteTransactionTicket = (id) => request.delete(`/transaction-tickets/${id}/`)
@@ -186,7 +186,7 @@ export const queryGrafanaPromQL = (data) => request.post('/observability/grafana
 export const queryGrafanaPanel = (data) => request.post('/observability/grafana/panel/query/', data)
 export const queryMetrics = (data) => request.post('/observability/metrics/query/', data)
 export const getMetricSeriesNames = (params) => request.get('/observability/metrics/series-names/', { params })
-export const getMetricDataSources = (params) => request.get('/observability/metric/datasources/', { params })
+export const getMetricDataSources = (params, config = {}) => request.get('/observability/metric/datasources/', { ...config, params })
 export const createMetricDataSource = (data) => request.post('/observability/metric/datasources/', data)
 export const updateMetricDataSource = (id, data) => request.put(`/observability/metric/datasources/${id}/`, data)
 export const deleteMetricDataSource = (id) => request.delete(`/observability/metric/datasources/${id}/`)

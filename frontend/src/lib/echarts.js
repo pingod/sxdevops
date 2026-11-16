@@ -1,6 +1,6 @@
 import * as echarts from 'echarts/core'
 import { BarChart, GraphChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { GraphicComponent, GridComponent, LegendComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { LabelLayout, UniversalTransition } from 'echarts/features'
 import { CanvasRenderer } from 'echarts/renderers'
 import { colorScheme, resolveThemeColor, THEME_CHANGE_EVENT, theme } from '@/theme'
@@ -11,8 +11,10 @@ echarts.use([
   GraphChart,
   LineChart,
   PieChart,
+  GraphicComponent,
   GridComponent,
   LegendComponent,
+  TitleComponent,
   TooltipComponent,
   LabelLayout,
   UniversalTransition,

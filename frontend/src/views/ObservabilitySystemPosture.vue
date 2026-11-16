@@ -637,6 +637,14 @@ defineProps({
 })
 
 const route = useRoute()
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 const router = useRouter()
 const authStore = useAuthStore()
 const lastSystemStorageKey = 'sxdevops:observability:system-posture:last-system'
@@ -1719,8 +1727,11 @@ function renderTopology() {
     tooltip: {
       trigger: 'item',
       formatter: (params) => {
-        if (params.dataType === 'edge') return `${params.data.source} → ${params.data.target}`
-        return params.data?.name || ''
+        // 节点名来自资产/系统态势数据，tooltip 默认按 HTML 渲染，必须转义。
+        if (params.dataType === 'edge') {
+          return `${escapeHtml(params.data.source)} → ${escapeHtml(params.data.target)}`
+        }
+        return escapeHtml(params.data?.name || '')
       },
     },
     series: [
@@ -1775,8 +1786,8 @@ watch(selectedNode, (node) => {
 })
 
 onMounted(async () => {
-  await loadSystemPosture()
   window.addEventListener('resize', handleResize)
+  await loadSystemPosture()
 })
 
 onUnmounted(() => {

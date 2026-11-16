@@ -582,6 +582,14 @@ const selectedTimeRangeLabel = computed(() => {
   const [start, end] = customTimeRange.value
   return `${formatDateTime(start)} 至 ${formatDateTime(end)}`
 })
+const rangeHours = computed(() => {
+  if (customTimeRange.value?.length === 2) {
+    const [start, end] = customTimeRange.value
+    const hours = (new Date(end).getTime() - new Date(start).getTime()) / 3600000
+    if (Number.isFinite(hours) && hours > 0) return hours
+  }
+  return 24
+})
 const activeTabMeta = computed(() => tabs.find(item => item.key === activeTab.value) || tabs[0])
 const activeLoading = computed(() => ({
   overview: overviewLoading.value,

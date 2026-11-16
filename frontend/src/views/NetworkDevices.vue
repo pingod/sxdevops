@@ -256,7 +256,7 @@
           <span class="drawer-meta-sub">{{ drawerDevice.sys_descr || drawerDevice.model || '' }}</span>
         </div>
         <div class="neo-tabs theme-blue drawer-tabs">
-          <button type="button" class="neo-tab-btn" :class="{ active: drawerTab === 'interfaces' }" @click="drawerTab = 'interfaces'">接口台账</button>
+          <button type="button" class="neo-tab-btn" :class="{ active: drawerTab === 'interfaces' }" @click="switchToInterfaces">接口台账</button>
           <button type="button" class="neo-tab-btn" :class="{ active: drawerTab === 'health' }" @click="switchToHealth">健康趋势</button>
           <div class="drawer-hours">
             <el-select v-model="hours" style="width: 110px" @change="reloadCharts">
@@ -616,19 +616,40 @@ function selectInterface(row) {
 
 function switchToHealth() {
   drawerTab.value = 'health'
+  trafficChart?.dispose()
+  trafficChart = null
   nextTick(() => {
     initHealthChart()
     reloadCharts()
   })
 }
 
+function switchToInterfaces() {
+  drawerTab.value = 'interfaces'
+  healthChart?.dispose()
+  healthChart = null
+  nextTick(() => {
+    initTrafficChart()
+    reloadCharts()
+  })
+}
+
 function initTrafficChart() {
+  // 切换子 tab 会销毁图表容器，旧实例必须重建，否则会画在脱离 DOM 的 canvas 上。
+  if (trafficChart && trafficChart.getDom() !== trafficChartRef.value) {
+    trafficChart.dispose()
+    trafficChart = null
+  }
   if (trafficChartRef.value && !trafficChart) {
     trafficChart = echarts.init(trafficChartRef.value)
   }
 }
 
 function initHealthChart() {
+  if (healthChart && healthChart.getDom() !== healthChartRef.value) {
+    healthChart.dispose()
+    healthChart = null
+  }
   if (healthChartRef.value && !healthChart) {
     healthChart = echarts.init(healthChartRef.value)
   }

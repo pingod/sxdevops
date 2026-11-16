@@ -248,6 +248,7 @@ import {
   rejectTransactionTicket,
   startProcessTransactionTicket,
 } from '@/api/modules/ops'
+import { getResourceNodeTree } from '@/api/modules/cmdb'
 import { useAuthStore } from '@/stores/auth'
 import { enrichWorkOrderFlows } from '@/utils/workorderFlows'
 
@@ -363,7 +364,7 @@ function resetTicketForm() {
 async function loadTickets() {
   loading.value = true
   try {
-    const response = await getTransactionTickets()
+    const response = await getTransactionTickets({ page_size: 500 })
     tickets.value = Array.isArray(response?.results) ? response.results : (response || [])
   } catch (error) {
     tickets.value = []
@@ -384,7 +385,12 @@ async function loadFlows() {
 }
 
 async function loadResourceTree() {
-  resourceTree.value = []
+  try {
+    const response = await getResourceNodeTree()
+    resourceTree.value = Array.isArray(response) ? response : (response?.results || [])
+  } catch {
+    resourceTree.value = []
+  }
 }
 
 function defaultEnvironmentOptions() {

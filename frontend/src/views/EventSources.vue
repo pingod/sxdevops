@@ -389,6 +389,7 @@ import {
 } from '@/api/modules/eventwall'
 import EventWallTabs from '@/components/eventwall/EventWallTabs.vue'
 import { useAuthStore } from '@/stores/auth'
+import { copyText as writeClipboard } from '@/utils/clipboard'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -611,15 +612,18 @@ async function saveEditAccess() {
 }
 
 async function copyToken() {
-  if (!issuedToken.value) return
-  await navigator.clipboard.writeText(issuedToken.value)
-  ElMessage.success('令牌已复制')
+  await copyText(issuedToken.value, '令牌已复制')
 }
 
 async function copyText(text, message = '已复制') {
   if (!text) return
-  await navigator.clipboard.writeText(text)
-  ElMessage.success(message)
+  try {
+    // HTTP 部署下 navigator.clipboard 不可用，统一走带降级的工具函数。
+    await writeClipboard(text)
+    ElMessage.success(message)
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本')
+  }
 }
 
 async function reissueActiveToken() {
