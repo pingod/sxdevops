@@ -1,4 +1,4 @@
-﻿"""
+"""
 数据库执行器
 支持 MySQL、PostgreSQL 与 MongoDB。
 """
@@ -103,17 +103,28 @@ def validate_query_content(datasource, sql_content):
                 return 'PostgreSQL 查询不允许写入或加行锁'
         return None
 
-    upper = sql_content.strip().upper()
+    # MySQL 会把 /* */ 当成 token 之间的空白，只压空白会漏掉 INTO/**/OUTFILE 这类写法。
+    try:
+        cleaned = sqlparse.format(sql_content, strip_comments=True)
+    except Exception:
+        cleaned = sql_content
+    upper = cleaned.strip().upper()
     if not upper.startswith('SELECT') and not upper.startswith('SHOW') and not upper.startswith('DESC'):
         return '查询工单只允许 SELECT / SHOW / DESC 语句'
     # 与 PostgreSQL 对齐：拦截文件读写/加锁等“只读查询”不该具备的能力。
     compact = re.sub(r'\s+', ' ', upper)
-    if re.search(r'\bINTO\s+(OUTFILE|DUMPFILE)\b', compact) or 'LOAD_FILE(' in upper.replace(' ', '') or 'FOR UPDATE' in compact or 'FOR SHARE' in compact:
+    no_space = compact.replace(' ', '')
+    if (re.search(r'\bINTO\s+(OUTFILE|DUMPFILE)\b', compact)
+            or 'LOAD_FILE(' in no_space
+            or 'FORUPDATE' in no_space
+            or 'FORSHARE' in no_space):
         return '查询工单不允许 INTO OUTFILE/DUMPFILE、LOAD_FILE 或加行锁等操作'
     return None
 
 
 def test_connection(datasource):
+    if not getattr(datasource, 'is_active', True):
+        return False, '数据源已停用'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return True, demo_profile['message']
@@ -144,6 +155,8 @@ def get_databases(datasource):
 
 
 def execute_sql(datasource, database, sql_content):
+    if not getattr(datasource, 'is_active', True):
+        return False, 0, 0, '数据源已停用，禁止执行 SQL'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return _execute_demo_sql(datasource, database, sql_content)
@@ -159,6 +172,8 @@ def execute_sql(datasource, database, sql_content):
 
 
 def execute_query(datasource, database, sql_content, limit=200):
+    if not getattr(datasource, 'is_active', True):
+        return False, [], [], 0, 0, '数据源已停用，禁止执行查询'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return _execute_demo_query(datasource, database, sql_content, limit)
@@ -224,7 +239,7 @@ def _execute_mysql_sql(datasource, database, sql_content):
         logs = []
         try:
             with conn.cursor() as cursor:
-                statements = [statement.strip() for statement in sql_content.split(';') if statement.strip()]
+                statements = [statement.strip() for statement in sqlparse.split(sql_content) if statement.strip()]
                 for index, statement in enumerate(statements, 1):
                     cursor.execute(statement)
                     affected = cursor.rowcount

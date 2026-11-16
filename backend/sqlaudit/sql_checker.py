@@ -1,4 +1,4 @@
-﻿"""
+"""
 SQL 语法检查规则引擎
 纯 Python 实现，检测常见 SQL 安全和规范问题。
 """
@@ -42,6 +42,13 @@ def check_sql(sql_content, sql_type='DML', db_type='mysql'):
 
         upper = sqlparse.format(stmt_stripped, strip_comments=True).strip().upper()
         statement_type = sqlparse.parse(stmt_stripped)[0].get_type()
+
+        if sql_type == 'DML' and statement_type in {'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'GRANT', 'REVOKE', 'RENAME'}:
+            results.append(CheckItem(
+                'error', 'DML_STATEMENT_MISMATCH',
+                f'语句 #{idx}: DML 工单只能包含数据变更语句，请为 DDL/DCL 操作提交 DDL 工单',
+                line_no=idx,
+            ))
 
         if db_type == 'postgresql':
             if re.search(r'`|\bAUTO_INCREMENT\b|\bUNSIGNED\b|\bENGINE\s*=|\bADD\s+INDEX\b', upper):
