@@ -3,6 +3,7 @@ import threading
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -56,6 +57,51 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
         'logs': ['marketplace.deployment.view'],
     }
 
+    def _assert_target_allowed(self, deploy_mode, host_id=None, cluster_id=None, namespace=None):
+        """ModelViewSet 的 create/update 不经过 deploy_service_view，必须在这里重复目标授权检查。"""
+        user = self.request.user
+        if deploy_mode == 'docker_compose':
+            if not host_id:
+                raise ValidationError({'host': ['Docker Compose 部署需要指定目标主机']})
+            if not user_has_permissions(user, ['ops.host.manage']):
+                raise PermissionDenied('部署到主机需要主机管理权限')
+            return
+        if not cluster_id:
+            raise ValidationError({'cluster': ['K8s 部署需要指定目标集群']})
+        if not can_access_k8s(user, cluster_id, namespace or 'default', execute=True):
+            raise PermissionDenied('当前账号无权在该集群/命名空间操作')
+
+    def _assert_deployment_allowed(self, deployment):
+        self._assert_target_allowed(
+            deployment.deploy_mode,
+            host_id=deployment.host_id,
+            cluster_id=deployment.cluster_id,
+            namespace=deployment.namespace,
+        )
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        self._assert_target_allowed(
+            data.get('deploy_mode') or 'docker_compose',
+            host_id=getattr(data.get('host'), 'id', None),
+            cluster_id=getattr(data.get('cluster'), 'id', None),
+            namespace=data.get('namespace'),
+        )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        data = serializer.validated_data
+        host = data.get('host', instance.host)
+        cluster = data.get('cluster', instance.cluster)
+        self._assert_target_allowed(
+            data.get('deploy_mode', instance.deploy_mode),
+            host_id=getattr(host, 'id', None),
+            cluster_id=getattr(cluster, 'id', None),
+            namespace=data.get('namespace', instance.namespace),
+        )
+        serializer.save()
+
     def eventwall_should_record(self, action, instance=None):
         return True
 
@@ -78,6 +124,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployer.stop_service(deployment)
         deployment.refresh_from_db()
         record_event(
@@ -102,6 +149,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployer.start_service(deployment)
         deployment.refresh_from_db()
         record_event(
@@ -126,6 +174,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def remove(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployment_id = deployment.id
         deployment_name = deployment.template.name
         related_resources = self.eventwall_related_resources(deployment)
@@ -155,6 +204,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         try:
             tail = int(request.query_params.get('tail', 100))
         except (TypeError, ValueError):

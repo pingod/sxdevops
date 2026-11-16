@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from rbac.permissions import RBACPermissionMixin
+from rbac.preview import is_preview_user
 
 from .models import EventEnvironment, EventRecord, EventSource
 from .serializers import EventEnvironmentSerializer, EventRecordSerializer, EventSourceIngestSerializer, EventSourceSerializer
@@ -740,7 +741,8 @@ class EventRecordViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         params = self.request.query_params
-        if params.get('environment') == HOURLY_DEMO_ENVIRONMENT:
+        # 演示数据只能在真实账号读取时补齐；只读预览账号的 GET 不能触发任何写入。
+        if params.get('environment') == HOURLY_DEMO_ENVIRONMENT and not is_preview_user(self.request.user):
             _ensure_hourly_sample_demo_events()
         queryset = super().get_queryset().exclude(result=EventRecord.RESULT_REJECTED)
         if getattr(self, 'action', '') not in {'operation_audit', 'prune_operation_audit'}:
@@ -970,7 +972,7 @@ class EventRecordViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['post'])
     def prune_operation_audit(self, request):
-        cutoff_raw = (request.data.get('before_at') or '').strip()
+        cutoff_raw = str(request.data.get('before_at') or '').strip()
         cutoff = parse_datetime(cutoff_raw) if cutoff_raw else None
         if not cutoff:
             return Response({'detail': '请提供有效的截止时间 before_at。'}, status=status.HTTP_400_BAD_REQUEST)

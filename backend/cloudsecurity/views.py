@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -588,7 +588,14 @@ class InternalPlatformSecurityFindingViewSet(RBACPermissionMixin, viewsets.ViewS
             if field in request.data:
                 setattr(finding, field, str(request.data.get(field) or '').strip())
         if 'due_date' in request.data:
-            finding.due_date = request.data.get('due_date') or None
+            raw_due_date = request.data.get('due_date')
+            if raw_due_date in (None, ''):
+                finding.due_date = None
+            else:
+                try:
+                    finding.due_date = serializers.DateField().run_validation(raw_due_date)
+                except serializers.ValidationError:
+                    return Response({'due_date': '日期格式不正确，请使用 YYYY-MM-DD。'}, status=status.HTTP_400_BAD_REQUEST)
         finding.save()
         _finding_activity(finding, 'progress', request, message)
         return Response(InternalPlatformSecurityFindingSerializer(finding).data)

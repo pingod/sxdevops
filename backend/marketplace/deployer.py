@@ -362,14 +362,22 @@ def stop_service(deployment):
         deployment.save(update_fields=['deploy_log'])
         return deployment
 
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        exit_code, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose stop exited with {exit_code}').strip())
         deployment.status = 'stopped'
         deployment.deploy_log += f'\n[✓] 服务已停止\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 停止失败: {str(exc)}'
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     deployment.save(update_fields=['status', 'deploy_log'])
     return deployment
@@ -392,15 +400,27 @@ def start_service(deployment):
 
     host = deployment.host
     service_dir = deployment.deploy_dir
+    if not service_dir:
+        deployment.deploy_log += '\n[✗] 无部署目录信息，无法启动'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
 
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose start 2>&1 || docker compose start 2>&1')
+        exit_code, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose start 2>&1 || docker compose start 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose start exited with {exit_code}').strip())
         deployment.status = 'running'
         deployment.deploy_log += f'\n[✓] 服务已启动\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 启动失败: {str(exc)}'
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     deployment.save(update_fields=['status', 'deploy_log'])
     return deployment
@@ -461,16 +481,29 @@ def remove_service(deployment):
     host = deployment.host
     service_dir = deployment.deploy_dir
 
+    if not service_dir:
+        deployment.deploy_log += '\n[✗] 无部署目录信息，无法卸载'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
+
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        exit_code, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose down exited with {exit_code}').strip())
         _ssh_exec(client, f'rm -rf {service_dir}')
         deployment.deploy_log += f'\n[✓] 服务已卸载并清理\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 卸载失败: {str(exc)}'
         deployment.save(update_fields=['deploy_log'])
         return deployment
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     deployment.save(update_fields=['deploy_log'])
     deployment.delete()

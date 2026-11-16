@@ -27,7 +27,9 @@ class EventWallModelViewSetMixin:
             return response
         instance_id = response.data.get('id')
         if instance_id:
-            instance = self.get_queryset().get(pk=instance_id)
+            # 不能再用 self.get_queryset()：它可能带查询参数过滤（如 ?provider=aws），
+            # 新建对象不满足过滤条件时会 500，尽管数据已经写入。
+            instance = self.get_queryset().model.objects.get(pk=instance_id)
             after = snapshot_instance(instance, exclude_fields=self.event_exclude_fields)
             record_model_event(
                 request=request,
@@ -71,6 +73,8 @@ class EventWallModelViewSetMixin:
         return response
 
     def partial_update(self, request, *args, **kwargs):
+        # UpdateModelMixin.update 只在 partial=True 时做局部校验；直接透传会让 PATCH 退化成 PUT。
+        kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):

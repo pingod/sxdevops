@@ -1,4 +1,5 @@
 import json
+import math
 from collections import Counter
 from datetime import timedelta
 from math import ceil
@@ -127,8 +128,11 @@ def _call(label, callback, warnings, fallback):
 
 def _unix_timestamp(value):
     try:
-        timestamp = int(float(value))
-    except (TypeError, ValueError):
+        number = float(value)
+        if not math.isfinite(number):
+            return None
+        timestamp = int(number)
+    except (TypeError, ValueError, OverflowError):
         return None
     return timestamp // 1000 if timestamp > 100000000000 else timestamp
 
@@ -841,7 +845,10 @@ def get_waf_events(
         normalized_items = [_normalize_event(item, index) for index, item in enumerate(raw_items, start=1)]
         # WAF's documented filter fields vary by edition. Normalize first so every
         # displayed filter has deterministic behavior across supported editions.
-        for remote_page in range(2, ceil(remote_total / 100) + 1):
+        # 本地过滤必须先把远端结果拉全，但 30 天窗口 + 高频攻击时可以是上千页；
+        # 与 _describe_security_event_records 保持一致，最多扫描 10 页。
+        max_pages = min(ceil(remote_total / 100), 10)
+        for remote_page in range(2, max_pages + 1):
             paged_request = models.DescribeSecurityEventLogsRequest(
                 instance_id=instance['instance_id'],
                 region_id=region,
