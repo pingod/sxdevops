@@ -21,6 +21,8 @@ services:
       CACHE_BACKEND: redis
       CACHE_IGNORE_EXCEPTIONS: "0"
       SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
@@ -58,6 +60,8 @@ services:
       CACHE_BACKEND: redis
       CACHE_IGNORE_EXCEPTIONS: "0"
       SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
@@ -89,6 +93,8 @@ services:
       CACHE_BACKEND: redis
       CACHE_IGNORE_EXCEPTIONS: "0"
       SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
@@ -123,6 +129,8 @@ services:
       CACHE_BACKEND: redis
       CACHE_IGNORE_EXCEPTIONS: "0"
       SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
@@ -166,6 +174,8 @@ services:
       CACHE_BACKEND: redis
       CACHE_IGNORE_EXCEPTIONS: "0"
       SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
