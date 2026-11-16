@@ -92,3 +92,48 @@ class RbacPermissionTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()['detail'], DEMO_ACCOUNT_MUTATION_MESSAGE)
+
+
+class RbacPrivilegeEscalationTests(TestCase):
+    def setUp(self):
+        ensure_builtin_rbac()
+
+    def test_user_manager_cannot_self_promote_to_superuser(self):
+        role = Role.objects.create(code='user-manager', name='User Manager')
+        role.permissions.add(PermissionDefinition.objects.get(code='rbac.user.manage'))
+        manager = User.objects.create_user(username='user-manager', password='Admin@123456')
+        role.users.add(manager)
+        self.client.force_login(manager)
+
+        response = self.client.patch(
+            f'/api/users/{manager.id}/',
+            {'username': manager.username, 'is_superuser': True, 'is_staff': True},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        manager.refresh_from_db()
+        self.assertFalse(manager.is_superuser)
+        self.assertFalse(manager.is_staff)
+
+    def test_demo_account_has_no_console_access(self):
+        demo_user = User.objects.create_user(username='demo', password='Demo#123')
+        admin_user = User.objects.create_superuser('console-admin', 'console@example.com', 'Admin@123456')
+
+        self.assertFalse(user_has_console_access(demo_user, ['ops.host.terminal']))
+        self.assertTrue(user_has_console_access(admin_user, ['ops.host.terminal']))
+
+    def test_unmapped_audit_bulk_delete_requires_permission(self):
+        viewer = User.objects.create_user(username='audit-viewer', password='Admin@123456')
+        role = Role.objects.create(code='audit-reader', name='Audit Reader')
+        role.permissions.add(PermissionDefinition.objects.get(code='aiops.audit.view'))
+        role.users.add(viewer)
+        self.client.force_login(viewer)
+
+        response = self.client.post(
+            '/api/aiops/admin/audit/sessions/bulk-delete/',
+            {'session_ids': [1]},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 403)
