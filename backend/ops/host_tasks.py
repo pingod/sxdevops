@@ -265,9 +265,15 @@ def open_ssh_client(host, timeout_seconds):
 
 def execute_remote_command(client, command, timeout_seconds):
     stdin, stdout, stderr = client.exec_command(command, timeout=timeout_seconds)
-    exit_status = stdout.channel.recv_exit_status()
-    output = stdout.read().decode('utf-8', errors='replace').strip()
-    error_output = stderr.read().decode('utf-8', errors='replace').strip()
+    channel = stdout.channel
+    try:
+        # 先读管道再取退出码：recv_exit_status 自身没有超时，只有 socket 超时能约束它
+        output = stdout.read().decode('utf-8', errors='replace').strip()
+        error_output = stderr.read().decode('utf-8', errors='replace').strip()
+        exit_status = channel.recv_exit_status()
+    except TimeoutError:
+        channel.close()
+        raise TimeoutError(f'命令执行超时（{timeout_seconds} 秒）')
     return exit_status, output, error_output
 
 
@@ -998,7 +1004,7 @@ def _run_k8s_cluster_command(task, cluster):
                 raise RuntimeError(error_output or output or f'kubectl exited with code {process.returncode}')
             if output or error_output:
                 outputs.append(output or error_output)
-        return output or error_output or '命令执行完成'
+        return '\n'.join(outputs) or '命令执行完成'
     finally:
         for path in temporary_paths:
             try:
@@ -1586,6 +1592,13 @@ def _execute_host_task_thread(task_id, host_refs):
         task = HostTask.objects.get(pk=task_id)
         hosts = resolve_host_source_refs(host_refs)
         execute_host_task(task, hosts)
+    except Exception as exc:
+        HostTask.objects.filter(pk=task_id).update(
+            status=HostTask.STATUS_FAILED,
+            lifecycle_status=HostTask.LIFECYCLE_FAILED,
+            finished_at=timezone.now(),
+            summary=f'任务执行异常：{str(exc)[:180]}',
+        )
     finally:
         close_old_connections()
         with _TASK_THREADS_LOCK:

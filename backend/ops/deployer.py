@@ -632,21 +632,28 @@ def stop_service(deployment):
         deployment.save(update_fields=['deploy_log'])
         return deployment
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    client = None
+    stopped = False
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        client = _get_ssh_client(docker_target)
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose stop 执行失败，退出码: {code}')
         deployment.status = 'stopped'
+        stopped = True
         deployment.deploy_log += f'\n[SUCCESS] 应用已停止\n{out}{err}'
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 停止失败: {str(exc)}'
     finally:
-        client.close()
+        if client:
+            client.close()
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'deploy_log', 'finished_at'])
-    try:
-        sync_deployment_to_cmdb(deployment, override_status='idle')
-    except Exception:
-        logger.exception('sync_deployment_to_cmdb error after stop')
+    if stopped:
+        try:
+            sync_deployment_to_cmdb(deployment, override_status='idle')
+        except Exception:
+            logger.exception('sync_deployment_to_cmdb error after stop')
     return deployment
 
 
@@ -671,21 +678,28 @@ def start_service(deployment):
         return deployment
 
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    client = None
+    started = False
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
+        client = _get_ssh_client(docker_target)
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose start 执行失败，退出码: {code}')
         deployment.status = 'running'
+        started = True
         deployment.deploy_log += f'\n[SUCCESS] 应用已启动\n{out}{err}'
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 启动失败: {str(exc)}'
     finally:
-        client.close()
+        if client:
+            client.close()
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'deploy_log', 'finished_at'])
-    try:
-        sync_deployment_to_cmdb(deployment, override_status='active')
-    except Exception:
-        logger.exception('sync_deployment_to_cmdb error after start')
+    if started:
+        try:
+            sync_deployment_to_cmdb(deployment, override_status='active')
+        except Exception:
+            logger.exception('sync_deployment_to_cmdb error after start')
     return deployment
 
 
@@ -729,23 +743,32 @@ def remove_service(deployment):
         return deployment
 
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    client = None
+    removed = False
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
-        _ssh_exec(client, f'rm -rf {shlex.quote(deployment.deploy_dir)}')
+        client = _get_ssh_client(docker_target)
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose down 执行失败，退出码: {code}')
+        remove_code, _, _ = _ssh_exec(client, f'rm -rf {shlex.quote(deployment.deploy_dir)}')
+        if remove_code != 0:
+            raise RuntimeError(f'删除发布目录失败，退出码: {remove_code}')
         deployment.deploy_log += f'\n[SUCCESS] 应用已下线\n{out}{err}'
         deployment.status = 'removed'
         deployment.is_current = False
+        removed = True
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 下线失败: {str(exc)}'
     finally:
-        client.close()
+        if client:
+            client.close()
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'is_current', 'deploy_log', 'finished_at'])
-    try:
-        sync_deployment_to_cmdb(deployment, override_status='offline')
-    except Exception:
-        logger.exception('sync_deployment_to_cmdb error after remove')
+    if removed:
+        try:
+            sync_deployment_to_cmdb(deployment, override_status='offline')
+        except Exception:
+            logger.exception('sync_deployment_to_cmdb error after remove')
     return deployment
 
 
@@ -804,14 +827,17 @@ def get_service_logs(deployment, tail=100):
             f'batch={deployment.batch_current or 1}/{deployment.batch_total or 1}'
         )
 
+    client = None
     try:
         docker_target = _docker_target(deployment)
         client = _get_ssh_client(docker_target)
-        _, out, err = _ssh_exec(client, f'cd {deployment.deploy_dir} && docker-compose logs --tail={tail} 2>&1 || docker compose logs --tail={tail} 2>&1')
-        client.close()
+        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose logs --tail={tail} 2>&1 || docker compose logs --tail={tail} 2>&1')
         return out or err
     except Exception as exc:
         return f'获取日志失败: {str(exc)}'
+    finally:
+        if client:
+            client.close()
 
 
 def _docker_runtime_status(deployment):

@@ -91,6 +91,11 @@ class TaskResourceGroup(models.Model):
         ordering = ['group_type', 'sort_order', 'name', 'id']
         constraints = [
             models.UniqueConstraint(fields=['group_type', 'parent', 'name'], name='uniq_ops_task_resource_group_scope_name'),
+            models.UniqueConstraint(
+                fields=['name'],
+                condition=Q(group_type='environment', parent__isnull=True),
+                name='uniq_ops_task_resource_group_env_name',
+            ),
         ]
         indexes = [
             models.Index(fields=['group_type', 'parent', 'sort_order']),

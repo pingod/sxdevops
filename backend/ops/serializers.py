@@ -1,6 +1,8 @@
 import re
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
@@ -185,6 +187,10 @@ def normalize_schedule_hosts(value):
 def validate_schedule_definition(attrs, instance=None):
     schedule_type = attrs.get('schedule_type') or getattr(instance, 'schedule_type', HostTaskSchedule.SCHEDULE_TYPE_CRON)
     timezone_name = attrs.get('timezone') or getattr(instance, 'timezone', 'Asia/Shanghai')
+    try:
+        ZoneInfo(timezone_name or settings.TIME_ZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise serializers.ValidationError({'timezone': '不支持的时区'})
     cron_expression = (attrs.get('cron_expression') if 'cron_expression' in attrs else getattr(instance, 'cron_expression', '')) or ''
     interval_seconds = attrs.get('interval_seconds') if 'interval_seconds' in attrs else getattr(instance, 'interval_seconds', None)
     run_at = attrs.get('run_at') if 'run_at' in attrs else getattr(instance, 'run_at', None)

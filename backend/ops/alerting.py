@@ -623,6 +623,9 @@ def match_matchers(alert, matchers):
 
 
 def apply_alert_suppression(alert):
+    if getattr(alert, 'status', '') == Alert.STATUS_RESOLVED:
+        # 已恢复的告警不能再被抑制，否则恢复事件与恢复通知会丢失
+        return alert
     now = timezone.now()
     changed = False
     mute = AlertMuteRule.objects.filter(is_enabled=True).filter(

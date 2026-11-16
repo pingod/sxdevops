@@ -21,7 +21,7 @@ from .host_task_schedules import (
     resolve_schedule_hosts,
     trigger_schedule,
 )
-from .host_tasks import build_host_target_queryset, build_k8s_target_snapshot, mark_stale_running_host_tasks, record_task_center_event, resolve_host_source_refs, start_host_task, start_k8s_task
+from .host_tasks import build_host_target_queryset, build_k8s_target_snapshot, mark_stale_running_host_tasks, normalize_host_execution_targets, record_task_center_event, resolve_host_source_refs, start_host_task, start_k8s_task
 from .models import (
     Alert,
     AlertAction,
@@ -153,6 +153,31 @@ def _match_step_approver(user, step):
     if step.approver_type == 'group':
         return user.rbac_groups.filter(code=step.approver_value).exists()
     return True
+
+
+def _is_prod_environment(value):
+    text = str(getattr(value, 'name', value) or '').strip().lower()
+    return text in {'prod', 'production'} or '生产' in text
+
+
+def _filter_by_environment(queryset, value):
+    value = (value or '').strip()
+    if not value:
+        return queryset
+    condition = Q(environment__name=value)
+    if value.isdigit():
+        condition |= Q(environment_id=int(value))
+    return queryset.filter(condition)
+
+
+def _filter_by_system(queryset, value):
+    value = (value or '').strip()
+    if not value:
+        return queryset
+    condition = Q(system__name=value)
+    if value.isdigit():
+        condition |= Q(system_id=int(value))
+    return queryset.filter(condition)
 
 
 def _apply_system_alias_filter(request, queryset, *fields):
@@ -442,9 +467,9 @@ class TaskResourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, views
         if status_value:
             queryset = queryset.filter(status=status_value)
         if environment:
-            queryset = queryset.filter(Q(environment_id=environment) | Q(environment__name=environment))
+            queryset = _filter_by_environment(queryset, environment)
         if system_value:
-            queryset = queryset.filter(Q(system_id=system_value) | Q(system__name=system_value))
+            queryset = _filter_by_system(queryset, system_value)
         if search:
             queryset = queryset.filter(
                 Q(name__icontains=search)
@@ -468,9 +493,9 @@ class TaskResourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, views
         status_value = request.query_params.get('status')
         search = (request.query_params.get('search') or '').strip()
         if environment:
-            queryset = queryset.filter(Q(environment_id=environment) | Q(environment__name=environment))
+            queryset = _filter_by_environment(queryset, environment)
         if system_value:
-            queryset = queryset.filter(Q(system_id=system_value) | Q(system__name=system_value))
+            queryset = _filter_by_system(queryset, system_value)
         if status_value:
             queryset = queryset.filter(status=status_value)
         if search:
@@ -720,7 +745,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def _infer_risk_level(self, validated, hosts=None, k8s_targets=None):
-        hosts = hosts or []
+        hosts = normalize_host_execution_targets(hosts or [])
         k8s_targets = k8s_targets or []
         task_type = validated.get('task_type')
         payload = validated.get('payload') or {}
@@ -729,7 +754,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if any(keyword in command for keyword in destructive_keywords):
             return HostTask.RISK_CRITICAL
         if task_type in [HostTask.TASK_RUN_COMMAND, HostTask.TASK_RUN_PLAYBOOK]:
-            if len(hosts) > 20 or any(host.environment == 'prod' for host in hosts):
+            if len(hosts) > 20 or any(_is_prod_environment(getattr(host, 'environment', '')) for host in hosts):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
         if task_type == HostTask.TASK_K8S_SCALE_WORKLOAD:
@@ -737,10 +762,10 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if task_type in [HostTask.TASK_K8S_RESTART_POD, HostTask.TASK_K8S_POD_EXEC]:
             if any(keyword in command for keyword in ['kubectl patch', 'kubectl apply', 'kubectl delete', 'kubectl scale', 'kubectl rollout restart', 'kubectl replace']):
                 return HostTask.RISK_HIGH
-            if any((target.get('namespace') or '') in ['prod', 'production'] for target in k8s_targets):
+            if any(str(target.get('namespace') or '').lower() in ['prod', 'production'] for target in k8s_targets):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
-        if any(host.environment == 'prod' for host in hosts):
+        if any(_is_prod_environment(getattr(host, 'environment', '')) for host in hosts):
             return HostTask.RISK_MEDIUM
         return HostTask.RISK_LOW
 
@@ -875,9 +900,9 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         status_value = request.query_params.get('status') or ''
         search = (request.query_params.get('search') or '').strip()
         if environment:
-            queryset = queryset.filter(Q(environment_id=environment) | Q(environment__name=environment))
+            queryset = _filter_by_environment(queryset, environment)
         if system_value:
-            queryset = queryset.filter(Q(system_id=system_value) | Q(system__name=system_value))
+            queryset = _filter_by_system(queryset, system_value)
         if status_value:
             queryset = queryset.filter(status=status_value)
         if search:
@@ -1037,12 +1062,25 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if not tasks:
             return Response({'detail': '\u6ca1\u6709\u53ef\u7ec8\u6b62\u7684\u4efb\u52a1'}, status=status.HTTP_400_BAD_REQUEST)
         now = timezone.now()
-        queryset.update(
-            cancel_requested=True,
-            cancel_requested_by=request.user.username,
-            cancel_requested_at=now,
-            summary='\u5df2\u6279\u91cf\u63d0\u4ea4\u7ec8\u6b62\u8bf7\u6c42\uff0c\u7b49\u5f85\u6267\u884c\u5668\u505c\u6b62\u4efb\u52a1',
-        )
+        pending_ids = [item.id for item in tasks if item.status == HostTask.STATUS_PENDING]
+        running_ids = [item.id for item in tasks if item.status == HostTask.STATUS_RUNNING]
+        if pending_ids:
+            HostTask.objects.filter(id__in=pending_ids).update(
+                status=HostTask.STATUS_CANCELED,
+                lifecycle_status=HostTask.LIFECYCLE_CANCELED,
+                cancel_requested=True,
+                cancel_requested_by=request.user.username,
+                cancel_requested_at=now,
+                finished_at=now,
+                summary='\u5df2\u6279\u91cf\u7ec8\u6b62\uff0c\u4efb\u52a1\u672a\u5f00\u59cb\u6267\u884c',
+            )
+        if running_ids:
+            HostTask.objects.filter(id__in=running_ids).update(
+                cancel_requested=True,
+                cancel_requested_by=request.user.username,
+                cancel_requested_at=now,
+                summary='\u5df2\u6279\u91cf\u63d0\u4ea4\u7ec8\u6b62\u8bf7\u6c42\uff0c\u7b49\u5f85\u6267\u884c\u5668\u505c\u6b62\u4efb\u52a1',
+            )
         record_event(
             request=request,
             module='ops',

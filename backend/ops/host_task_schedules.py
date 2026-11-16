@@ -6,7 +6,7 @@ import sys
 import time
 from datetime import timedelta
 from typing import Iterable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.db import transaction
@@ -51,10 +51,18 @@ def _get_value(source, key, default=None):
     return getattr(source, key, default)
 
 
+def _resolve_timezone(tz_name):
+    try:
+        return ZoneInfo(tz_name or settings.TIME_ZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning('未知时区 %r，回退到 %s', tz_name, settings.TIME_ZONE)
+        return ZoneInfo(settings.TIME_ZONE)
+
+
 def _normalize_datetime(value, tz_name):
     if not value:
         return None
-    current_tz = ZoneInfo(tz_name or settings.TIME_ZONE)
+    current_tz = _resolve_timezone(tz_name)
     if timezone.is_naive(value):
         value = timezone.make_aware(value, current_tz)
     return value.astimezone(current_tz)
@@ -156,7 +164,7 @@ def compute_next_run(source, reference_time=None, include_current=False):
     schedule_type = _get_value(source, 'schedule_type', HostTaskSchedule.SCHEDULE_TYPE_CRON)
     timezone_name = _get_value(source, 'timezone', settings.TIME_ZONE)
     now = reference_time or timezone.now()
-    tz = ZoneInfo(timezone_name or settings.TIME_ZONE)
+    tz = _resolve_timezone(timezone_name)
     current = now.astimezone(tz)
 
     if schedule_type == HostTaskSchedule.SCHEDULE_TYPE_ONCE:
