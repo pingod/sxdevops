@@ -273,13 +273,42 @@ def topology_view(request):
     return Response(build_topology(environment_id=environment_id, provider=provider))
 
 
+def _parse_optional_int(value):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_id_list(value):
+    if not isinstance(value, list):
+        return []
+    parsed = []
+    for item in value:
+        try:
+            parsed.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.multicloud.view')])
 def cost_trend_view(request):
+    environment = request.query_params.get('environment')
+    if environment not in (None, ''):
+        try:
+            environment = int(environment)
+        except (TypeError, ValueError):
+            return Response({'detail': '环境 ID 不合法。'}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        environment = None
     return Response(
         build_cost_trend(
             provider=request.query_params.get('provider', ''),
-            environment_id=request.query_params.get('environment') or None,
+            environment_id=environment,
             resource_type=request.query_params.get('resource_type', ''),
             group_by=request.query_params.get('group_by', 'provider') or 'provider',
         )
@@ -291,6 +320,10 @@ def cost_trend_view(request):
 def batch_sync_view(request):
     environment_ids = request.data.get('environment_ids') or []
     credential_ids = request.data.get('credential_ids') or []
+    if not isinstance(environment_ids, list) or not isinstance(credential_ids, list):
+        return Response({'detail': 'environment_ids 与 credential_ids 必须是数组。'}, status=status.HTTP_400_BAD_REQUEST)
+    environment_ids = _parse_id_list(environment_ids)
+    credential_ids = _parse_id_list(credential_ids)
     sync_cmdb = bool(request.data.get('sync_cmdb'))
     if sync_cmdb and not user_has_permissions(request.user, ['cmdb.ci.manage']):
         return Response({'detail': '同步到 CMDB 需要 CMDB 资源管理权限。'}, status=status.HTTP_403_FORBIDDEN)

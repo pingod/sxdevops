@@ -1,5 +1,4 @@
 from collections import Counter, defaultdict
-from datetime import timedelta
 from decimal import Decimal
 import re
 
@@ -721,6 +720,16 @@ def build_recommendations(limit=8):
     return rows[:limit]
 
 
+def _month_label(months_back):
+    """按自然月回溯，避免用固定 31 天近似导致跳月/重复月份。"""
+    today = timezone.localdate()
+    year, month = today.year, today.month - int(months_back)
+    while month <= 0:
+        month += 12
+        year -= 1
+    return f'{year:04d}-{month:02d}'
+
+
 def build_cost_trend(provider='', environment_id=None, resource_type='', group_by='provider'):
     assets = CloudAsset.objects.select_related('environment', 'environment__credential').all()
     if provider:
@@ -730,12 +739,8 @@ def build_cost_trend(provider='', environment_id=None, resource_type='', group_b
     if resource_type:
         assets = assets.filter(resource_type=resource_type)
 
-    labels = []
+    labels = [_month_label(offset) for offset in range(5, -1, -1)]
     factors = [Decimal('0.86'), Decimal('0.90'), Decimal('0.93'), Decimal('0.97'), Decimal('1.02'), Decimal('1.00')]
-    now = timezone.now()
-    for offset in range(5, -1, -1):
-        current = (now.replace(day=1) - timedelta(days=offset * 31)).replace(day=1)
-        labels.append(current.strftime('%Y-%m'))
 
     groups = defaultdict(Decimal)
     for asset in assets:
@@ -1202,7 +1207,6 @@ def sync_environment_to_cmdb(environment, operator=''):
 
 
 def _sync_environment_to_cmdb_body(environment, task, *, operator=''):
-    now = task.started_at or timezone.now()
     asset_qs = environment.assets.all()
     if not asset_qs.exists():
         sync_environment_inventory(environment, operator=operator or 'system', task_type='inventory')
@@ -1262,10 +1266,17 @@ def _sync_environment_to_cmdb_body(environment, task, *, operator=''):
             created = True
         created_count += int(created)
         updated_count += int(not created)
+        provider_code = (asset.provider or 'multicloud').strip().lower() or 'multicloud'
+        provider_display = provider_label(asset.provider)
+        # 早期版本把展示名（如“阿里云”）写进 provider，CMDB 成本刷新只识别 aliyun 等代码，
+        # 且 (ci, month) 维度会产生重复行，导致下一次同步抛 MultipleObjectsReturned。
+        if provider_display and provider_display != provider_code:
+            CostRecord.objects.filter(ci=ci, month=current_month, provider=provider_display).delete()
         CostRecord.objects.update_or_create(
             ci=ci,
             month=current_month,
-            defaults={'amount': asset.monthly_cost or Decimal('0'), 'provider': provider_label(asset.provider)},
+            provider=provider_code,
+            defaults={'amount': asset.monthly_cost or Decimal('0')},
         )
 
     environment.last_cmdb_sync_at = timezone.now()

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from datetime import timedelta
 
 from django.db.models import Avg, Count, Max, Q, Sum
@@ -50,6 +51,8 @@ def _parse_hours(request, default=24, max_hours=720):
     try:
         hours = float(request.query_params.get('hours', default))
     except (TypeError, ValueError):
+        hours = default
+    if not math.isfinite(hours):
         hours = default
     return min(max(hours, 0.5), max_hours)
 
@@ -240,10 +243,16 @@ class NetworkInterfaceViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet
         params = self.request.query_params
         device = params.get('device', '').strip()
         if device:
-            queryset = queryset.filter(device_id=device)
+            try:
+                queryset = queryset.filter(device_id=int(device))
+            except (TypeError, ValueError):
+                return queryset.none()
         oper_status = params.get('oper_status', '').strip()
         if oper_status:
-            queryset = queryset.filter(oper_status=oper_status)
+            try:
+                queryset = queryset.filter(oper_status=int(oper_status))
+            except (TypeError, ValueError):
+                return queryset.none()
         search = params.get('search', '').strip()
         if search:
             queryset = queryset.filter(

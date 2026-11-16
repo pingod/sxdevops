@@ -125,6 +125,9 @@ class CloudCredentialSerializer(serializers.ModelSerializer):
     def get_masked_secret(self, obj):
         if not obj.access_key_secret:
             return ''
+        # 短密钥首尾各取 2 位会等于泄露全部内容，短于 12 位一律完全遮蔽。
+        if len(obj.access_key_secret) < 12:
+            return '********'
         return f'{obj.access_key_secret[:2]}******{obj.access_key_secret[-2:]}'
 
 

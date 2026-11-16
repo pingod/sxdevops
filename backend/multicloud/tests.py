@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -9,7 +10,7 @@ from rest_framework.test import APIClient
 from cmdb.models import CISourceMapping, CIType, ConfigItem
 from multicloud.models import CloudAsset, CloudCredential, CloudEnvironment
 from multicloud.sdk_adapters import HuaweiCloudAdapter
-from multicloud.services import _inventory, sync_environment_inventory, sync_environment_to_cmdb
+from multicloud.services import _inventory, build_cost_trend, sync_environment_inventory, sync_environment_to_cmdb
 
 
 class MultiCloudTests(TestCase):
@@ -482,3 +483,11 @@ class MultiCloudTests(TestCase):
         self.assertEqual(specs['cpu'], 2)
         self.assertEqual(specs['memory_gb'], Decimal('8'))
         self.assertEqual(specs['disk_gb'], Decimal('140'))
+
+    def test_cost_trend_labels_follow_natural_months(self):
+        with patch('multicloud.services.timezone.localdate', return_value=date(2026, 3, 30)):
+            payload = build_cost_trend()
+        self.assertEqual(
+            payload['labels'],
+            ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'],
+        )
