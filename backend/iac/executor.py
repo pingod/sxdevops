@@ -24,7 +24,10 @@ def run_terraform_action(stack, action, *, secrets, operator):
     )
     rendered = render_terraform_project(payload)
     stack.summary = rendered['summary']
-    stack.generated_files = rendered['files']
+    # terraform.tfvars 含云厂商 AK/SK 与实例密码，不落库；只保留执行期临时文件
+    stored_files = dict(rendered['files'])
+    stored_files.pop('terraform.tfvars', None)
+    stack.generated_files = stored_files
     if operator:
         stack.updated_by = operator
     stack.save(update_fields=['summary', 'generated_files', 'updated_by'])
@@ -66,44 +69,47 @@ def run_terraform_action(stack, action, *, secrets, operator):
     stderr_parts = []
     return_code = 0
 
-    for command in commands:
-        try:
-            result = subprocess.run(
-                command,
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='ignore',
-                timeout=900,
-            )
-        except subprocess.TimeoutExpired:
-            return _finish_execution(
-                stack,
-                execution,
-                status=TerraformExecution.STATUS_FAILED,
-                return_code=-1,
-                stdout='\n\n'.join(part for part in stdout_parts if part).strip(),
-                stderr=f'{_format_command(command)} 执行超时，请检查云厂商接口连通性或缩小执行范围。',
-                workspace=workspace,
-            )
-        except OSError as exc:
-            return _finish_execution(
-                stack,
-                execution,
-                status=TerraformExecution.STATUS_FAILED,
-                return_code=-1,
-                stdout='\n\n'.join(part for part in stdout_parts if part).strip(),
-                stderr=f'{_format_command(command)} 执行失败: {exc}',
-                workspace=workspace,
-            )
+    try:
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='ignore',
+                    timeout=900,
+                )
+            except subprocess.TimeoutExpired:
+                return _finish_execution(
+                    stack,
+                    execution,
+                    status=TerraformExecution.STATUS_FAILED,
+                    return_code=-1,
+                    stdout='\n\n'.join(part for part in stdout_parts if part).strip(),
+                    stderr=f'{_format_command(command)} 执行超时，请检查云厂商接口连通性或缩小执行范围。',
+                    workspace=workspace,
+                )
+            except OSError as exc:
+                return _finish_execution(
+                    stack,
+                    execution,
+                    status=TerraformExecution.STATUS_FAILED,
+                    return_code=-1,
+                    stdout='\n\n'.join(part for part in stdout_parts if part).strip(),
+                    stderr=f'{_format_command(command)} 执行失败: {exc}',
+                    workspace=workspace,
+                )
 
-        stdout_parts.append(f'$ {_format_command(command)}\n{result.stdout or ""}'.strip())
-        if result.stderr:
-            stderr_parts.append(f'$ {_format_command(command)}\n{result.stderr}'.strip())
-        return_code = result.returncode
-        if result.returncode != 0:
-            break
+            stdout_parts.append(f'$ {_format_command(command)}\n{result.stdout or ""}'.strip())
+            if result.stderr:
+                stderr_parts.append(f'$ {_format_command(command)}\n{result.stderr}'.strip())
+            return_code = result.returncode
+            if result.returncode != 0:
+                break
+    finally:
+        _purge_workspace_secrets(workspace)
 
     outputs = {}
     cmdb_summary = {}
@@ -134,11 +140,21 @@ def run_terraform_action(stack, action, *, secrets, operator):
     )
 
 
+KEEP_WORKSPACE_ENTRIES = {'terraform.tfstate', 'terraform.tfstate.backup', '.terraform', '.terraform.lock.hcl'}
+
+
 def _prepare_workspace(stack, files):
     workspace = Path(settings.BASE_DIR) / 'run' / 'iac' / f'stack-{stack.id}-{_slugify(stack.name)}'
-    if workspace.exists():
-        shutil.rmtree(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
+    # 只清理上次生成的文件，保留 terraform state 与 provider 缓存，
+    # 否则 destroy 会在空 state 上假成功、apply 会重复创建资源
+    for path in workspace.iterdir():
+        if path.name in KEEP_WORKSPACE_ENTRIES or path.name.startswith('terraform.tfstate'):
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
     for filename, content in files.items():
         if filename == 'README.md':
             continue
@@ -146,6 +162,14 @@ def _prepare_workspace(stack, files):
     stack.workspace_dir = str(workspace)
     stack.save(update_fields=['workspace_dir'])
     return workspace
+
+
+def _purge_workspace_secrets(workspace):
+    for name in ('terraform.tfvars', 'terraform.tfvars.json'):
+        try:
+            (workspace / name).unlink()
+        except FileNotFoundError:
+            continue
 
 
 def _build_commands(terraform_bin, action):
@@ -163,15 +187,18 @@ def _build_commands(terraform_bin, action):
 
 
 def _load_outputs(terraform_bin, workspace):
-    result = subprocess.run(
-        [terraform_bin, 'output', '-json'],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        encoding='utf-8',
-        errors='ignore',
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            [terraform_bin, 'output', '-json'],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='ignore',
+            timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return {}
     if result.returncode != 0 or not result.stdout.strip():
         return {}
     try:

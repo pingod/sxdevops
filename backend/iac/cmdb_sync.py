@@ -99,6 +99,18 @@ def sync_stack_to_cmdb(stack, operator=''):
             relation.get('description') or '',
         )
 
+    # 已从配置中移除的资源不应继续以 active 状态留在 CMDB
+    stale_bindings = TerraformResourceBinding.objects.filter(stack=stack).exclude(
+        resource_key__in=[resource['key'] for resource in inventory]
+    ).select_related('cmdb_item')
+    stale_offline = 0
+    for binding in stale_bindings:
+        item = binding.cmdb_item
+        if item.status != 'offline':
+            item.status = 'offline'
+            item.save(update_fields=['status', 'updated_at'])
+            stale_offline += 1
+
     stack.last_cmdb_sync_at = timezone.now()
     stack.save(update_fields=['last_cmdb_sync_at'])
 
@@ -106,6 +118,7 @@ def sync_stack_to_cmdb(stack, operator=''):
         'resource_count': len(inventory),
         'created_items': created,
         'updated_items': updated,
+        'offline_items': stale_offline,
         'business_line': business_line,
         'environment': environment,
     }

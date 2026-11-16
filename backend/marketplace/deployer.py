@@ -5,6 +5,7 @@
 """
 import logging
 import re
+import shlex
 
 import paramiko
 import yaml
@@ -24,11 +25,17 @@ logger = logging.getLogger(__name__)
 DEPLOY_BASE = '/opt/sxdevops'
 
 
+def _sanitize_template_value(value):
+    """去掉换行与控制字符，避免用户提供的值在模板里插出新的 YAML 文档或指令。"""
+    text = str(value)
+    return ''.join(ch for ch in text if ch == '\t' or ord(ch) >= 0x20)
+
+
 def _render_template(template_str, context):
     """简易模板渲染：将 {{key}} 替换为 context[key]"""
     result = template_str or ''
     for key, value in context.items():
-        result = result.replace('{{' + key + '}}', str(value))
+        result = result.replace('{{' + key + '}}', _sanitize_template_value(value))
     return re.sub(r'\{\{[^}]+\}\}', '', result)
 
 
@@ -174,7 +181,7 @@ def _deploy_docker_compose(deployment, log_lines):
     try:
         log_lines.append(f'[✓] SSH 连接成功: {host.ip_address}:{getattr(host, "ssh_port", 22)}')
 
-        _ssh_exec(client, f'mkdir -p {service_dir}')
+        _ssh_exec(client, f'mkdir -p {shlex.quote(service_dir)}')
         log_lines.append(f'[✓] 创建目录: {service_dir}')
 
         sftp = client.open_sftp()
@@ -186,7 +193,7 @@ def _deploy_docker_compose(deployment, log_lines):
 
         code, out, err = _ssh_exec(
             client,
-            f'cd {service_dir} && docker-compose up -d 2>&1 || docker compose up -d 2>&1',
+            f'cd {shlex.quote(service_dir)} && docker-compose up -d 2>&1 || docker compose up -d 2>&1',
         )
         log_lines.append('[CMD] docker-compose up -d')
         if out.strip():
@@ -358,14 +365,19 @@ def stop_service(deployment):
         deployment.save(update_fields=['deploy_log'])
         return deployment
 
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(service_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose stop 执行失败，退出码: {code}')
         deployment.status = 'stopped'
         deployment.deploy_log += f'\n[✓] 服务已停止\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 停止失败: {str(exc)}'
+    finally:
+        if client:
+            client.close()
 
     deployment.save(update_fields=['status', 'deploy_log'])
     return deployment
@@ -389,14 +401,19 @@ def start_service(deployment):
     host = deployment.host
     service_dir = deployment.deploy_dir
 
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose start 2>&1 || docker compose start 2>&1')
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(service_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose start 执行失败，退出码: {code}')
         deployment.status = 'running'
         deployment.deploy_log += f'\n[✓] 服务已启动\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 启动失败: {str(exc)}'
+    finally:
+        if client:
+            client.close()
 
     deployment.save(update_fields=['status', 'deploy_log'])
     return deployment
@@ -457,16 +474,23 @@ def remove_service(deployment):
     host = deployment.host
     service_dir = deployment.deploy_dir
 
+    client = None
     try:
         client = _get_ssh_client(host)
-        _, out, err = _ssh_exec(client, f'cd {service_dir} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
-        _ssh_exec(client, f'rm -rf {service_dir}')
+        code, out, err = _ssh_exec(client, f'cd {shlex.quote(service_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        if code != 0:
+            raise RuntimeError(f'docker-compose down 执行失败，退出码: {code}')
+        remove_code, _, _ = _ssh_exec(client, f'rm -rf {shlex.quote(service_dir)}')
+        if remove_code != 0:
+            raise RuntimeError(f'删除部署目录失败，退出码: {remove_code}')
         deployment.deploy_log += f'\n[✓] 服务已卸载并清理\n{out}{err}'
-        client.close()
     except Exception as exc:
         deployment.deploy_log += f'\n[✗] 卸载失败: {str(exc)}'
         deployment.save(update_fields=['deploy_log'])
         return deployment
+    finally:
+        if client:
+            client.close()
 
     deployment.save(update_fields=['deploy_log'])
     deployment.delete()
@@ -499,13 +523,16 @@ def get_service_logs(deployment, tail=100):
     host = deployment.host
     service_dir = deployment.deploy_dir
 
+    client = None
     try:
         client = _get_ssh_client(host)
         _, out, err = _ssh_exec(
             client,
-            f'cd {service_dir} && docker-compose logs --tail={tail} 2>&1 || docker compose logs --tail={tail} 2>&1',
+            f'cd {shlex.quote(service_dir)} && docker-compose logs --tail={int(tail)} 2>&1 || docker compose logs --tail={int(tail)} 2>&1',
         )
-        client.close()
         return out or err
     except Exception as exc:
         return f'获取日志失败: {str(exc)}'
+    finally:
+        if client:
+            client.close()

@@ -561,11 +561,16 @@ def _normalize_config(cloud_provider, raw_config, stack_name=''):
     defaults = copy.deepcopy(PROVIDER_CATALOG[cloud_provider]['defaults'])
     prepared = _upgrade_legacy_config(raw_config, defaults)
     merged = _deep_merge(defaults, prepared)
+    # 自由 JSON 里 null/列表/字符串都可能出现，逐段归一成 dict 再取值
+    for section in ['metadata', 'network', 'compute', 'resources', 'topology']:
+        merged[section] = _as_dict(merged.get(section))
+    for key in ['rds', 'redis', 'load_balancer', 'nat_gateway', 'object_storage']:
+        merged['resources'][key] = _as_dict(merged['resources'].get(key))
     metadata = merged['metadata']
     network = merged['network']
     compute = merged['compute']
     resources = merged['resources']
-    raw_compute = _as_dict((raw_config or {}).get('compute'))
+    raw_compute = _as_dict((raw_config or {}).get('compute') if isinstance(raw_config, dict) else None)
 
     metadata['project_name'] = str(metadata.get('project_name') or '').strip()
     metadata['business_line'] = str(metadata.get('business_line') or '').strip()
@@ -585,7 +590,7 @@ def _normalize_config(cloud_provider, raw_config, stack_name=''):
         network['subnet_gateway'] = str(next(subnet_network.hosts()))
 
     compute_instances = _normalize_compute_instances(
-        raw_config=raw_config or {},
+        raw_config=raw_config if isinstance(raw_config, dict) else {},
         raw_compute=raw_compute,
         merged_compute=compute,
         stack_name=stack_name,

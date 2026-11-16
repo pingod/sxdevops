@@ -1,5 +1,9 @@
+import json
+
+
 def _quoted(value):
-    return f'"{value}"'
+    # JSON 字符串转义是合法的 YAML 双引号标量，能阻止换行注入额外文档
+    return json.dumps(str(value))
 
 
 def build_k8s_manifest(

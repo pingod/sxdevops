@@ -25,6 +25,31 @@ def _default_release_name(template):
     return slugify(template.name) or f'service-{template.pk}'
 
 
+def _resolve_env_config(template, provided):
+    """合并 env_schema 默认值并校验必填项，返回 (config, error)。"""
+    provided = provided if isinstance(provided, dict) else {}
+    resolved = {}
+    missing = []
+    for item in template.env_schema or []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get('key') or '').strip()
+        if not key:
+            continue
+        value = provided.get(key)
+        if value in (None, ''):
+            value = item.get('default', '')
+        if value in (None, '') and item.get('required'):
+            missing.append(item.get('label') or key)
+            continue
+        resolved[key] = value
+    for key, value in provided.items():
+        resolved.setdefault(key, value)
+    if missing:
+        return {}, {'detail': '\u8bf7\u8865\u5145\u5fc5\u586b\u914d\u7f6e\u9879\uff1a' + '\u3001'.join(missing)}
+    return resolved, None
+
+
 class ServiceTemplateViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
     queryset = ServiceTemplate.objects.filter(is_active=True)
     serializer_class = ServiceTemplateSerializer
@@ -154,7 +179,10 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
-        tail = int(request.query_params.get('tail', 100))
+        try:
+            tail = max(1, min(int(request.query_params.get('tail', 100)), 10000))
+        except (TypeError, ValueError):
+            tail = 100
         return Response({'logs': deployer.get_service_logs(deployment, tail=tail)})
 
 
@@ -184,6 +212,10 @@ def deploy_service_view(request):
         'deployer': request.user.username,
         'replicas': data.get('replicas', 1),
     }
+    env_config, env_error = _resolve_env_config(template, deployment_kwargs['env_config'])
+    if env_error:
+        return Response(env_error, status=status.HTTP_400_BAD_REQUEST)
+    deployment_kwargs['env_config'] = env_config
 
     if deploy_mode == 'docker_compose':
         from ops.models import Host

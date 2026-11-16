@@ -159,11 +159,13 @@ class AwsCloudAdapter(BaseCloudAdapter):
         region = environment.region or self.default_region('ap-southeast-1')
         assets = []
         ec2 = session.client('ec2', region_name=region)
-        for reservation in ec2.describe_instances().get('Reservations', []):
-            for instance in reservation.get('Instances', []):
-                tags = _tag_map(instance.get('Tags'))
-                name = tags.get('Name') or instance.get('InstanceId')
-                assets.append(self.asset(environment, name, 'ecs', instance.get('InstanceId'), region=region, zone=instance.get('Placement', {}).get('AvailabilityZone', ''), status='running' if instance.get('State', {}).get('Name') == 'running' else 'stopped', charge_type=instance.get('InstanceLifecycle') or 'on_demand', private_ip=instance.get('PrivateIpAddress', ''), public_ip=instance.get('PublicIpAddress', ''), vpc_name=instance.get('VpcId', ''), spec=instance.get('InstanceType', ''), tags=tags))
+        paginator = ec2.get_paginator('describe_instances')
+        for page in paginator.paginate(PaginationConfig={'PageSize': 100}):
+            for reservation in page.get('Reservations', []):
+                for instance in reservation.get('Instances', []):
+                    tags = _tag_map(instance.get('Tags'))
+                    name = tags.get('Name') or instance.get('InstanceId')
+                    assets.append(self.asset(environment, name, 'ecs', instance.get('InstanceId'), region=region, zone=instance.get('Placement', {}).get('AvailabilityZone', ''), status='running' if instance.get('State', {}).get('Name') == 'running' else 'stopped', charge_type=instance.get('InstanceLifecycle') or 'on_demand', private_ip=instance.get('PrivateIpAddress', ''), public_ip=instance.get('PublicIpAddress', ''), vpc_name=instance.get('VpcId', ''), spec=instance.get('InstanceType', ''), tags=tags))
         return assets
 
     def fetch_cost_series(self, months=6):
@@ -214,18 +216,28 @@ class AliyunCloudAdapter(BaseCloudAdapter):
 
     def fetch_inventory(self, environment):
         request_module = importlib.import_module('aliyunsdkecs.request.v20140526.DescribeInstancesRequest')
-        request = request_module.DescribeInstancesRequest()
-        request.set_accept_format('json')
-        response = json.loads(self._client(environment.region or self.default_region('cn-hangzhou')).do_action_with_exception(request))
+        client = self._client(environment.region or self.default_region('cn-hangzhou'))
         assets = []
-        for row in ((response.get('Instances') or {}).get('Instance') or []):
-            tags = {}
-            for tag in (((row.get('Tags') or {}).get('Tag') or [])):
-                if tag.get('TagKey'):
-                    tags[tag['TagKey']] = tag.get('TagValue', '')
-            private_ips = ((row.get('VpcAttributes') or {}).get('PrivateIpAddress') or {}).get('IpAddress') or []
-            public_ips = ((row.get('PublicIpAddress') or {}).get('IpAddress') or [])
-            assets.append(self.asset(environment, row.get('InstanceName') or row.get('InstanceId'), 'ecs', row.get('InstanceId'), region=row.get('RegionId') or environment.region, zone=row.get('ZoneId', ''), status='running' if row.get('Status') == 'Running' else 'stopped', charge_type=row.get('InstanceChargeType', ''), private_ip=private_ips[0] if private_ips else '', public_ip=public_ips[0] if public_ips else '', vpc_name=(row.get('VpcAttributes') or {}).get('VpcId', ''), spec=row.get('InstanceType', ''), cpu=row.get('Cpu', 0), memory_gb=row.get('Memory', 0), tags=tags))
+        page_size = 100
+        page_number = 1
+        while True:
+            request = request_module.DescribeInstancesRequest()
+            request.set_accept_format('json')
+            request.set_PageSize(page_size)
+            request.set_PageNumber(page_number)
+            response = json.loads(client.do_action_with_exception(request))
+            rows = ((response.get('Instances') or {}).get('Instance') or [])
+            for row in rows:
+                tags = {}
+                for tag in (((row.get('Tags') or {}).get('Tag') or [])):
+                    if tag.get('TagKey'):
+                        tags[tag['TagKey']] = tag.get('TagValue', '')
+                private_ips = ((row.get('VpcAttributes') or {}).get('PrivateIpAddress') or {}).get('IpAddress') or []
+                public_ips = ((row.get('PublicIpAddress') or {}).get('IpAddress') or [])
+                assets.append(self.asset(environment, row.get('InstanceName') or row.get('InstanceId'), 'ecs', row.get('InstanceId'), region=row.get('RegionId') or environment.region, zone=row.get('ZoneId', ''), status='running' if row.get('Status') == 'Running' else 'stopped', charge_type=row.get('InstanceChargeType', ''), private_ip=private_ips[0] if private_ips else '', public_ip=public_ips[0] if public_ips else '', vpc_name=(row.get('VpcAttributes') or {}).get('VpcId', ''), spec=row.get('InstanceType', ''), cpu=row.get('Cpu', 0), memory_gb=row.get('Memory', 0), tags=tags))
+            if len(rows) < page_size:
+                break
+            page_number += 1
         return assets
 
 
@@ -274,12 +286,22 @@ class TencentCloudAdapter(BaseCloudAdapter):
         client_profile = profile_module.ClientProfile()
         client_profile.httpProfile = http_profile
         client = client_module.CvmClient(cred, environment.region or self.default_region('ap-guangzhou'), client_profile)
-        payload = json.loads(client.DescribeInstances(models_module.DescribeInstancesRequest()).to_json_string())
         assets = []
-        for row in payload.get('InstanceSet', []):
-            private_ips = row.get('PrivateIpAddresses') or []
-            public_ips = row.get('PublicIpAddresses') or []
-            assets.append(self.asset(environment, row.get('InstanceName') or row.get('InstanceId'), 'ecs', row.get('InstanceId'), region=environment.region or self.default_region('ap-guangzhou'), zone=row.get('Placement', {}).get('Zone', ''), status='running' if row.get('InstanceState') == 'RUNNING' else 'stopped', charge_type=row.get('InstanceChargeType', ''), private_ip=private_ips[0] if private_ips else '', public_ip=public_ips[0] if public_ips else '', vpc_name=row.get('VirtualPrivateCloud', {}).get('VpcId', ''), spec=row.get('InstanceType', '')))
+        offset = 0
+        limit = 100
+        while True:
+            request = models_module.DescribeInstancesRequest()
+            request.Offset = offset
+            request.Limit = limit
+            payload = json.loads(client.DescribeInstances(request).to_json_string())
+            rows = payload.get('InstanceSet', [])
+            for row in rows:
+                private_ips = row.get('PrivateIpAddresses') or []
+                public_ips = row.get('PublicIpAddresses') or []
+                assets.append(self.asset(environment, row.get('InstanceName') or row.get('InstanceId'), 'ecs', row.get('InstanceId'), region=environment.region or self.default_region('ap-guangzhou'), zone=row.get('Placement', {}).get('Zone', ''), status='running' if row.get('InstanceState') == 'RUNNING' else 'stopped', charge_type=row.get('InstanceChargeType', ''), private_ip=private_ips[0] if private_ips else '', public_ip=public_ips[0] if public_ips else '', vpc_name=row.get('VirtualPrivateCloud', {}).get('VpcId', ''), spec=row.get('InstanceType', '')))
+            if len(rows) < limit:
+                break
+            offset += limit
         return assets
 
 
@@ -316,25 +338,36 @@ class HuaweiCloudAdapter(BaseCloudAdapter):
 
     def fetch_inventory(self, environment):
         ecs_module = importlib.import_module('huaweicloudsdkecs.v2')
-        response = self._client(environment.region or self.default_region('cn-north-4')).list_servers_details(ecs_module.ListServersDetailsRequest())
+        client = self._client(environment.region or self.default_region('cn-north-4'))
         assets = []
-        for row in getattr(response, 'servers', []) or []:
-            private_ip = ''
-            public_ip = ''
-            for address_list in (getattr(row, 'addresses', {}) or {}).values():
-                for address in address_list or []:
-                    addr = getattr(address, 'addr', '') or ''
-                    ip_type = getattr(address, 'os_ext_ip_stype', '') or ''
-                    if ip_type == 'floating' and not public_ip:
-                        public_ip = addr
-                    elif not private_ip:
-                        private_ip = addr
-            tags = {}
-            for tag in getattr(row, 'tags', []) or []:
-                if isinstance(tag, str) and '=' in tag:
-                    key, value = tag.split('=', 1)
-                    tags[key] = value
-            assets.append(self.asset(environment, getattr(row, 'name', '') or getattr(row, 'id', ''), 'ecs', getattr(row, 'id', ''), region=environment.region or self.default_region('cn-north-4'), zone=getattr(row, 'os_ext_a_zavailability_zone', '') or '', status='running' if getattr(row, 'status', '') == 'ACTIVE' else 'stopped', private_ip=private_ip, public_ip=public_ip, spec=getattr(getattr(row, 'flavor', None), 'id', '') or '', tags=tags, metadata={'host_status': getattr(row, 'host_status', ''), 'description': getattr(row, 'description', ''), 'enterprise_project_id': getattr(row, 'enterprise_project_id', '')}))
+        marker = None
+        while True:
+            request = ecs_module.ListServersDetailsRequest()
+            request.limit = 100
+            if marker:
+                request.marker = marker
+            response = client.list_servers_details(request)
+            rows = getattr(response, 'servers', []) or []
+            for row in rows:
+                private_ip = ''
+                public_ip = ''
+                for address_list in (getattr(row, 'addresses', {}) or {}).values():
+                    for address in address_list or []:
+                        addr = getattr(address, 'addr', '') or ''
+                        ip_type = getattr(address, 'os_ext_ip_stype', '') or ''
+                        if ip_type == 'floating' and not public_ip:
+                            public_ip = addr
+                        elif not private_ip:
+                            private_ip = addr
+                tags = {}
+                for tag in getattr(row, 'tags', []) or []:
+                    if isinstance(tag, str) and '=' in tag:
+                        key, value = tag.split('=', 1)
+                        tags[key] = value
+                assets.append(self.asset(environment, getattr(row, 'name', '') or getattr(row, 'id', ''), 'ecs', getattr(row, 'id', ''), region=environment.region or self.default_region('cn-north-4'), zone=getattr(row, 'os_ext_a_zavailability_zone', '') or '', status='running' if getattr(row, 'status', '') == 'ACTIVE' else 'stopped', private_ip=private_ip, public_ip=public_ip, spec=getattr(getattr(row, 'flavor', None), 'id', '') or '', tags=tags, metadata={'host_status': getattr(row, 'host_status', ''), 'description': getattr(row, 'description', ''), 'enterprise_project_id': getattr(row, 'enterprise_project_id', '')}))
+            marker = getattr(response, 'marker', '') or ''
+            if not marker or len(rows) < 100:
+                break
         return assets
 
 
