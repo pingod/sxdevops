@@ -1003,6 +1003,11 @@ function renderMetricChart() {
     metricChart?.clear()
     return
   }
+  // queryError 的 v-if 会卸载容器，实例仍指向旧 DOM，必须重建
+  if (metricChart && metricChart.getDom() !== metricChartRef.value) {
+    metricChart.dispose()
+    metricChart = null
+  }
   if (!metricChart) metricChart = echarts.init(metricChartRef.value, null, { renderer: 'canvas' })
   metricChart.setOption(
     {
@@ -1690,13 +1695,27 @@ async function submitDatasource() {
 }
 
 async function testSource(row) {
-  const response = await testMetricDataSource(row.id, { query: 'up' })
-  ElMessage.success(`${response.message || '连接成功'}，返回 ${response.series_count || 0} 条序列`)
+  try {
+    const response = await testMetricDataSource(row.id, { query: 'up' })
+    ElMessage.success(`${response.message || '连接成功'}，返回 ${response.series_count || 0} 条序列`)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.detail || error?.response?.data?.message || '指标数据源测试失败')
+  }
 }
 
 async function removeSource(row) {
-  await ElMessageBox.confirm(`确认删除指标数据源「${row.name}」？`, '删除确认', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确认删除指标数据源「${row.name}」？`, '删除确认', { type: 'warning' })
+  } catch {
+    return
+  }
   await deleteMetricDataSource(row.id)
+  if (queryForm.metric_datasource_id === row.id) {
+    queryForm.metric_datasource_id = ''
+    lastResult.value = {}
+    queryError.value = ''
+    lastQueryFailed.value = false
+  }
   ElMessage.success('指标数据源已删除')
   await loadDataSources()
 }

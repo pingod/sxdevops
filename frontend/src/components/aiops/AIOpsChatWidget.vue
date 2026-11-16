@@ -1608,6 +1608,15 @@ function parseAssistantContent(content) {
   return blocks.length ? blocks : [{ type: 'paragraph', text: source }]
 }
 
+function markAssistantMessageFailed(assistantMessageId) {
+  const target = messages.value.find(item => item.id === assistantMessageId)
+  if (!target) return
+  target.metadata = { ...(target.metadata || {}), processing_status: 'failed' }
+  if (!normalizeText(target.content)) {
+    target.content = 'AI 助手响应失败，请重试。'
+  }
+}
+
 function stopMessagePolling() {
   if (pollingTimer) {
     window.clearTimeout(pollingTimer)
@@ -1741,6 +1750,7 @@ function startMessagePolling(sessionId, assistantMessageId) {
   const poll = async () => {
     try {
       const latestMessages = await getAIOpsMessages(sessionId, AIOPS_SESSION_REQUEST_CONFIG)
+      if (pollingSessionId !== sessionId || pollingMessageId !== assistantMessageId) return
       await applyLatestMessages(sessionId, latestMessages)
       const target = latestMessages.find(item => item.id === assistantMessageId)
       const status = getProcessingStatus(target)
@@ -1755,6 +1765,7 @@ function startMessagePolling(sessionId, assistantMessageId) {
       }
       pollingTimer = window.setTimeout(poll, 1000)
     } catch (error) {
+      if (pollingSessionId !== sessionId || pollingMessageId !== assistantMessageId) return
       if (isAIOpsSessionMissingError(error)) {
         await handleMissingChatSession(sessionId)
         return
@@ -1764,6 +1775,9 @@ function startMessagePolling(sessionId, assistantMessageId) {
         pollingTimer = window.setTimeout(finalizePoll, 320)
         return
       }
+      // 连续失败必须显式收尾，否则气泡永远停在“分析中”
+      markAssistantMessageFailed(assistantMessageId)
+      ElMessage.error(error?.response?.data?.detail || 'AI 助手响应超时，请稍后重试')
       stopMessagePolling()
     }
   }
@@ -1808,13 +1822,17 @@ async function selectSession(sessionId) {
   mobileSessionVisible.value = false
   loading.value.messages = true
   try {
-    messages.value = await getAIOpsMessages(sessionId, AIOPS_SESSION_REQUEST_CONFIG)
+    const loadedMessages = await getAIOpsMessages(sessionId, AIOPS_SESSION_REQUEST_CONFIG)
+    // 慢响应可能晚于用户的下一次切换，不能再覆盖当前会话
+    if (currentSessionId.value !== sessionId) return
+    messages.value = loadedMessages
     resumeMessagePolling(sessionId, messages.value)
     loadDraft(sessionId)
     await nextTick()
     scrollToBottom(true)
     focusComposer()
   } catch (error) {
+    if (currentSessionId.value !== sessionId) return
     if (isAIOpsSessionMissingError(error)) {
       await handleMissingChatSession(sessionId)
       return
@@ -1822,7 +1840,9 @@ async function selectSession(sessionId) {
     ElMessage.error(error?.response?.data?.detail || '加载会话消息失败')
     throw error
   } finally {
-    loading.value.messages = false
+    if (currentSessionId.value === sessionId) {
+      loading.value.messages = false
+    }
   }
 }
 
@@ -1877,6 +1897,11 @@ async function handleSend() {
       content,
       analysis_only: effectiveAnalysisOnly.value,
     }, AIOPS_SESSION_REQUEST_CONFIG)
+    // 等待期间用户可能已切换会话，此时不能再把提问与回答推进当前会话
+    if (currentSessionId.value !== sessionId) {
+      pendingAssistantMessage.value = null
+      return
+    }
     messages.value.push(response.user_message)
     messages.value.push(response.assistant_message)
     pendingAssistantMessage.value = null

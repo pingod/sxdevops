@@ -9,6 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from aiops.models import AIOpsPendingAction
+from cmdb.models import ResourceNode
 from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
 from eventwall.services import build_json_preview, build_resource, record_event
@@ -1319,6 +1320,7 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
         'rerun_source',
     ).prefetch_related('approval_steps').all()
     serializer_class = DeploymentSerializer
+    pagination_class = None
     search_fields = ['app_name', 'business_line', 'version', 'image', 'submitter', 'deployer']
     filterset_fields = ['business_line', 'environment', 'deploy_mode', 'approval_status', 'status', 'release_strategy']
     event_module = 'ops'
@@ -1342,10 +1344,31 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
         'rerun': ['ops.deployment.manage'],
         'rollback': ['ops.deployment.manage'],
         'advance_batch': ['ops.deployment.manage'],
+        'resource_node_tree': ['ops.deployment.view'],
     }
 
     def get_queryset(self):
         return _apply_system_alias_filter(self.request, super().get_queryset(), 'business_line')
+
+    @action(detail=False, methods=['get'], url_path='resource-node-tree')
+    def resource_node_tree(self, request):
+        nodes = (
+            ResourceNode.objects.filter(node_type='biz')
+            .prefetch_related('children')
+            .order_by('sort_order', 'name')
+        )
+        return Response([
+            {
+                'id': node.id,
+                'name': node.name,
+                'node_type': 'biz',
+                'children': [
+                    {'id': child.id, 'name': child.name, 'node_type': 'env'}
+                    for child in node.children.all().order_by('sort_order', 'name')
+                ],
+            }
+            for node in nodes
+        ])
 
     def perform_create(self, serializer):
         deployment = serializer.save(submitter=self.request.user.username)

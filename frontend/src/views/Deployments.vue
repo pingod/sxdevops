@@ -493,7 +493,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Promotion, RefreshRight } from '@element-plus/icons-vue'
 import { getDockerHosts, getK8sClusters } from '@/api/modules/container'
-import { advanceDeploymentBatch, approveDeployment, createDeployment, createDeploymentApprovalFlow, deleteDeploymentApprovalFlow, getDeploymentApprovalFlows, getDeployments, getDeploymentStatus, getUsers, rejectDeployment, removeDeployment, rerunDeployment, rollbackDeployment, startDeployment, updateDeploymentApprovalFlow } from '@/api/modules/ops'
+import { advanceDeploymentBatch, approveDeployment, createDeployment, createDeploymentApprovalFlow, deleteDeploymentApprovalFlow, getDeploymentApprovalFlows, getDeploymentResourceTree, getDeployments, getDeploymentStatus, getUsers, rejectDeployment, removeDeployment, rerunDeployment, rollbackDeployment, startDeployment, updateDeploymentApprovalFlow } from '@/api/modules/ops'
 import { getGroups, getRoles } from '@/api/modules/rbac'
 import { useAuthStore } from '@/stores/auth'
 import { WORK_ORDER_TYPE_OPTIONS, enrichWorkOrderFlows, getFlowTicketTypes, saveFlowTicketTypes } from '@/utils/workorderFlows'
@@ -702,13 +702,13 @@ async function fetchFlows() {
 }
 
 async function fetchLookups() {
-  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes] = await Promise.allSettled([getDockerHosts(), getK8sClusters(), getUsers(), getRoles(), getGroups()])
+  const [dockerHostRes, clusterRes, userRes, roleRes, groupRes, resourceTreeRes] = await Promise.allSettled([getDockerHosts(), getK8sClusters(), getUsers(), getRoles(), getGroups(), getDeploymentResourceTree()])
   dockerHosts.value = dockerHostRes.status === 'fulfilled' ? safeList(dockerHostRes.value) : []
   clusters.value = clusterRes.status === 'fulfilled' ? safeList(clusterRes.value) : []
   users.value = userRes.status === 'fulfilled' ? safeList(userRes.value) : []
   roles.value = roleRes.status === 'fulfilled' ? safeList(roleRes.value) : []
   groups.value = groupRes.status === 'fulfilled' ? safeList(groupRes.value) : []
-  resourceTree.value = []
+  resourceTree.value = resourceTreeRes.status === 'fulfilled' && Array.isArray(resourceTreeRes.value) ? resourceTreeRes.value : []
 }
 
 const releaseDialogVisible = ref(false)
@@ -812,7 +812,21 @@ async function handleAdvanceBatch(row) {
   await fetchDeployments()
 }
 async function handleStart(row) { await startDeployment(row.id); ElMessage.success('当前版本已启动'); await fetchDeployments() }
-async function handleRemove(row) { await removeDeployment(row.id); ElMessage.success('当前版本已下线'); await fetchDeployments() }
+async function handleRemove(row) {
+  const suffix = row.deploy_mode === 'docker_compose' ? '，并删除运行实例与数据卷' : '，并删除对应的 K8s 工作负载'
+  try {
+    await ElMessageBox.confirm(
+      `确认下线 ${row.app_name} ${row.version || ''}${suffix}？该操作不可恢复。`,
+      '下线确认',
+      { type: 'warning', confirmButtonText: '确认下线', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  await removeDeployment(row.id)
+  ElMessage.success('当前版本已下线')
+  await fetchDeployments()
+}
 const detailVisible = ref(false)
 const detailItem = ref(null)
 const detailStatusLoading = ref(false)

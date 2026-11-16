@@ -82,7 +82,7 @@
       <div class="workbench-toolbar workbench-toolbar--history users-toolbar">
         <div class="workbench-toolbar-left">
           <template v-if="activeTab === 'users'">
-            <el-input v-model="userSearch" placeholder="搜索用户名 / 邮箱" clearable style="width: 260px" @input="fetchUsers" />
+            <el-input v-model="userSearch" placeholder="搜索用户名 / 邮箱" clearable style="width: 260px" @input="handleUserSearch" />
           </template>
           <template v-else-if="activeTab === 'roles'">
             <el-input v-model="roleSearch" placeholder="搜索角色编码 / 名称" clearable style="width: 260px" @input="fetchRoles" />
@@ -487,9 +487,20 @@ async function fetchUsers() {
     if (!userSearch.value) {
       userOptions.value = users.value
     }
+    // 当前页超出新的总页数时回退一页重取，避免停在空页
+    if (!users.value.length && userPage.value > 1) {
+      userPage.value = Math.max(1, userPage.value - 1)
+      await fetchUsers()
+      return
+    }
   } finally {
     loading.value.users = false
   }
+}
+
+function handleUserSearch() {
+  userPage.value = 1
+  fetchUsers()
 }
 
 async function fetchUserOptions() {

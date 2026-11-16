@@ -1414,11 +1414,12 @@ async function loadCatalog(tab = currentTab.value) {
     if (!datasource) return
 
     if (datasource.provider === 'loki') {
+      const range = normalizeTimeRange(tab.timeRange)
       const response = await getLogProviderCatalog('loki', {
         datasource_id: tab.datasourceId,
         action: 'labels',
-        start_ms: toTimestampMs(tab.timeRange[0]),
-        end_ms: toTimestampMs(tab.timeRange[1]),
+        start_ms: toTimestampMs(range[0]),
+        end_ms: toTimestampMs(range[1]),
       })
       tab.lokiLabels = response.items || []
     } else if (datasource.provider === 'elk') {
@@ -1469,12 +1470,13 @@ async function onLokiLabelKeyChange(tab, index) {
 async function loadLokiLabelValues(tab, index) {
   const filter = tab.labelFilters[index]
   if (!filter.key) return
+  const range = normalizeTimeRange(tab.timeRange)
   const response = await getLogProviderCatalog('loki', {
     datasource_id: tab.datasourceId,
     action: 'label_values',
     label: filter.key,
-    start_ms: toTimestampMs(tab.timeRange[0]),
-    end_ms: toTimestampMs(tab.timeRange[1]),
+    start_ms: toTimestampMs(range[0]),
+    end_ms: toTimestampMs(range[1]),
   })
   filter.options = response.items || []
 }
@@ -1548,11 +1550,12 @@ function friendlyLogError(error) {
 
 function buildPayload(tab) {
   const datasource = dataSources.value.find((item) => item.id === tab.datasourceId)
+  const range = normalizeTimeRange(tab.timeRange)
   const payload = {
     datasource_id: tab.datasourceId,
     provider: datasource?.provider,
-    start_ms: toTimestampMs(tab.timeRange[0]),
-    end_ms: toTimestampMs(tab.timeRange[1]),
+    start_ms: toTimestampMs(range[0]),
+    end_ms: toTimestampMs(range[1]),
     limit: tab.limit,
   }
 

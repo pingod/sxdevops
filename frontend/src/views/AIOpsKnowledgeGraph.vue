@@ -350,6 +350,7 @@ const graphDrag = reactive({ active: false, moved: false, x: 0, y: 0, scrollLeft
 const legendPosition = reactive({ x: null, y: null })
 const legendDrag = reactive({ active: false, offsetX: 0, offsetY: 0 })
 let chart = null
+let graphRequestId = 0
 
 const graphNodes = computed(() => (graph.value.nodes || []).filter(node => {
   if (hiddenNodeKinds.has(node.kind)) return false
@@ -1101,13 +1102,17 @@ function renderGraph() {
 
 async function loadGraph() {
   if (activeTab.value !== 'graph') return
+  const requestId = ++graphRequestId
   loading.value = true
   try {
     const params = {}
     if (filters.environment) params.environment = filters.environment
     if (filters.system) params.system = filters.system
     if (filters.service) params.service = filters.service
-    graph.value = await getAIOpsKnowledgeGraph(params)
+    const payload = await getAIOpsKnowledgeGraph(params)
+    // 快速切换筛选时，旧响应不能覆盖新图
+    if (requestId !== graphRequestId) return
+    graph.value = payload
     if (!filters.environment && graph.value.filters?.environments?.length) {
       const defaultEnvironment = graph.value.filters.default_environment
       filters.environment = graph.value.filters.environments.includes(defaultEnvironment)
@@ -1120,9 +1125,12 @@ async function loadGraph() {
       selectedNodeId.value = ''
     }
     await nextTick()
+    if (requestId !== graphRequestId) return
     renderGraph()
   } finally {
-    loading.value = false
+    if (requestId === graphRequestId) {
+      loading.value = false
+    }
   }
 }
 

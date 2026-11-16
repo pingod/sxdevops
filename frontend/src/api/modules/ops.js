@@ -55,6 +55,7 @@ export const getHostTaskScheduleExecutions = (params) => request.get('/host-task
 export const getHostTaskScheduleExecution = (id) => request.get(`/host-task-schedule-executions/${id}/`)
 
 export const getDeployments = (params) => request.get('/deployments/', { params })
+export const getDeploymentResourceTree = () => request.get('/deployments/resource-node-tree/')
 export const createDeployment = (data) => request.post('/deployments/', data)
 export const updateDeployment = (id, data) => request.put(`/deployments/${id}/`, data)
 export const deleteDeployment = (id) => request.delete(`/deployments/${id}/`)
