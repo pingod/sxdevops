@@ -1336,9 +1336,8 @@ def _merge_obsolete_ci_types(ci_types):
 
 def _retire_obsolete_ci_types():
     # 按名称兜底时必须限定为内置模型：否则用户自建/改名的同类型模型会连同其资产被静默硬删。
-    purge_type_q = Q(code__in=OBSOLETE_CI_TYPE_PURGE_CODES) | Q(
-        name__in=OBSOLETE_CI_TYPE_PURGE_NAMES, is_builtin=True
-    )
+    # 只按内置 code 清理；按名称清理会把用户自建的同名模型（如“安全组”）连同资产硬删。
+    purge_type_q = Q(code__in=OBSOLETE_CI_TYPE_PURGE_CODES, is_builtin=True)
     purge_type_ids = list(CIType.objects.filter(purge_type_q).values_list('id', flat=True))
     if purge_type_ids:
         ConfigItem.objects.filter(ci_type_id__in=purge_type_ids).delete()
@@ -1358,10 +1357,8 @@ def _retire_obsolete_ci_types():
         is_active=False,
         is_builtin=True,
     )
-    CIType.objects.filter(name__in=OBSOLETE_CI_TYPE_RETIRE_NAMES).update(
-        is_active=False,
-        is_builtin=True,
-    )
+    # 仅停用，不把用户自建模型标记为内置，避免后续清理流程误删其资产。
+    CIType.objects.filter(name__in=OBSOLETE_CI_TYPE_RETIRE_NAMES).update(is_active=False)
     CIRelationRule.objects.filter(source_type__code__in=OBSOLETE_CI_TYPE_RETIRE_CODES).update(is_active=False)
     CIRelationRule.objects.filter(target_type__code__in=OBSOLETE_CI_TYPE_RETIRE_CODES).update(is_active=False)
     CIRelationRule.objects.filter(source_type__name__in=OBSOLETE_CI_TYPE_RETIRE_NAMES).update(is_active=False)
@@ -1375,7 +1372,7 @@ def _assign_legacy_ci_type_groups(groups):
         group = groups.get(group_code)
         if not group:
             continue
-        CIType.objects.filter(name=type_name).update(group=group, is_builtin=True)
+        CIType.objects.filter(name=type_name).update(group=group)
 
 
 def _migrate_obsolete_sync_jobs():
@@ -1508,7 +1505,7 @@ def ensure_builtin_cmdb():
         )
 
     for payload in SYNC_JOB_TEMPLATES:
-        CISyncJob.objects.update_or_create(
+        job, created = CISyncJob.objects.get_or_create(
             name=payload['name'],
             source_type=payload['source_type'],
             defaults={
@@ -1521,6 +1518,16 @@ def ensure_builtin_cmdb():
                 'error_message': '',
             },
         )
+        if created:
+            continue
+        # 已存在的内置任务可能已被运维填写云账号、间隔等配置；这里只补齐模板新增的键，
+        # 不能覆盖用户配置，也不能把运行状态/汇总/错误信息重置回初始值。
+        template_config = payload.get('config', {}) or {}
+        current_config = job.config if isinstance(job.config, dict) else {}
+        merged_config = {**template_config, **current_config}
+        if merged_config != current_config:
+            job.config = merged_config
+            job.save(update_fields=['config', 'updated_at'])
 
     return {
         'groups': len(groups),

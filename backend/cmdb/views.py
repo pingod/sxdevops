@@ -95,6 +95,7 @@ from rbac.permissions import RBACPermissionMixin, build_rbac_permission
 from rbac.services import user_has_permissions
 from .sync import (
     ensure_host_ci_type,
+    is_host_like_ci,
     is_placeholder_ci_type_name,
     normalize_ci_attributes,
     normalize_ci_type_name,
@@ -234,11 +235,14 @@ def _extract_ipv4_values(value):
     return addresses
 
 
-def _cmdb_ip_index(network):
+def _cmdb_ip_index(network, user=None):
     index = defaultdict(list)
-    for ci in ConfigItem.objects.select_related('ci_type').only(
-        'id', 'name', 'status', 'attributes', 'ci_type__name'
-    ):
+    queryset = ConfigItem.objects.select_related('ci_type').only(
+        'id', 'name', 'status', 'attributes', 'business_line', 'environment', 'ci_type_id', 'ci_type__name'
+    )
+    if user is not None:
+        queryset = _apply_ci_authorization_scope(queryset, user)
+    for ci in queryset:
         for address in _extract_ipv4_values(ci.attributes or {}):
             if ipaddress.ip_address(address) in network:
                 index[address].append(ci)
@@ -280,11 +284,11 @@ def _probe_ip(address, timeout_ms=700):
         return False
 
 
-def _subnet_address_snapshot(subnet):
+def _subnet_address_snapshot(subnet, user=None):
     network = ipaddress.ip_network(subnet.cidr)
     addresses = _usable_subnet_addresses(subnet)
     records = {row.address: row for row in subnet.addresses.select_related('ci').all()}
-    cmdb_index = _cmdb_ip_index(network)
+    cmdb_index = _cmdb_ip_index(network, user=user)
     excluded = {str(item) for item in (subnet.excluded_addresses or [])}
     rows = []
     counts = defaultdict(int)
@@ -324,9 +328,9 @@ def _subnet_address_snapshot(subnet):
     }
 
 
-def _scan_subnet(subnet, timeout_ms=700):
+def _scan_subnet(subnet, timeout_ms=700, user=None):
     network = ipaddress.ip_network(subnet.cidr)
-    cmdb_index = _cmdb_ip_index(network)
+    cmdb_index = _cmdb_ip_index(network, user=user)
     existing = {row.address: row for row in subnet.addresses.select_related('ci').all()}
     excluded = {str(item) for item in (subnet.excluded_addresses or [])}
     candidates = [address for address in _usable_subnet_addresses(subnet) if address not in excluded]
@@ -349,19 +353,28 @@ def _scan_subnet(subnet, timeout_ms=700):
             status_value = 'reserved'
         elif linked_cis:
             status_value = _linked_ci_address_status(linked_cis)
+        elif record is not None and record.ci_id:
+            # 手工关联的地址不在 CMDB 属性索引里，扫描不能把它当成空闲地址。
+            status_value = _linked_ci_address_status([record.ci])
         else:
             status_value = 'in_use' if reachability.get(address, False) else 'available'
         if record is None:
             record = IPAddress(subnet=subnet, address=address, created_by='scanner')
         record.status = status_value
         record.reachability = 'reachable' if reachability.get(address, False) else 'unreachable'
-        record.ci = linked_cis[0] if linked_cis else None
-        record.linked_ci_names = [ci.name for ci in linked_cis]
+        if linked_cis:
+            record.ci = linked_cis[0]
+            record.linked_ci_names = [ci.name for ci in linked_cis]
+        elif record.ci_id:
+            # 保留人工关联，避免每次扫描都把关联资产清空。
+            record.linked_ci_names = record.linked_ci_names or [record.ci.name]
+        else:
+            record.linked_ci_names = []
         record.last_scanned_at = now
         record.save()
     subnet.last_scanned_at = now
     subnet.save(update_fields=['last_scanned_at', 'updated_at'])
-    _, summary = _subnet_address_snapshot(subnet)
+    _, summary = _subnet_address_snapshot(subnet, user=user)
     summary['scanned_at'] = now
     return summary
 
@@ -401,8 +414,11 @@ def _to_decimal(value):
         return None
 
 
-def _to_float(value):
-    return float(value or 0)
+def _to_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _to_bool(value):
@@ -411,6 +427,17 @@ def _to_bool(value):
     if isinstance(value, str):
         return value.strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
     return bool(value)
+
+
+CONFIG_ITEM_STATUS_VALUES = {choice[0] for choice in ConfigItem._meta.get_field('status').choices}
+CI_COMPLETION_ISSUE_STATUS_VALUES = {choice[0] for choice in CICompletionIssue._meta.get_field('status').choices}
+
+
+def _normalize_config_item_status(value, default='active'):
+    status_value = str(value or default).strip()
+    if status_value not in CONFIG_ITEM_STATUS_VALUES:
+        raise ValidationError({'status': ['不支持的资产状态。']})
+    return status_value
 
 
 def _include_internal_provider_summaries(params):
@@ -1244,7 +1271,8 @@ def _build_optimization(month, ci_queryset=None):
             'by_type': defaultdict(lambda: {'count': 0}),
         }
     )
-    for item in serialized_suggestions:
+    # 云账号维度必须按全部建议聚合；只用 top 12 会让 by_cloud_account 与 by_type/总数矛盾。
+    for item in suggestions:
         account_row = by_cloud_account_map[item['source_account']]
         account_row['count'] += 1
         account_row['by_type'][item['ci_type_id']]['count'] += 1
@@ -2922,9 +2950,15 @@ def _apply_config_item_attribute_filters(qs, params):
     service_type = (params.get('service_type') or params.get('external_service_type') or '').strip()
     expiry_risk = (params.get('expiry_risk') or params.get('external_expiry_risk') or '').strip()
     if business_node:
-        qs = qs.filter(business_node_id=business_node)
+        try:
+            qs = qs.filter(business_node_id=int(business_node))
+        except (TypeError, ValueError):
+            return qs.none()
     if environment_node:
-        qs = qs.filter(environment_node_id=environment_node)
+        try:
+            qs = qs.filter(environment_node_id=int(environment_node))
+        except (TypeError, ValueError):
+            return qs.none()
     if resource_node:
         try:
             resource_node_id = int(resource_node)
@@ -3711,10 +3745,11 @@ def _int_config(config, *keys, default=0):
 
 def _collection_enabled(job):
     config = job.config or {}
+    # JSON 里的 "false" 字符串在 Python 里是真值，必须走统一的布尔解析。
     if 'collection_enabled' in config:
-        return bool(config.get('collection_enabled'))
+        return _to_bool(config.get('collection_enabled'))
     if 'enabled' in config:
-        return bool(config.get('enabled'))
+        return _to_bool(config.get('enabled'))
     return job.mode == 'scheduled'
 
 
@@ -3816,7 +3851,8 @@ def _build_collection_summary(user=None):
         item_count = configured_collection_item_count(job)
         enabled = _collection_enabled(job)
         next_run_at = _collection_next_run_at(job)
-        is_due = bool(enabled and job.mode == 'scheduled' and (next_run_at is None or next_run_at <= now))
+        # 与 _due_collection_jobs 保持一致：没有采集间隔的调度任务永远不会“到期”。
+        is_due = bool(enabled and job.mode == 'scheduled' and next_run_at is not None and next_run_at <= now)
         source_type = job.source_type or 'manual'
         resource_count = source_resource_counts.get(source_type, 0)
         failed_count = failed_record_counts.get(job.id, 0)
@@ -3843,7 +3879,8 @@ def _build_collection_summary(user=None):
             'connector': config.get('connector') or source_type,
             'resource_type': config.get('resource_type') or config.get('target_ci_type_code') or '',
             'target_ci_type_code': config.get('target_ci_type_code') or '',
-            'full_sync': bool(config.get('full_sync')),
+            'full_sync': _sync_job_full_sync_enabled(job),
+            'missing_marks_offline': _sync_job_missing_marks_ci_offline(job),
             'field_mapping_count': _field_mapping_count(config),
             'schedule_text': _collection_schedule_text(job),
             'interval_minutes': _collection_interval_minutes(job),
@@ -4138,6 +4175,13 @@ def _attribute_value_for_export(value):
     return value
 
 
+def _csv_safe_cell(value):
+    """阻止 = + - @ 开头的单元格在 Excel/LibreOffice 中被当作公式执行。"""
+    if isinstance(value, str) and value and value[0] in {'=', '+', '-', '@', '\t', '\r'}:
+        return f"'{value}"
+    return value
+
+
 def _config_items_export_csv(items):
     items = list(items or ())
     field_rows = []
@@ -4215,7 +4259,7 @@ def _config_items_export_csv(items):
         ]
         row.extend(_attribute_value_for_export(attributes.get(field.code)) for field in export_fields)
         row.append(json.dumps(attributes, ensure_ascii=False))
-        writer.writerow(row)
+        writer.writerow([_csv_safe_cell(cell) for cell in row])
 
     return output.getvalue()
 
@@ -5539,7 +5583,7 @@ class IPSubnetViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def addresses(self, request, pk=None):
         subnet = self.get_object()
-        rows, summary = _subnet_address_snapshot(subnet)
+        rows, summary = _subnet_address_snapshot(subnet, user=request.user)
         status_filter = str(request.query_params.get('status', '') or '').strip()
         search = str(request.query_params.get('search', '') or '').strip().lower()
         if status_filter:
@@ -5555,7 +5599,7 @@ class IPSubnetViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             timeout_ms = int(request.data.get('timeout_ms', 700))
         except (TypeError, ValueError):
             timeout_ms = 700
-        summary = _scan_subnet(subnet, timeout_ms=max(200, min(timeout_ms, 3000)))
+        summary = _scan_subnet(subnet, timeout_ms=max(200, min(timeout_ms, 3000)), user=request.user)
         audit_summary = {
             **summary,
             'scanned_at': summary['scanned_at'].isoformat() if summary.get('scanned_at') else '',
@@ -6833,7 +6877,8 @@ class ResourceNodeViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
 
 class CIRelationViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     """CI 关系管理"""
-    queryset = CIRelation.objects.select_related('source', 'target').all()
+    # 分页必须有稳定排序，否则翻页会重复/漏掉记录。
+    queryset = CIRelation.objects.select_related('source', 'target').order_by('id')
     serializer_class = CIRelationSerializer
     filterset_fields = ['source', 'target', 'relation_type']
     rbac_permissions = {
@@ -6971,6 +7016,12 @@ class CIRelationViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='available-rules')
     def available_rules(self, request):
         ci_id = request.query_params.get('ci') or request.query_params.get('source')
+        if not ci_id:
+            return Response({'detail': '配置项不存在或无权查看'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            ci_id = int(ci_id)
+        except (TypeError, ValueError):
+            return Response({'detail': '配置项 ID 不合法'}, status=status.HTTP_400_BAD_REQUEST)
         direction = request.query_params.get('direction') or 'outgoing'
         ci = _apply_ci_authorization_scope(
             ConfigItem.objects.select_related('ci_type').all(),
@@ -7908,7 +7959,10 @@ def _sync_record_create_relation_from_candidate(record, issue, candidate, reques
             skipped_delta=1,
         )
         return existing_relation, summary
-    confidence = max(0, min(int(request.data.get('confidence') or candidate.get('score') or 85), 100))
+    try:
+        confidence = max(0, min(int(request.data.get('confidence') or candidate.get('score') or 85), 100))
+    except (TypeError, ValueError):
+        raise ValidationError({'confidence': ['置信度必须是 0 到 100 的整数。']}) from None
     payload = {
         'source': relation_source.id,
         'target': relation_target.id,
@@ -8121,7 +8175,9 @@ class CISyncRecordViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
         if not ci_id:
             return Response({'detail': '请提供要绑定的目标配置项'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            target_ci = ConfigItem.objects.select_related('ci_type').get(pk=ci_id)
+            target_ci = ConfigItem.objects.select_related('ci_type').get(pk=int(ci_id))
+        except (TypeError, ValueError):
+            return Response({'detail': '目标配置项 ID 不合法'}, status=status.HTTP_400_BAD_REQUEST)
         except ConfigItem.DoesNotExist:
             return Response({'detail': '目标配置项不存在'}, status=status.HTTP_404_NOT_FOUND)
         _ensure_user_can_manage_config_item(request.user, target_ci)
@@ -8129,8 +8185,8 @@ class CISyncRecordViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelViewSet):
         source = _source_values(payload, default_source_type=record.job.source_type if record.job_id else 'manual')
         if not source['source_unique_id']:
             return Response({'detail': '同步记录缺少来源唯一标识'}, status=status.HTTP_400_BAD_REQUEST)
-        replace_existing = bool(request.data.get('replace_existing'))
-        rebind = bool(request.data.get('rebind'))
+        replace_existing = _to_bool(request.data.get('replace_existing'))
+        rebind = _to_bool(request.data.get('rebind'))
         note = (request.data.get('note') or request.data.get('resolution_note') or '').strip()
         operator = getattr(request.user, 'username', '')
 
@@ -8263,20 +8319,43 @@ class CICompletionIssueViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         scoped_ci_ids = _apply_ci_authorization_scope(ConfigItem.objects.all(), self.request.user, permission=permission).values('id')
         return super().get_queryset().filter(ci_id__in=scoped_ci_ids)
 
-    def _apply_completion_updates(self, ci, updates):
+    def perform_create(self, serializer):
+        # 写入子资源同样要校验目标 CI 的管理范围，不能只在读取时过滤。
+        _ensure_user_can_manage_config_item(self.request.user, serializer.validated_data['ci'])
+        serializer.save()
+
+    def _apply_completion_updates(self, ci, updates, user=None):
         if updates and not isinstance(updates, dict):
             raise ValidationError({'detail': 'ci_updates 必须是对象'})
+        updates = updates if isinstance(updates, dict) else {}
         before = _config_item_snapshot(ci)
         update_fields = []
+        target_business_line = ci.business_line
+        target_environment = ci.environment
         for field in ['name', 'business_line', 'environment', 'admin_user', 'status']:
-            if field in updates:
-                value = updates.get(field)
-                if isinstance(value, str):
-                    value = value.strip()
-                if field == 'name' and not value:
-                    raise ValidationError({'name': ['配置项名称不能为空']})
-                setattr(ci, field, value)
-                update_fields.append(field)
+            if field not in updates:
+                continue
+            value = updates.get(field)
+            if isinstance(value, str):
+                value = value.strip()
+            if field == 'name' and not value:
+                raise ValidationError({'name': ['配置项名称不能为空']})
+            if field == 'status':
+                value = str(value or '').strip()
+                if value not in CONFIG_ITEM_STATUS_VALUES:
+                    raise ValidationError({'status': ['不支持的资产状态。']})
+            elif field == 'business_line':
+                value = str(value or '')[:50]
+                target_business_line = value
+            elif field == 'environment':
+                value = str(value or '')[:50]
+                target_environment = value
+            elif field == 'admin_user':
+                value = str(value or '')[:50]
+            if field == 'name':
+                value = str(value)[:100]
+            setattr(ci, field, value)
+            update_fields.append(field)
         if 'department' in updates:
             attributes = dict(ci.attributes or {})
             department = updates.get('department')
@@ -8293,6 +8372,13 @@ class CICompletionIssueViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             attributes.update(normalize_ci_attributes(updates['attributes']))
             ci.attributes = attributes
             update_fields.append('attributes')
+        if user is not None:
+            _ensure_user_can_manage_ci_resource(
+                user,
+                ci_type_id=ci.ci_type_id,
+                business_line=target_business_line,
+                environment=target_environment,
+            )
         if update_fields:
             ci.save(update_fields=[*set(update_fields), 'updated_at'])
         return before, _config_item_snapshot(ci)
@@ -8300,13 +8386,15 @@ class CICompletionIssueViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def resolve(self, request, pk=None):
         issue = self.get_object()
-        requested_status = request.data.get('status') or 'resolved'
+        requested_status = str(request.data.get('status') or 'resolved').strip()
+        if requested_status not in CI_COMPLETION_ISSUE_STATUS_VALUES:
+            return Response({'status': ['不支持的治理项状态']}, status=400)
         note = (request.data.get('note') or request.data.get('resolution_note') or '').strip()
         updates = request.data.get('ci_updates') or {}
 
         if updates:
             ci = issue.ci
-            before, after = self._apply_completion_updates(ci, updates)
+            before, after = self._apply_completion_updates(ci, updates, user=request.user)
             if _dict_diff(before, after):
                 _record_ci_change(
                     ci,
@@ -8344,6 +8432,10 @@ class CICompletionIssueViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if not isinstance(issue_ids, list) or not issue_ids:
             return Response({'issue_ids': ['请选择需要批量补全的治理项']}, status=400)
         issue_ids = [item for item in issue_ids[:200] if item]
+        try:
+            issue_ids = [int(item) for item in issue_ids]
+        except (TypeError, ValueError):
+            return Response({'issue_ids': ['治理项 ID 必须是整数']}, status=400)
         note = (request.data.get('note') or request.data.get('resolution_note') or '批量补全关键字段').strip()
         updates = request.data.get('ci_updates') or {}
         if updates and not isinstance(updates, dict):
@@ -8355,7 +8447,7 @@ class CICompletionIssueViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         for issue in issues:
             summary['total'] += 1
             ci = issue.ci
-            before, after = self._apply_completion_updates(ci, updates) if updates else (_config_item_snapshot(ci), _config_item_snapshot(ci))
+            before, after = self._apply_completion_updates(ci, updates, user=request.user) if updates else (_config_item_snapshot(ci), _config_item_snapshot(ci))
             if _dict_diff(before, after):
                 _record_ci_change(
                     ci,
@@ -8452,6 +8544,10 @@ class CIArchiveCandidateViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         scoped_ci_ids = _apply_ci_authorization_scope(ConfigItem.objects.all(), self.request.user, permission=permission).values('id')
         return super().get_queryset().filter(ci_id__in=scoped_ci_ids)
 
+    def perform_create(self, serializer):
+        _ensure_user_can_manage_config_item(self.request.user, serializer.validated_data['ci'])
+        serializer.save()
+
     def _apply_bulk_candidate_action(self, candidate, action_name, *, user, note='', restore_status='active'):
         before = _config_item_snapshot(candidate.ci)
         operator = getattr(user, 'username', '')
@@ -8506,23 +8602,27 @@ class CIArchiveCandidateViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if action_name not in {'confirm', 'archive', 'restore', 'ignore'}:
             return Response({'action': ['动作只能是 confirm、archive、restore 或 ignore。']}, status=status.HTTP_400_BAD_REQUEST)
 
-        normalized_ids = list(dict.fromkeys(candidate_ids))
+        try:
+            normalized_ids = list(dict.fromkeys(int(item) for item in candidate_ids))
+        except (TypeError, ValueError):
+            return Response({'candidate_ids': ['下线候选 ID 必须是整数']}, status=status.HTTP_400_BAD_REQUEST)
         candidates = list(self.get_queryset().filter(id__in=normalized_ids).order_by('id'))
         if len(candidates) != len(normalized_ids):
             return Response({'candidate_ids': ['存在无权限或不存在的下线候选。']}, status=status.HTTP_404_NOT_FOUND)
 
         note = (request.data.get('note') or request.data.get('reason') or '').strip()
-        restore_status = request.data.get('status') or 'active'
-        updated = [
-            self._apply_bulk_candidate_action(
-                candidate,
-                action_name,
-                user=request.user,
-                note=note,
-                restore_status=restore_status,
-            )
-            for candidate in candidates
-        ]
+        restore_status = _normalize_config_item_status(request.data.get('status'), 'active')
+        with transaction.atomic():
+            updated = [
+                self._apply_bulk_candidate_action(
+                    candidate,
+                    action_name,
+                    user=request.user,
+                    note=note,
+                    restore_status=restore_status,
+                )
+                for candidate in candidates
+            ]
         return Response({
             'action': action_name,
             'updated_count': len(updated),
@@ -8561,14 +8661,16 @@ class CIArchiveCandidateViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):
         candidate = self.get_object()
+        restore_status = _normalize_config_item_status(request.data.get('status'), 'active')
         before = _config_item_snapshot(candidate.ci)
-        candidate.status = 'restored'
-        candidate.confirmed_by = getattr(request.user, 'username', '')
-        candidate.confirmed_at = timezone.now()
-        candidate.ci.status = request.data.get('status') or 'active'
-        candidate.ci.save(update_fields=['status', 'updated_at'])
-        candidate.save(update_fields=['status', 'confirmed_by', 'confirmed_at', 'updated_at'])
-        _record_ci_change(candidate.ci, 'archive_restore', before, _config_item_snapshot(candidate.ci), operator=candidate.confirmed_by, source='governance')
+        with transaction.atomic():
+            candidate.status = 'restored'
+            candidate.confirmed_by = getattr(request.user, 'username', '')
+            candidate.confirmed_at = timezone.now()
+            candidate.ci.status = restore_status
+            candidate.ci.save(update_fields=['status', 'updated_at'])
+            candidate.save(update_fields=['status', 'confirmed_by', 'confirmed_at', 'updated_at'])
+            _record_ci_change(candidate.ci, 'archive_restore', before, _config_item_snapshot(candidate.ci), operator=candidate.confirmed_by, source='governance')
         return Response(CIArchiveCandidateSerializer(candidate).data)
 
     @action(detail=True, methods=['post'])
@@ -8702,6 +8804,10 @@ class CostOptimizationTaskViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelVie
         ci_id = request.data.get('ci_id')
         if not ci_id or not suggestion_type:
             raise ValidationError({'detail': '请提供需要认领的优化建议。'})
+        try:
+            ci_id = int(ci_id)
+        except (TypeError, ValueError):
+            raise ValidationError({'detail': '资源 ID 格式不正确。'}) from None
 
         ci_queryset = _apply_ci_authorization_scope(
             ConfigItem.objects.filter(pk=ci_id),
@@ -8787,6 +8893,8 @@ class CostOptimizationTaskViewSet(RBACPermissionMixin, viewsets.ReadOnlyModelVie
             try:
                 actual_saving = Decimal(str(actual_saving)).quantize(Decimal('0.01'))
             except (InvalidOperation, ValueError):
+                raise ValidationError({'actual_monthly_saving': '实际月节省必须是有效金额。'})
+            if not actual_saving.is_finite():
                 raise ValidationError({'actual_monthly_saving': '实际月节省必须是有效金额。'})
             if actual_saving < 0:
                 raise ValidationError({'actual_monthly_saving': '实际月节省不能小于 0。'})
@@ -8917,8 +9025,8 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         for index, host_spec in enumerate(host_specs, start=1):
             if not isinstance(host_spec, dict):
                 raise ValueError('主机交付清单中的每一项必须是对象')
-            hostname = (host_spec.get('hostname') or host_spec.get('name') or '').strip()
-            ip_address = (
+            hostname = str(host_spec.get('hostname') or host_spec.get('name') or '').strip()
+            ip_address = str(
                 host_spec.get('ip_address')
                 or host_spec.get('private_ip')
                 or host_spec.get('ip')
@@ -8946,10 +9054,10 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 'ip_address': ip_address,
                 'business_line': (obj.business_line or '').strip(),
                 'environment': (obj.environment or '').strip(),
-                'admin_user': (host_spec.get('admin_user') or specs.get('admin_user') or obj.applicant or '').strip(),
-                'os_type': (host_spec.get('os_type') or specs.get('os_type') or 'Linux').strip() or 'Linux',
-                'instance_type': (host_spec.get('instance_type') or specs.get('instance_type') or '').strip(),
-                'specification': (
+                'admin_user': str((host_spec.get('admin_user') or specs.get('admin_user') or obj.applicant or '') or '').strip(),
+                'os_type': str((host_spec.get('os_type') or specs.get('os_type') or 'Linux') or '').strip() or 'Linux',
+                'instance_type': str((host_spec.get('instance_type') or specs.get('instance_type') or '') or '').strip(),
+                'specification': str(
                     host_spec.get('specification')
                     or obj.specification
                     or specs.get('specification')
@@ -9022,7 +9130,7 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 if ci_conflict:
                     raise ValueError(f'IP 地址 {ip_address} 已被配置项 {ci_conflict.name} 使用')
 
-    def _sync_request_to_host_assets(self, obj, fulfillment_note='', operator=''):
+    def _sync_request_to_host_assets(self, obj, fulfillment_note='', operator='', user=None):
         payloads = self._build_host_sync_payloads(obj, fulfillment_note=fulfillment_note)
         self._validate_host_delivery_conflicts(obj, payloads)
         provider = (obj.specs or {}).get('provider') or ''
@@ -9053,8 +9161,25 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                         'status': 'online',
                     },
                 )
-            config_item = ConfigItem.objects.filter(name=payload['hostname']).first()
+            config_item = ConfigItem.objects.filter(name=payload['hostname'], ci_type=ci_type).first()
+            if config_item is None:
+                conflict = (
+                    ConfigItem.objects
+                    .filter(name=payload['hostname'])
+                    .exclude(ci_type=ci_type)
+                    .select_related('ci_type')
+                    .first()
+                )
+                if conflict and is_host_like_ci(conflict):
+                    # 物理机/虚拟机等主机类模型可以在交付时按实际规格重新归类。
+                    config_item = conflict
+                elif conflict:
+                    # 但应用/服务等非主机模型不能被交付流程静默改写模型。
+                    conflict_type = getattr(conflict.ci_type, 'name', '') or '未知模型'
+                    raise ValueError(f'已存在同名但模型不同的配置项：{payload["hostname"]}（{conflict_type}），请先人工确认归属')
             before = _config_item_snapshot(config_item) if config_item else {}
+            if config_item is not None and user is not None:
+                _ensure_user_can_manage_config_item(user, config_item)
             attributes = dict((config_item.attributes or {}) if config_item else {})
             attributes.update({
                 'ip_address': payload['ip_address'],
@@ -9132,10 +9257,10 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             delivered.append((host, config_item))
         return delivered
 
-    def _sync_request_to_cloud_asset(self, obj, fulfillment_note='', operator=''):
+    def _sync_request_to_cloud_asset(self, obj, fulfillment_note='', operator='', user=None):
         resource_type = str(obj.resource_type or '').strip().lower()
         if resource_type in {'主机', 'host', 'ecs'}:
-            return self._sync_request_to_host_assets(obj, fulfillment_note=fulfillment_note, operator=operator)
+            return self._sync_request_to_host_assets(obj, fulfillment_note=fulfillment_note, operator=operator, user=user)
         meta = ALIYUN_RESOURCE_TYPE_MAP.get(resource_type)
         if not meta:
             raise ValueError('当前资产类型暂不支持交付入库')
@@ -9160,7 +9285,12 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             name = f'{base_name}-{index:02d}' if len(raw_items) > 1 else base_name
             if not name:
                 raise ValueError('完成交付前请填写资产名称')
-            attributes = {key: value for key, value in {**specs, **item}.items() if key not in {'items', 'resources'} and value not in (None, '')}
+            attributes = {
+                key: value
+                for key, value in {**specs, **item}.items()
+                # 交付内部字段（云凭据 ID/交付模式）不应写进资产属性，避免泄露给 ci.view。
+                if key not in {'items', 'resources', 'cloud_credential_id', 'provisioning_mode'} and value not in (None, '')
+            }
             attributes.update({
                 'source': 'resource_request',
                 'request_id': obj.id,
@@ -9173,15 +9303,25 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 'region': item.get('region') or specs.get('region') or '',
                 'description': item.get('description') or fulfillment_note or obj.reason,
             })
-            config_item = ConfigItem.objects.filter(name=name).first()
+            config_item = ConfigItem.objects.filter(name=name, ci_type=ci_type).first()
+            if config_item is None:
+                conflict = ConfigItem.objects.filter(name=name).exclude(ci_type=ci_type).select_related('ci_type').first()
+                if conflict and is_host_like_ci(conflict):
+                    config_item = conflict
+                elif conflict:
+                    conflict_type = getattr(conflict.ci_type, 'name', '') or '未知模型'
+                    raise ValueError(f'已存在同名但模型不同的配置项：{name}（{conflict_type}），请先人工确认归属')
             before = _config_item_snapshot(config_item) if config_item else {}
+            if config_item is not None and user is not None:
+                _ensure_user_can_manage_config_item(user, config_item)
             if config_item:
                 config_item.ci_type = ci_type
                 config_item.business_line = obj.business_line
                 config_item.environment = obj.environment or config_item.environment or ''
                 config_item.admin_user = item.get('admin_user') or specs.get('admin_user') or obj.applicant
                 config_item.status = 'active'
-                config_item.attributes = attributes
+                # 与主机交付一致：合并而不是整体替换，保留人工维护的部门/标签等属性。
+                config_item.attributes = {**dict(config_item.attributes or {}), **attributes}
                 config_item.save()
                 is_create = False
             else:
@@ -9279,6 +9419,11 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             return Response({'detail': '只能交付已批准或交付失败的资源申请'}, status=400)
         if (obj.specs or {}).get('provisioning_mode') != 'cloud':
             return Response({'detail': '当前申请为人工交付，请使用人工交付操作'}, status=400)
+        _ensure_user_can_manage_ci_resource(
+            request.user,
+            business_line=obj.business_line,
+            environment=obj.environment,
+        )
 
         operator = getattr(request.user, 'username', '')
         before = _resource_request_snapshot(obj)
@@ -9367,6 +9512,7 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                     obj,
                     fulfillment_note=(request.data.get('note') or '云平台自动交付完成').strip(),
                     operator=operator,
+                    user=request.user,
                 )
                 obj.status = 'completed'
                 obj.fulfillment_note = (request.data.get('note') or '云平台自动交付完成').strip()
@@ -9439,12 +9585,18 @@ class ResourceRequestViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             return Response({'detail': '只能完成已批准资源'}, status=400)
         if (obj.specs or {}).get('provisioning_mode') == 'cloud':
             return Response({'detail': '当前申请为云平台自动交付，请使用自动交付操作'}, status=400)
+        # 交付会写入 CMDB，必须校验申请所属业务线/环境在操作者的管理范围内。
+        _ensure_user_can_manage_ci_resource(
+            request.user,
+            business_line=obj.business_line,
+            environment=obj.environment,
+        )
         fulfillment_note = (request.data.get('note') or request.data.get('fulfillment_note') or '').strip()
         try:
             with transaction.atomic():
                 before = _resource_request_snapshot(obj)
                 specs_changed = self._merge_delivery_specs_from_request(obj, request)
-                self._sync_request_to_cloud_asset(obj, fulfillment_note=fulfillment_note, operator=request.user.username)
+                self._sync_request_to_cloud_asset(obj, fulfillment_note=fulfillment_note, operator=request.user.username, user=request.user)
                 obj.status = 'completed'
                 obj.fulfillment_note = fulfillment_note
                 obj.completed_at = timezone.now()
@@ -10299,9 +10451,15 @@ def cmdb_resource_search(request):
     tag = request.query_params.get('tag') or request.query_params.get('tags')
 
     if ci_type:
-        qs = qs.filter(ci_type_id=ci_type)
+        try:
+            qs = qs.filter(ci_type_id=int(ci_type))
+        except (TypeError, ValueError):
+            qs = qs.none()
     if group:
-        qs = qs.filter(ci_type__group_id=group)
+        try:
+            qs = qs.filter(ci_type__group_id=int(group))
+        except (TypeError, ValueError):
+            qs = qs.none()
     if business_line:
         qs = qs.filter(business_line=business_line)
     if environment:
@@ -11301,13 +11459,19 @@ def cmdb_topology(request):
 
     filtered_qs = _apply_ci_authorization_scope(ConfigItem.objects.select_related('ci_type').all(), request.user)
     if ci_type_id:
-        filtered_qs = filtered_qs.filter(ci_type_id=ci_type_id)
+        try:
+            filtered_qs = filtered_qs.filter(ci_type_id=int(ci_type_id))
+        except (TypeError, ValueError):
+            filtered_qs = filtered_qs.none()
     if business_line:
         filtered_qs = filtered_qs.filter(business_line=business_line)
     if environment:
         filtered_qs = filtered_qs.filter(environment=environment)
     if ci_id:
-        filtered_qs = filtered_qs.filter(id=ci_id)
+        try:
+            filtered_qs = filtered_qs.filter(id=int(ci_id))
+        except (TypeError, ValueError):
+            filtered_qs = filtered_qs.none()
 
     matched_ids = set(filtered_qs.values_list('id', flat=True))
     node_ids = set(matched_ids)
@@ -11429,7 +11593,10 @@ def cmdb_cost_items(request):
     scoped_ci_qs = _apply_ci_authorization_scope(ConfigItem.objects.all(), request.user)
     ci_type = request.query_params.get('ci_type')
     if ci_type:
-        scoped_ci_qs = scoped_ci_qs.filter(ci_type_id=ci_type)
+        try:
+            scoped_ci_qs = scoped_ci_qs.filter(ci_type_id=int(ci_type))
+        except (TypeError, ValueError):
+            scoped_ci_qs = scoped_ci_qs.none()
 
     search = (request.query_params.get('search') or '').strip().lower()
     business_line = (request.query_params.get('business_line') or '').strip()

@@ -499,6 +499,8 @@ def sync_aliyun_monthly_costs(
             subscription_orders = []
             account_result['subscription_error'] = str(exc)
 
+        subscription_incomplete = bool(account_result.get('subscription_error'))
+
         ci_by_resource_id = _aliyun_cis_for_credential(credential, ci_queryset=ci_queryset)
         ci_by_id = {
             ci.id: ci
@@ -532,6 +534,12 @@ def sync_aliyun_monthly_costs(
         summary['subscription_order_count'] += subscription_order_count
         if subscription_errors:
             account_result['subscription_errors'] = subscription_errors
+            subscription_incomplete = True
+        if subscription_incomplete:
+            # 订单查询/单笔订单详情失败时，subscription_costs 只是残缺集合；
+            # 此时若仍按“全量派生”删除历史，会把之前月份已摊销的费用永久抹掉。
+            account_result['failed'] = True
+            summary['failed_count'] += 1
         with transaction.atomic():
             current_affected_ci_ids = set()
             for resource_id in subscription_bill_resource_ids - set(billed_by_resource):
@@ -549,7 +557,7 @@ def sync_aliyun_monthly_costs(
                     summary['unmatched_bill_count'] += 1
                     continue
                 projected_amount, projected = _project_monthly_cost(amount, month, today)
-                for ci in matched_cis:
+                for index, ci in enumerate(matched_cis):
                     if month == today.strftime('%Y-%m'):
                         attributes = dict(ci.attributes or {})
                         attributes.update({
@@ -564,42 +572,47 @@ def sync_aliyun_monthly_costs(
                         })
                         ci.attributes = attributes
                         ci.save(update_fields=['attributes', 'updated_at'])
-                    _replace_aliyun_cost_record(ci, month, projected_amount)
-                    current_affected_ci_ids.add(ci.id)
-                    account_result['updated_count'] += 1
-                    summary['updated_count'] += 1
-                    summary['total_monthly_cost'] += projected_amount
+                    if index == 0:
+                        # 同一资源 ID 可能对应重复导入的多条 CI；账单只记给主 CI，
+                        # 否则 total_monthly_cost 会按 CI 数量重复累加。
+                        _replace_aliyun_cost_record(ci, month, projected_amount)
+                        current_affected_ci_ids.add(ci.id)
+                        account_result['updated_count'] += 1
+                        summary['updated_count'] += 1
+                        summary['total_monthly_cost'] += projected_amount
                 account_result['matched_resource_count'] += 1
 
             # This provider is fully derived from the fetched order detail set.
             # Replace its in-scope history so cancelled or unpaid draft orders cannot linger.
-            current_affected_ci_ids.update(
+            # 只在订单数据完整时替换，避免一次限流/权限失败清空 12 个月历史。
+            if not subscription_incomplete:
+                current_affected_ci_ids.update(
+                    CostRecord.objects.filter(
+                        ci_id__in=ci_by_id,
+                        month=month,
+                        provider=ALIYUN_SUBSCRIPTION_COST_PROVIDER,
+                    ).values_list('ci_id', flat=True)
+                )
                 CostRecord.objects.filter(
                     ci_id__in=ci_by_id,
-                    month=month,
+                    month__gte=history_start_month,
+                    month__lte=month,
                     provider=ALIYUN_SUBSCRIPTION_COST_PROVIDER,
-                ).values_list('ci_id', flat=True)
-            )
-            CostRecord.objects.filter(
-                ci_id__in=ci_by_id,
-                month__gte=history_start_month,
-                month__lte=month,
-                provider=ALIYUN_SUBSCRIPTION_COST_PROVIDER,
-            ).delete()
-            for (ci_id, service_month), amount in subscription_costs.items():
-                ci = ci_by_id[ci_id]
-                amortized_amount = amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                _replace_cost_record(
-                    ci,
-                    service_month,
-                    amortized_amount,
-                    ALIYUN_SUBSCRIPTION_COST_PROVIDER,
-                )
-                account_result['subscription_updated_count'] += 1
-                summary['subscription_updated_count'] += 1
-                if service_month == month:
-                    current_affected_ci_ids.add(ci.id)
-                    summary['total_monthly_cost'] += amortized_amount
+                ).delete()
+                for (ci_id, service_month), amount in subscription_costs.items():
+                    ci = ci_by_id[ci_id]
+                    amortized_amount = amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    _replace_cost_record(
+                        ci,
+                        service_month,
+                        amortized_amount,
+                        ALIYUN_SUBSCRIPTION_COST_PROVIDER,
+                    )
+                    account_result['subscription_updated_count'] += 1
+                    summary['subscription_updated_count'] += 1
+                    if service_month == month:
+                        current_affected_ci_ids.add(ci.id)
+                        summary['total_monthly_cost'] += amortized_amount
 
             if month == today.strftime('%Y-%m'):
                 for ci_id in current_affected_ci_ids:

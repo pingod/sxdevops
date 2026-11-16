@@ -2989,7 +2989,12 @@ def _fetch_vsphere_raw_items(config, resource_type):
                 memory_allocated_gb += _number_or_zero(memory_mb) / 1024
                 storage_allocated_gb += _number_or_zero(provisioned_gb)
                 vm_item = {
-                    'vm': getattr(config_summary, 'vmPathName', '') or getattr(vm, '_moId', ''),
+                    # vmPathName 会随重命名/存储迁移变化，用它做唯一键会在下次同步时复制出一台新虚拟机。
+                    'vm': (
+                        getattr(config_summary, 'instanceUuid', '')
+                        or getattr(vm, '_moId', '')
+                        or getattr(config_summary, 'vmPathName', '')
+                    ),
                     'name': getattr(config_summary, 'name', '') or getattr(vm, 'name', ''),
                     'power_state': str(getattr(runtime, 'powerState', '')),
                     'guest_ip': getattr(guest, 'ipAddress', ''),

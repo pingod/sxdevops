@@ -136,8 +136,14 @@ def _decimal_for_compare(value):
         return None
 
 
+def _field_validation(field):
+    """CIField.validation 是自由 JSON，历史数据可能是数组/字符串；统一安全地取字典。"""
+    validation = getattr(field, 'validation', None)
+    return validation if isinstance(validation, dict) else {}
+
+
 def _validate_min_max(field, value, *, compare_value=None):
-    validation = field.validation or {}
+    validation = _field_validation(field)
     if compare_value is None:
         compare_value = value
     for rule_name, message_label in (('min', '不能小于'), ('max', '不能大于')):
@@ -177,7 +183,7 @@ def _parse_datetime_value(value):
 
 
 def _validate_date_range(field, parsed_value):
-    validation = field.validation or {}
+    validation = _field_validation(field)
     for rule_name, message_label in (('min', '不能早于'), ('max', '不能晚于')):
         expected = validation.get(rule_name)
         if expected in (None, ''):
@@ -192,7 +198,7 @@ def _validate_date_range(field, parsed_value):
 
 
 def _validate_datetime_range(field, parsed_value):
-    validation = field.validation or {}
+    validation = _field_validation(field)
     for rule_name, message_label in (('min', '不能早于'), ('max', '不能晚于')):
         expected = validation.get(rule_name)
         if expected in (None, ''):
@@ -283,15 +289,28 @@ def _validate_field_value(field, value):
             raise serializers.ValidationError(f'{field.name} 必须是 JSON 对象或数组')
         return value
 
-    min_length = (field.validation or {}).get('min_length')
-    if min_length and len(str(value)) < int(min_length):
+    validation = _field_validation(field)
+    try:
+        min_length = int(validation.get('min_length')) if validation.get('min_length') not in (None, '') else None
+    except (TypeError, ValueError):
+        min_length = None
+    if min_length is not None and len(str(value)) < min_length:
         raise serializers.ValidationError(f'{field.name} 长度不能小于 {min_length}')
-    max_length = (field.validation or {}).get('max_length')
-    if max_length and len(str(value)) > int(max_length):
+    try:
+        max_length = int(validation.get('max_length')) if validation.get('max_length') not in (None, '') else None
+    except (TypeError, ValueError):
+        max_length = None
+    if max_length is not None and len(str(value)) > max_length:
         raise serializers.ValidationError(f'{field.name} 长度不能超过 {max_length}')
-    pattern = (field.validation or {}).get('regex')
-    if pattern and not re.fullmatch(pattern, str(value)):
-        raise serializers.ValidationError(f'{field.name} 格式不符合要求')
+    pattern = validation.get('regex')
+    if pattern:
+        try:
+            matched = re.fullmatch(str(pattern), str(value))
+        except re.error:
+            # 字段配置里的正则写错时不能让该模型的所有资产读写都 500。
+            matched = True
+        if not matched:
+            raise serializers.ValidationError(f'{field.name} 格式不符合要求')
     return value
 
 
@@ -368,6 +387,11 @@ class IPSubnetSerializer(serializers.ModelSerializer):
         if network.num_addresses > 4096:
             raise serializers.ValidationError({'cidr': '单个子网最多支持 4096 个地址，请拆分为更小的网段。'})
         attrs['cidr'] = network.with_prefixlen
+        duplicate = IPSubnet.objects.filter(cidr=attrs['cidr'])
+        if self.instance is not None:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            raise serializers.ValidationError({'cidr': '该网段已存在，请勿重复创建。'})
         gateway = str(attrs.get('gateway', getattr(self.instance, 'gateway', '')) or '').strip()
         if gateway:
             try:
@@ -395,6 +419,8 @@ class IPSubnetSerializer(serializers.ModelSerializer):
         counts = {'available': 0, 'in_use': 0, 'offline': 0, 'reserved': 0}
         for row in obj.addresses.values('status').annotate(total=Count('id')):
             counts[row['status']] = row['total']
+        # 一个子网要取 4 个计数，缓存到实例上避免 4 次相同的 GROUP BY。
+        obj._ip_status_counts = counts
         return counts
 
     def get_address_total(self, obj):
@@ -510,6 +536,24 @@ class CIFieldSerializer(serializers.ModelSerializer):
                     field: '内置字段的关键约束不允许修改，可调整展示、排序或停用。'
                     for field in changed
                 })
+        validation = attrs.get('validation', getattr(self.instance, 'validation', None))
+        if validation is not None and not isinstance(validation, dict):
+            raise serializers.ValidationError({'validation': '校验规则必须是 JSON 对象'})
+        if isinstance(validation, dict):
+            pattern = validation.get('regex')
+            if pattern:
+                try:
+                    re.compile(str(pattern))
+                except re.error as exc:
+                    raise serializers.ValidationError({'validation': f'正则表达式不合法: {exc}'}) from None
+            for key in ('min', 'max', 'min_length', 'max_length'):
+                value = validation.get(key)
+                if value in (None, ''):
+                    continue
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({'validation': f'{key} 必须是数字'}) from None
         return attrs
 
 
@@ -1480,7 +1524,13 @@ class CIResourceAuthorizationSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        if attrs.get('permission') == 'manage' and not attrs.get('business_line') and not attrs.get('ci_type'):
+        # 局部更新时 attrs 只包含本次提交的字段，必须结合已有实例判断“更新后”的授权范围，
+        # 否则先建一条限定了业务线的 manage 授权，再把 business_line PATCH 成空即可提权为全局管理。
+        instance = self.instance
+        permission = attrs.get('permission', getattr(instance, 'permission', None))
+        business_line = attrs.get('business_line', getattr(instance, 'business_line', ''))
+        ci_type = attrs.get('ci_type', getattr(instance, 'ci_type', None))
+        if permission == 'manage' and not business_line and not ci_type:
             raise serializers.ValidationError('管理授权至少需要限定业务线或资源模型')
         return attrs
 

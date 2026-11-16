@@ -69,13 +69,28 @@ def is_placeholder_ci_type_name(name):
     return '\ufffd' in normalized
 
 
+def _attribute_text(value):
+    if value in (None, ''):
+        return ''
+    if isinstance(value, (list, tuple, set)):
+        # 云同步/字段映射可能产出数组；取第一个可读值，避免把 "['1.2.3.4']" 当 IP。
+        for item in value:
+            text = _attribute_text(item)
+            if text:
+                return text
+        return ''
+    if isinstance(value, dict):
+        return ''
+    return str(value).strip()
+
+
 def infer_ci_ip_address(attributes):
     attrs = dict(attributes or {})
     for key in CI_IP_ATTRIBUTE_CANDIDATES:
-        value = (attrs.get(key) or '').strip()
+        value = _attribute_text(attrs.get(key))
         if value:
             return value
-    api_server = (attrs.get('api_server') or '').strip()
+    api_server = _attribute_text(attrs.get('api_server'))
     if api_server:
         hostname = (urlparse(api_server).hostname or '').strip()
         if hostname:
@@ -202,6 +217,7 @@ def host_status_to_lifecycle_status(status):
 def ci_status_to_host_status(status):
     mapping = {
         'active': 'online',
+        'stopped': 'offline',
         'idle': 'warning',
         'offline': 'offline',
     }
@@ -250,7 +266,8 @@ def _matching_host_like_items(hostname='', ip_address='', exclude_pk=None):
     queryset = ConfigItem.objects.select_related('ci_type').filter(condition)
     if exclude_pk:
         queryset = queryset.exclude(pk=exclude_pk)
-    return [item for item in queryset if is_host_like_ci(item)]
+    # 同名/同 IP 可能命中多个 CI，固定顺序避免每次同步改写不同资产。
+    return [item for item in queryset.order_by('id') if is_host_like_ci(item)]
 
 
 def _host_source_unique_id(host):
@@ -310,9 +327,12 @@ def sync_host_to_config_item(host):
         matching_items = _matching_host_like_items(hostname=host.hostname, ip_address=host.ip_address)
         config_item = matching_items[0] if matching_items else None
     ci_type = ensure_host_ci_type()
+    if config_item is not None and is_host_like_ci(config_item):
+        # 已有资产可能是云主机/虚拟机，不能因为主机中心回写就降级成物理机。
+        ci_type = config_item.ci_type
 
     attributes = dict((config_item.attributes or {}) if config_item else {})
-    attributes.update({
+    attribute_updates = {
         'asset_sn': attributes.get('asset_sn') or f'host-{host.pk}',
         'private_ip': host.ip_address,
         'ip_address': host.ip_address,
@@ -327,7 +347,11 @@ def sync_host_to_config_item(host):
         'source': attributes.get('source') or 'host_center',
         'sync_origin': 'host_center',
         'lifecycle_status': host_status_to_lifecycle_status(host.status),
-    })
+    }
+    # 空值不应覆盖 CI 上已人工维护的字段。
+    for key, value in attribute_updates.items():
+        if value not in (None, ''):
+            attributes[key] = value
     attributes = {key: value for key, value in attributes.items() if value not in (None, '')}
 
     with suspend_cmdb_host_sync():
@@ -344,9 +368,9 @@ def sync_host_to_config_item(host):
         else:
             config_item.name = host.hostname
             config_item.ci_type = ci_type
-            config_item.business_line = host.business_line
+            config_item.business_line = host.business_line or config_item.business_line
             config_item.environment = host.environment or config_item.environment or 'prod'
-            config_item.admin_user = host.admin_user
+            config_item.admin_user = host.admin_user or config_item.admin_user
             config_item.status = host_status_to_ci_status(host.status)
             config_item.attributes = attributes
             config_item.save()
@@ -359,12 +383,11 @@ def sync_config_item_to_host(config_item):
         return None
 
     attributes = config_item.attributes or {}
-    ip_address = (
+    ip_address = _attribute_text(
         attributes.get('ip_address')
         or attributes.get('private_ip')
         or attributes.get('ip')
-        or ''
-    ).strip()
+    )
     if not ip_address:
         return None
 
@@ -375,13 +398,11 @@ def sync_config_item_to_host(config_item):
         'ip_address': ip_address,
         'business_line': config_item.business_line or '',
         'environment': config_item.environment or '',
-        'admin_user': (config_item.admin_user or attributes.get('admin_user') or '').strip(),
-        'os_type': (attributes.get('os_type') or 'Linux').strip() or 'Linux',
-        'description': (
-            attributes.get('description')
-            or attributes.get('specification')
-            or ''
-        ).strip(),
+        'admin_user': _attribute_text(config_item.admin_user or attributes.get('admin_user')),
+        'os_type': _attribute_text(attributes.get('os_type')) or 'Linux',
+        'description': _attribute_text(
+            attributes.get('description') or attributes.get('specification')
+        ),
         'status': ci_status_to_host_status(config_item.status),
     }
 
@@ -417,7 +438,7 @@ def delete_host_for_config_item(config_item):
         return False
 
     attributes = config_item.attributes or {}
-    ip_address = (attributes.get('ip_address') or attributes.get('ip') or '').strip()
+    ip_address = _attribute_text(attributes.get('ip_address') or attributes.get('ip'))
     host = _find_matching_host(hostname=config_item.name, ip_address=ip_address)
     if not host:
         return False
