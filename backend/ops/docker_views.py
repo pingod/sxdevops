@@ -120,7 +120,7 @@ def _ensure_image_ids(value):
 def _get_docker_host(host_id):
     try:
         return DockerHost.objects.get(pk=host_id)
-    except DockerHost.DoesNotExist:
+    except (DockerHost.DoesNotExist, ValueError, TypeError):
         return None
 
 

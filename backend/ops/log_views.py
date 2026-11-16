@@ -141,7 +141,16 @@ def _resolve_provider_and_config(payload):
         raise ProviderError('provider 与数据源类型不一致')
 
     config = _merge_config(provider, getattr(datasource, 'config', None))
-    config = _merge_config(provider, {**config, **(payload.get('config') or {})})
+    overrides = {key: value for key, value in (payload.get('config') or {}).items() if value not in (None, '')}
+    endpoint_changed = (
+        overrides.get('endpoint')
+        and str(overrides['endpoint']).rstrip('/') != str(config.get('endpoint') or '').rstrip('/')
+    )
+    if endpoint_changed:
+        # 客户端换 endpoint 时不继承服务端凭证，避免被用来把密钥发到任意地址
+        for key in SENSITIVE_KEYS:
+            config.pop(key, None)
+    config.update(overrides)
     return provider, config, datasource
 
 
@@ -959,6 +968,8 @@ def _demo_sls_documents(start_ms, end_ms, logstore):
 
 
 def _loki_request(endpoint, path, params):
+    if not str(endpoint or '').strip():
+        raise ProviderError('Loki endpoint is required', status.HTTP_400_BAD_REQUEST)
     url = f'{_normalize_endpoint(endpoint)}{path}'
     try:
         response = http_requests.get(url, params=params, timeout=REQUEST_TIMEOUT)

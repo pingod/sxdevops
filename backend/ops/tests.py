@@ -1249,6 +1249,7 @@ class ObservabilityViewsTests(TestCase):
 
     @patch('ops.observability_views.http_requests.get')
     def test_grafana_promql_query_uses_grafana_datasource_proxy(self, mock_get):
+        GrafanaSetting.objects.create(name='default', enabled=True, url='http://grafana.internal.local')
         mock_get.side_effect = [
             MockHttpResponse({'id': 12, 'uid': 'prometheus-infra'}),
             MockHttpResponse({
@@ -1262,7 +1263,7 @@ class ObservabilityViewsTests(TestCase):
 
         response = self.client.post(
             '/api/observability/grafana/promql/query/',
-            {'query': 'up{job="api"}', 'datasource_uid': 'prometheus-infra', 'grafana_url': 'http://grafana.internal.local'},
+            {'query': 'up{job="api"}', 'datasource_uid': 'prometheus-infra'},
             format='json',
         )
 

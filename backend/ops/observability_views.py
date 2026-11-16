@@ -473,8 +473,10 @@ def _get_grafana_setting():
 
 def _grafana_meta():
     config = _grafana_config()
-    configured_dashboards = config.get('dashboards') or DEMO_GRAFANA_DASHBOARDS
-    configured_folders = config.get('folders') or []
+    configured_dashboards = [
+        item for item in (config.get('dashboards') or DEMO_GRAFANA_DASHBOARDS) if isinstance(item, dict)
+    ]
+    configured_folders = config.get('folders') if isinstance(config.get('folders'), list) else []
     dashboards = []
     base_url = config.get('url') or ''
     default_path = (config.get('default_path') or '').strip()
@@ -500,7 +502,7 @@ def _grafana_meta():
         'url': base_url,
         'embed_url': _join_external_url(base_url, default_path) if base_url and default_path else (dashboards[0]['url'] if dashboards else base_url),
         'dashboard_count': len(dashboards),
-        'panel_count': sum(item['panel_count'] for item in dashboards),
+        'panel_count': sum(int(item.get('panel_count') or 0) for item in dashboards),
         'datasource_count': 4,
         'folders': configured_folders,
         'dashboards': dashboards,
@@ -1573,7 +1575,6 @@ def grafana_promql_query(request):
             step=request.data.get('step') or 60,
             datasource_uid=request.data.get('datasource_uid') or '',
             datasource_id=request.data.get('datasource_id') or '',
-            grafana_url=request.data.get('grafana_url') or '',
             metric_datasource_id=request.data.get('metric_datasource_id') or '',
             environment=request.data.get('environment') or '',
         )
