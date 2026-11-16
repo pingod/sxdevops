@@ -73,6 +73,82 @@ METRIC_SENSITIVE_KEYS = {
     'client_secret',
 }
 
+SECRET_CONFIG_KEY_HINTS = (
+    'password',
+    'passwd',
+    'secret',
+    'token',
+    'api_key',
+    'apikey',
+    'authorization',
+    'access_key',
+    'private_key',
+)
+
+SECRET_PLACEHOLDER = 'configured'
+
+
+def _is_secret_config_key(key):
+    text = str(key or '').lower()
+    return any(hint in text for hint in SECRET_CONFIG_KEY_HINTS)
+
+
+def mask_secret_config(value):
+    if isinstance(value, dict):
+        masked = {}
+        for key, item in value.items():
+            if _is_secret_config_key(key) and str(item or ''):
+                masked[key] = SECRET_PLACEHOLDER
+            else:
+                masked[key] = mask_secret_config(item)
+        return masked
+    if isinstance(value, list):
+        return [mask_secret_config(item) for item in value]
+    return value
+
+
+def strip_secret_config_placeholders(value):
+    if isinstance(value, dict):
+        stripped = {}
+        for key, item in value.items():
+            if _is_secret_config_key(key) and item == SECRET_PLACEHOLDER:
+                continue
+            stripped[key] = strip_secret_config_placeholders(item)
+        return stripped
+    if isinstance(value, list):
+        return [strip_secret_config_placeholders(item) for item in value]
+    return value
+
+
+def _deep_merge_config(base, incoming):
+    merged = dict(normalize_json_object(base))
+    for key, value in normalize_json_object(incoming).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+class SecretConfigMaskingMixin:
+    """读取时把 config 内的密钥替换为占位符，写入时丢弃占位符并沿用库内旧值。"""
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['config'] = mask_secret_config(instance.config)
+        return data
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if 'config' in attrs:
+            attrs['config'] = strip_secret_config_placeholders(attrs['config'])
+        return attrs
+
+    def update(self, instance, validated_data):
+        if 'config' in validated_data:
+            validated_data['config'] = _deep_merge_config(instance.config, validated_data['config'])
+        return super().update(instance, validated_data)
+
 
 def normalize_json_object(value):
     return value if isinstance(value, dict) else {}
@@ -153,9 +229,18 @@ class HostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Host
         fields = '__all__'
+        extra_kwargs = {
+            'ssh_password': {'write_only': True, 'required': False, 'allow_blank': True},
+        }
 
     def get_environment_display(self, obj):
         return obj.get_environment_display() if obj.environment else ''
+
+    def update(self, instance, validated_data):
+        # 空串代表"不修改已存密码"，避免前端编辑其它字段时清空 SSH 凭证
+        if self.instance is not None and not validated_data.get('ssh_password'):
+            validated_data.pop('ssh_password', None)
+        return super().update(instance, validated_data)
 
     def validate(self, attrs):
         business_line = (attrs.get('business_line') if 'business_line' in attrs else getattr(self.instance, 'business_line', '')) or ''
@@ -175,7 +260,7 @@ class HostSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class LogDataSourceSerializer(serializers.ModelSerializer):
+class LogDataSourceSerializer(SecretConfigMaskingMixin, serializers.ModelSerializer):
     provider_display = serializers.CharField(source='get_provider_display', read_only=True)
 
     class Meta:
@@ -183,7 +268,7 @@ class LogDataSourceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class TracingDataSourceSerializer(serializers.ModelSerializer):
+class TracingDataSourceSerializer(SecretConfigMaskingMixin, serializers.ModelSerializer):
     provider_display = serializers.CharField(source='get_provider_display', read_only=True)
 
     class Meta:
@@ -191,7 +276,7 @@ class TracingDataSourceSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class MetricDataSourceSerializer(serializers.ModelSerializer):
+class MetricDataSourceSerializer(SecretConfigMaskingMixin, serializers.ModelSerializer):
     provider_display = serializers.CharField(source='get_provider_display', read_only=True)
 
     class Meta:
@@ -1416,6 +1501,9 @@ class AlertIntegrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = AlertIntegration
         fields = '__all__'
+        extra_kwargs = {
+            'secret': {'write_only': True, 'required': False, 'allow_blank': True},
+        }
 
     def get_webhook_url(self, obj):
         request = self.context.get('request')
@@ -1463,7 +1551,7 @@ class AlertRecipientGroupSerializer(serializers.ModelSerializer):
         return instance
 
 
-class AlertNotificationChannelSerializer(serializers.ModelSerializer):
+class AlertNotificationChannelSerializer(SecretConfigMaskingMixin, serializers.ModelSerializer):
     channel_type_display = serializers.CharField(source='get_channel_type_display', read_only=True)
 
     class Meta:

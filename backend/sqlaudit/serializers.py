@@ -11,11 +11,17 @@ class DataSourceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
         extra_kwargs = {
-            'password': {'write_only': True},
+            'password': {'write_only': True, 'allow_blank': True},
         }
 
     def get_status_label(self, obj):
         return '启用' if obj.is_active else '停用'
+
+    def update(self, instance, validated_data):
+        # 空串代表"不修改已存密码"
+        if not validated_data.get('password'):
+            validated_data.pop('password', None)
+        return super().update(instance, validated_data)
 
 
 class SqlCheckResultSerializer(serializers.ModelSerializer):

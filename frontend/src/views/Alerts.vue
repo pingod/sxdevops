@@ -520,7 +520,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="Webhook &#x5730;&#x5740;"><el-input v-model="channelDialog.form.webhook_url" /></el-form-item>
-        <el-form-item label="&#x8BBF;&#x95EE;&#x4EE4;&#x724C;"><el-input v-model="channelDialog.form.access_token" show-password /></el-form-item>
+        <el-form-item label="&#x8BBF;&#x95EE;&#x4EE4;&#x724C;"><el-input v-model="channelDialog.form.access_token" show-password placeholder="&#x7559;&#x7A7A;&#x4E0D;&#x66F4;&#x65B0;" /></el-form-item>
         <el-form-item label="&#x9ED8;&#x8BA4;&#x63A5;&#x6536;&#x5730;&#x5740;"><el-input v-model="channelDialog.form.to" placeholder="&#x591A;&#x4E2A;&#x63A5;&#x6536;&#x5730;&#x5740;&#x6216;&#x624B;&#x673A;&#x53F7;&#xFF0C;&#x4F7F;&#x7528;&#x82F1;&#x6587;&#x9017;&#x53F7;&#x5206;&#x9694;" /></el-form-item>
         <el-form-item label="&#x6807;&#x9898;&#x6A21;&#x677F;"><el-input v-model="channelDialog.form.template_title" /></el-form-item>
         <el-form-item label="&#x5185;&#x5BB9;&#x6A21;&#x677F;"><el-input v-model="channelDialog.form.template_body" type="textarea" :rows="4" /></el-form-item>
@@ -1548,7 +1548,7 @@ function openChannel(row = null) {
       ...emptyChannel(),
       ...row,
       webhook_url: config.webhook_url || config.url || '',
-      access_token: config.access_token || config.token || '',
+      access_token: '',
       to: Array.isArray(configTo) ? configTo.join(',') : String(configTo || ''),
     }
   } else {

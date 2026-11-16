@@ -300,6 +300,7 @@ async function handleSave() {
   try {
     const payload = { ...form.value }
     if (editingId.value) {
+      if (!payload.ssh_password) delete payload.ssh_password
       await updateHost(editingId.value, payload)
       ElMessage.success('主机已更新')
     } else {

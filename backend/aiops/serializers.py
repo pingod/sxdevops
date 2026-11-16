@@ -96,6 +96,8 @@ class AIOpsAgentConfigSerializer(serializers.ModelSerializer):
 
 
 class AIOpsMCPServerSerializer(serializers.ModelSerializer):
+    auth_config = serializers.JSONField(write_only=True, required=False)
+
     class Meta:
         model = AIOpsMCPServer
         fields = '__all__'
