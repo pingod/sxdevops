@@ -464,6 +464,10 @@ class TerraformConfigRobustnessTests(TestCase):
             self.assertIsInstance(normalized['compute'], dict)
 
     def test_prepare_workspace_keeps_terraform_state(self):
+        import tempfile
+
+        from django.test import override_settings
+
         from iac import executor
         from iac.models import TerraformStack
 
@@ -475,14 +479,15 @@ class TerraformConfigRobustnessTests(TestCase):
             config={},
             created_by='iac-admin',
         )
-        workspace = executor._prepare_workspace(stack, {'main.tf': 'provider "alicloud" {}', 'terraform.tfvars': 'secret=1'})
-        (workspace / 'terraform.tfstate').write_text('{"resources": []}', encoding='utf-8')
-        (workspace / 'main.tf').write_text('stale', encoding='utf-8')
+        with tempfile.TemporaryDirectory() as workspace_root, override_settings(BASE_DIR=workspace_root):
+            workspace = executor._prepare_workspace(stack, {'main.tf': 'provider "alicloud" {}', 'terraform.tfvars': 'secret=1'})
+            (workspace / 'terraform.tfstate').write_text('{"resources": []}', encoding='utf-8')
+            (workspace / 'main.tf').write_text('stale', encoding='utf-8')
 
-        executor._prepare_workspace(stack, {'main.tf': 'provider "alicloud" {}', 'terraform.tfvars': 'secret=2'})
+            executor._prepare_workspace(stack, {'main.tf': 'provider "alicloud" {}', 'terraform.tfvars': 'secret=2'})
 
-        self.assertTrue((workspace / 'terraform.tfstate').exists())
-        self.assertEqual((workspace / 'main.tf').read_text(encoding='utf-8'), 'provider "alicloud" {}')
-        executor._purge_workspace_secrets(workspace)
-        self.assertFalse((workspace / 'terraform.tfvars').exists())
-        self.assertTrue((workspace / 'terraform.tfstate').exists())
+            self.assertTrue((workspace / 'terraform.tfstate').exists())
+            self.assertEqual((workspace / 'main.tf').read_text(encoding='utf-8'), 'provider "alicloud" {}')
+            executor._purge_workspace_secrets(workspace)
+            self.assertFalse((workspace / 'terraform.tfvars').exists())
+            self.assertTrue((workspace / 'terraform.tfstate').exists())
