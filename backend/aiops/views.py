@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, time as datetime_time
 
 from django.core.cache import cache
+from django.db import transaction
 from django.db.models import Count, Q
 from django.http import Http404
 from django.utils import timezone
@@ -107,6 +108,14 @@ def _safe_pk(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _digits_to_int(value, max_digits=18):
+    """仅接受合理长度的纯数字 ID，避免 int('9'*5000) 触发 ValueError 变成 500。"""
+    text = str(value or '').strip()
+    if not text.isdigit() or len(text) > max_digits:
+        return None
+    return _safe_pk(text)
 
 
 class AIOpsModelProviderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
@@ -340,9 +349,10 @@ def _filter_audit_correlation(queryset, request, *, session_field='session_id', 
     for parameter, field in [('session_id', session_field), ('message_id', message_field)]:
         value = _audit_query_param(request, parameter)
         if value:
-            if not value.isdigit():
+            pk = _digits_to_int(value)
+            if pk is None:
                 return queryset.none()
-            queryset = queryset.filter(**{field: int(value)})
+            queryset = queryset.filter(**{field: pk})
     return queryset
 
 
@@ -381,14 +391,16 @@ def _audit_trace_message_queryset(request):
         queryset = queryset.filter(session__user__username__icontains=username)
     session_id = _audit_query_param(request, 'session_id')
     if session_id:
-        if not session_id.isdigit():
+        session_pk = _digits_to_int(session_id)
+        if session_pk is None:
             return queryset.none()
-        queryset = queryset.filter(session_id=int(session_id))
+        queryset = queryset.filter(session_id=session_pk)
     message_id = _audit_query_param(request, 'message_id')
     if message_id:
-        if not message_id.isdigit():
+        message_pk = _digits_to_int(message_id)
+        if message_pk is None:
             return queryset.none()
-        source = AIOpsChatMessage.objects.filter(pk=int(message_id), role='user').first()
+        source = AIOpsChatMessage.objects.filter(pk=message_pk, role='user').first()
         thread_id = (source.metadata or {}).get('langgraph_thread_id') if source else ''
         if not thread_id:
             return queryset.none()
@@ -553,7 +565,7 @@ def _audit_trace_message_id(trace_id, trace_type):
     if not text.startswith(prefix):
         return None
     message_id = text[len(prefix):].split('-', 1)[0]
-    return int(message_id) if message_id.isdigit() else None
+    return _digits_to_int(message_id)
 
 
 def _hide_audit_trace_rows(request, trace_type, label):
@@ -870,11 +882,12 @@ class AIOpsKnowledgeEnvironmentViewSet(RBACPermissionMixin, viewsets.ModelViewSe
         })
 
     def perform_create(self, serializer):
-        instance = serializer.save(
-            created_by=getattr(self.request.user, 'username', ''),
-            updated_by=getattr(self.request.user, 'username', ''),
-        )
-        self._ensure_single_default(instance)
+        with transaction.atomic():
+            instance = serializer.save(
+                created_by=getattr(self.request.user, 'username', ''),
+                updated_by=getattr(self.request.user, 'username', ''),
+            )
+            self._ensure_single_default(instance)
         record_event(
             request=self.request,
             module='aiops',
@@ -889,8 +902,9 @@ class AIOpsKnowledgeEnvironmentViewSet(RBACPermissionMixin, viewsets.ModelViewSe
         )
 
     def perform_update(self, serializer):
-        instance = serializer.save(updated_by=getattr(self.request.user, 'username', ''))
-        self._ensure_single_default(instance)
+        with transaction.atomic():
+            instance = serializer.save(updated_by=getattr(self.request.user, 'username', ''))
+            self._ensure_single_default(instance)
         record_event(
             request=self.request,
             module='aiops',
@@ -942,7 +956,8 @@ class AIOpsChatSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return AIOpsChatSession.objects.filter(user=self.request.user).prefetch_related('messages').order_by('-last_message_at', '-id')
+        # 列表只需要最新一条消息；prefetch 整个会话历史会让长会话列表无界增长。
+        return AIOpsChatSession.objects.filter(user=self.request.user).order_by('-last_message_at', '-id')
 
     def get_object(self):
         try:
@@ -1020,9 +1035,15 @@ class AIOpsChatSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     def langgraph_pilot(self, request, pk=None):
         """Run the isolated, read-only LangGraph investigation pilot."""
         session = self.get_object()
-        content = recover_masked_suggested_question(str(request.data.get('content') or '').strip())
+        data = request.data if isinstance(request.data, dict) else {}
+        content = recover_masked_suggested_question(str(data.get('content') or '').strip())
         if not content:
             return Response({'detail': 'content 不能为空。'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            max_evidence_tools = int(data.get('max_evidence_tools') or 3)
+        except (TypeError, ValueError):
+            return Response({'detail': 'max_evidence_tools 必须是整数。'}, status=status.HTTP_400_BAD_REQUEST)
+        max_evidence_tools = max(1, min(max_evidence_tools, 3))
         user_message = AIOpsChatMessage.objects.create(
             session=session,
             role=AIOpsChatMessage.ROLE_USER,
@@ -1035,10 +1056,10 @@ class AIOpsChatSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 user_message,
                 request.user,
                 question=content,
-                environment=request.data.get('environment') or '',
-                service=request.data.get('service') or '',
-                thread_id=request.data.get('thread_id') or '',
-                max_evidence_tools=request.data.get('max_evidence_tools') or 3,
+                environment=data.get('environment') or '',
+                service=data.get('service') or '',
+                thread_id=data.get('thread_id') or '',
+                max_evidence_tools=max_evidence_tools,
             )
         except LangGraphPilotUnavailable as exc:
             user_message.delete()
@@ -1251,7 +1272,7 @@ class AIOpsAuditSessionViewSet(RBACPermissionMixin, mixins.DestroyModelMixin, vi
         session_ids = request.data.get('session_ids')
         if not isinstance(session_ids, list):
             return Response({'detail': 'session_ids 必须为数组'}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_ids = [int(item) for item in session_ids if str(item).isdigit()]
+        normalized_ids = [pk for pk in (_digits_to_int(item) for item in session_ids) if pk is not None]
         if not normalized_ids:
             return Response({'detail': '请至少选择一个会话'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1336,7 +1357,7 @@ class AIOpsToolInvocationViewSet(RBACPermissionMixin, mixins.DestroyModelMixin, 
         invocation_ids = request.data.get('invocation_ids')
         if not isinstance(invocation_ids, list):
             return Response({'detail': 'invocation_ids 必须为数组'}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_ids = [int(item) for item in invocation_ids if str(item).isdigit()]
+        normalized_ids = [pk for pk in (_digits_to_int(item) for item in invocation_ids) if pk is not None]
         if not normalized_ids:
             return Response({'detail': '请至少选择一个工具调用'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1402,16 +1423,18 @@ class AIOpsPendingActionViewSet(RBACPermissionMixin, mixins.DestroyModelMixin, v
         queryset = _filter_audit_time_range(queryset, self.request, 'updated_at')
         session_id = _audit_query_param(self.request, 'session_id')
         if session_id:
-            if not session_id.isdigit():
+            session_pk = _digits_to_int(session_id)
+            if session_pk is None:
                 return queryset.none()
-            queryset = queryset.filter(session_id=int(session_id))
+            queryset = queryset.filter(session_id=session_pk)
         message_id = _audit_query_param(self.request, 'message_id')
         if message_id:
-            if not message_id.isdigit():
+            message_pk = _digits_to_int(message_id)
+            if message_pk is None:
                 return queryset.none()
             queryset = queryset.filter(
-                Q(message_id=int(message_id))
-                | Q(message__metadata__orchestration_user_message_id=int(message_id))
+                Q(message_id=message_pk)
+                | Q(message__metadata__orchestration_user_message_id=message_pk)
             )
         return queryset.order_by('-created_at', '-id')
 
@@ -1439,7 +1462,7 @@ class AIOpsPendingActionViewSet(RBACPermissionMixin, mixins.DestroyModelMixin, v
         action_ids = request.data.get('action_ids')
         if not isinstance(action_ids, list):
             return Response({'detail': 'action_ids 必须为数组'}, status=status.HTTP_400_BAD_REQUEST)
-        normalized_ids = [int(item) for item in action_ids if str(item).isdigit()]
+        normalized_ids = [pk for pk in (_digits_to_int(item) for item in action_ids) if pk is not None]
         if not normalized_ids:
             return Response({'detail': '请至少选择一个动作'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1541,7 +1564,12 @@ class AIOpsExternalTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
-        return AIOpsExternalTask.objects.select_related('created_by').order_by('-created_at', '-id')
+        queryset = AIOpsExternalTask.objects.select_related('created_by').order_by('-created_at', '-id')
+        user = getattr(self.request, 'user', None)
+        if user is not None and user.is_authenticated and not user.is_superuser:
+            # A2A 任务含 input_payload/结果，普通调用方只能看自己（或系统创建）的任务。
+            queryset = queryset.filter(Q(created_by=user) | Q(created_by__isnull=True))
+        return queryset
 
     def create(self, request, *args, **kwargs):
         try:
@@ -1664,7 +1692,8 @@ class AIOpsRunbookViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         source_session = None
         source_session_id = _safe_pk(request.data.get('source_session'))
         if source_session_id:
-            source_session = AIOpsChatSession.objects.filter(id=source_session_id).first()
+            # 会话内容是用户私有数据：仅允许引用自己的会话，避免通过会话 ID 复制他人对话到共享 Runbook。
+            source_session = AIOpsChatSession.objects.filter(id=source_session_id, user=request.user).first()
         runbook = build_runbook_draft_from_payload(
             request.data,
             user=request.user,
@@ -1688,7 +1717,10 @@ class AIOpsRunbookViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='from-session')
     def from_session(self, request):
         source_session_id = _safe_pk(request.data.get('source_session') or request.data.get('session_id'))
-        source_session = AIOpsChatSession.objects.filter(id=source_session_id).first() if source_session_id else None
+        source_session = (
+            AIOpsChatSession.objects.filter(id=source_session_id, user=request.user).first()
+            if source_session_id else None
+        )
         if not source_session:
             return Response({'detail': '来源会话不存在'}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -1803,7 +1835,7 @@ class AIOpsReviewKnowledgeViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         source_runbook = None
         source_session_pk = _safe_pk(request.data.get('source_session'))
         if source_session_pk:
-            source_session = AIOpsChatSession.objects.filter(id=source_session_pk).first()
+            source_session = AIOpsChatSession.objects.filter(id=source_session_pk, user=request.user).first()
         source_task_pk = _safe_pk(request.data.get('source_task'))
         if source_task_pk:
             source_task = AIOpsExternalTask.objects.filter(id=source_task_pk).first()
@@ -2146,7 +2178,7 @@ def audit_cost_overview(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, build_rbac_permission('aiops.chat.view')])
 def confirm_pending_action(request, pk):
     action = AIOpsPendingAction.objects.select_related('session', 'message').filter(pk=pk).first()
     if not action:
@@ -2169,7 +2201,7 @@ def confirm_pending_action(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, build_rbac_permission('aiops.chat.view')])
 def cancel_pending_action(request, pk):
     action = AIOpsPendingAction.objects.select_related('session', 'message').filter(pk=pk).first()
     if not action:

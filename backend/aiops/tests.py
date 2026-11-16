@@ -62,6 +62,8 @@ from .services import (
     _infer_alert_root_cause,
     _request_model_completion,
     _sanitize_mcp_error_text,
+    _query_live_log_datasources,
+    _safe_log_service,
     _select_action_for_question,
     _select_alert_for_metric_evidence,
     _skills_for_action,
@@ -11431,3 +11433,31 @@ class AIOpsCleanupNewSessionsCommandTests(TestCase):
 
         self.assertTrue(AIOpsChatSession.objects.filter(pk=doomed.pk).exists())
         self.assertIn('[dry-run] matched_sessions=1', stdout.getvalue())
+
+
+class LogServiceSanitizerTests(TestCase):
+    def test_safe_log_service_keeps_normal_names_and_rejects_query_syntax(self):
+        self.assertEqual(_safe_log_service('order-service'), 'order-service')
+        self.assertEqual(_safe_log_service('订单服务'), '订单服务')
+        for value in ['', '   ', 'order" OR service:*', 'a b', 'a\\b', 'a|b', 'a{b}', 'a(b)', 'a*b', 'x' * 129]:
+            self.assertEqual(_safe_log_service(value), '', value)
+
+    @mock.patch('aiops.services.run_log_provider_query')
+    def test_elk_query_does_not_embed_unsafe_service(self, mocked_run_query):
+        mocked_run_query.return_value = {'logs': []}
+        source = LogDataSource.objects.create(
+            name='elk-sanitizer-test',
+            provider='elk',
+            config={'endpoint': 'http://elk.example.com'},
+            is_enabled=True,
+        )
+
+        _query_live_log_datasources(
+            {'log_datasource_ids': [source.id], 'observability_link_ids': []},
+            service='order" OR service:*',
+            duration_minutes=30,
+        )
+
+        payload = mocked_run_query.call_args.args[2]
+        self.assertNotIn('service:*', payload['query'])
+        self.assertIn('__invalid_service__', payload['query'])

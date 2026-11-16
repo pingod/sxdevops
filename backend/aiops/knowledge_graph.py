@@ -2249,11 +2249,15 @@ def build_knowledge_graph(params=None, user=None):
             add_edge(env_id, node_id, '运行于', 'environment_infrastructure', 2)
             infrastructure_node_ids.append(node_id)
 
+        from ops.task_resources import scope_task_resources
+
         for resource_env in task_resource_env_groups:
+            task_resource_queryset = TaskResource.objects.select_related('system', 'cluster').filter(environment=resource_env)
+            if user is not None:
+                # 知识图谱与 /tasks/resources 使用同一套 CMDB 授权范围，避免泄露 IP/集群信息。
+                task_resource_queryset = scope_task_resources(task_resource_queryset, user)
             resources = list(
-                TaskResource.objects
-                .select_related('system', 'cluster')
-                .filter(environment=resource_env)
+                task_resource_queryset
                 .only(
                     'id',
                     'name',

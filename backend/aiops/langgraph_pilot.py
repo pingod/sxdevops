@@ -386,7 +386,7 @@ def _scope_node(state: PilotState) -> PilotState:
     if resolved:
         knowledge_environment = resolved
         environment = knowledge_environment.get('name') or environment
-        scope = _build_analysis_scope(knowledge_environment)
+        scope = _build_analysis_scope(knowledge_environment, user=_runtime(state)[2])
     else:
         scope = {'environment': environment, 'resolution_status': 'missing'}
     return {
@@ -1106,7 +1106,7 @@ def _k8s_scope_node(state: ChatState, config=None) -> ChatState:
         return _k8s_denied(scoped_state, 'k8s_scope')
     cluster_id = K8sCluster.objects.filter(id__in=environment.get('k8s_cluster_ids') or []).order_by('-updated_at', '-id').values_list('id', flat=True).first()
     try:
-        analysis_scope = _build_analysis_scope(environment)
+        analysis_scope = _build_analysis_scope(environment, user=_runtime(state)[2])
     except Exception as exc:
         analysis_scope = {'environment': environment.get('name'), 'error': str(exc)[:200]}
     resource_type = _detect_k8s_resource_type_for_graph(question)
@@ -1340,7 +1340,7 @@ def _correlation_scope_node(state: ChatState, config=None) -> ChatState:
         }
     environment = resolution['environment']
     try:
-        analysis_scope = _build_analysis_scope(environment)
+        analysis_scope = _build_analysis_scope(environment, user=_runtime(state)[2])
     except Exception as exc:
         analysis_scope = {'environment': environment.get('name'), 'error': str(exc)[:200]}
     service = _detect_observability_service(
@@ -1545,7 +1545,7 @@ def _self_heal_scope_node(state: ChatState, config=None) -> ChatState:
         }
     environment = resolution['environment']
     try:
-        analysis_scope = _build_analysis_scope(environment)
+        analysis_scope = _build_analysis_scope(environment, user=_runtime(state)[2])
     except Exception as exc:
         analysis_scope = {'environment': environment.get('name'), 'error': str(exc)[:200]}
     service = _detect_observability_service(
@@ -1817,7 +1817,7 @@ def _slo_scope_node(state: ChatState, config=None) -> ChatState:
         }
     environment = resolution['environment']
     try:
-        analysis_scope = _build_analysis_scope(environment)
+        analysis_scope = _build_analysis_scope(environment, user=user)
     except Exception as exc:
         analysis_scope = {'environment': environment.get('name'), 'error': str(exc)[:200]}
     action = (

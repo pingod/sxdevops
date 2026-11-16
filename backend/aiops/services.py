@@ -1221,7 +1221,7 @@ def build_action_preflight_contract(action_code, payload=None, user=None):
         if environment:
             knowledge_environment = environment
     if knowledge_environment:
-        analysis_scope = _build_analysis_scope(knowledge_environment)
+        analysis_scope = _build_analysis_scope(knowledge_environment, user=user)
 
     missing_fields = _missing_action_context_fields(action, question, knowledge_environment=knowledge_environment, analysis_scope=analysis_scope, page_context=page_context)
     result = _build_action_preflight_result(
@@ -2922,7 +2922,7 @@ def _match_service_from_options(query, service_options):
     return ''
 
 
-def _service_options_from_knowledge_environment(knowledge_environment):
+def _service_options_from_knowledge_environment(knowledge_environment, user=None):
     if not knowledge_environment:
         return []
     services = []
@@ -2935,7 +2935,7 @@ def _service_options_from_knowledge_environment(knowledge_environment):
             if label and label not in services:
                 services.append(label)
     try:
-        graph = build_knowledge_graph(_querydict_for_environment(knowledge_environment.get('name')))
+        graph = build_knowledge_graph(_querydict_for_environment(knowledge_environment.get('name')), user=user)
     except Exception:
         graph = {}
     for node in graph.get('nodes') or []:
@@ -3332,6 +3332,19 @@ def _labels_from_observability_links(links, service_name='', namespace='', envir
     return labels
 
 
+_LOG_SERVICE_UNSAFE_PATTERN = re.compile(r'[\s"\'\\|{}()\[\]*?~^<>$`]')
+
+
+def _safe_log_service(value):
+    """Reject service names that could break out of a log query clause."""
+    text = str(value or '').strip()
+    if not text or len(text) > 128:
+        return ''
+    if _LOG_SERVICE_UNSAFE_PATTERN.search(text):
+        return ''
+    return text
+
+
 def _query_live_log_datasources(knowledge_environment, query='', service='', level='', levels=None, duration_minutes=60, limit=6):
     resolved_levels = _detect_log_levels_filter(query, level, levels)
     resolved_level = _primary_log_level(resolved_levels)
@@ -3664,11 +3677,11 @@ def _querydict_for_knowledge_graph(environment_name='', system_name='', service=
     return params
 
 
-def _build_analysis_scope(knowledge_environment):
+def _build_analysis_scope(knowledge_environment, user=None):
     if not knowledge_environment:
         return {}
     name = knowledge_environment.get('name')
-    graph = build_knowledge_graph(_querydict_for_environment(name))
+    graph = build_knowledge_graph(_querydict_for_environment(name), user=user)
     nodes = graph.get('nodes') or []
     edges = graph.get('edges') or []
 
@@ -4443,6 +4456,17 @@ def _task_resource_system_filter(queryset, system_name):
     return queryset.filter(Q(system__name__icontains=system_text) | Q(system__code__iexact=system_text))
 
 
+def _task_resource_search_tokens(query):
+    search_query = _strip_common_query_phrases(
+        str(query or ''),
+        [
+            '任务中心', '资源底座', '资源', '全部', '所有', '主机', '服务器', '巡检任务', '巡检',
+            '环境', '系统', '电商', '测试', '生产', '开发', 'prod', 'test', 'dev',
+        ],
+    )
+    return _clean_tokens(search_query)
+
+
 def _task_resource_search_filter(queryset, query):
     raw_query = str(query or '')
     if (
@@ -4455,14 +4479,7 @@ def _task_resource_search_filter(queryset, query):
         return queryset
     if any(keyword in str(query or '') for keyword in ['全部', '所有']):
         return queryset
-    search_query = _strip_common_query_phrases(
-        raw_query,
-        [
-            '任务中心', '资源底座', '资源', '全部', '所有', '主机', '服务器', '巡检任务', '巡检',
-            '环境', '系统', '电商', '测试', '生产', '开发', 'prod', 'test', 'dev',
-        ],
-    )
-    tokens = _clean_tokens(search_query)
+    tokens = _task_resource_search_tokens(raw_query)
     if not tokens:
         return queryset
     filters = Q()
@@ -4479,9 +4496,20 @@ def _task_resource_search_filter(queryset, query):
     return queryset.filter(filters)
 
 
-def _filter_task_resources_by_query(queryset, query, allow_scope_fallback=False):
+def _task_query_allows_scope_fallback(query):
+    """安装/部署类问题里的软件名不是 TaskResource.name，不能因此判定“无目标”。"""
+    text = str(query or '').lower()
+    return any(keyword in text for keyword in ('安装', '部署', 'install', 'deploy', 'setup'))
+
+
+def _filter_task_resources_by_query(queryset, query, allow_scope_fallback=False, ignore_specific=False):
     filtered = _task_resource_search_filter(queryset, query)
-    if allow_scope_fallback and not filtered.exists():
+    # 只有“没有可定位的具体名称”时才回退到整个环境。像“帮我生成个巡检任务”这类
+    # 纯动作描述仍应按环境取目标；而点名了 order-api / 10.0.0.1 却匹配不到时，
+    # 不能悄悄把环境内所有资源当成目标。
+    tokens = _task_resource_search_tokens(query)
+    has_specific_target = any(re.search(r'[A-Za-z0-9]', token) for token in tokens)
+    if allow_scope_fallback and not filtered.exists() and (ignore_specific or not has_specific_target):
         return queryset
     return filtered
 
@@ -4584,7 +4612,9 @@ def query_task_resources(session, user_message, user, query='', environment='', 
         return {'summary': {'count': 0, 'detail': 'missing_permission'}, 'sections': [], 'citations': [{'title': '任务中心资源底座', 'path': '/tasks/resources'}], 'resources': []}
 
     queryset = TaskResource.objects.select_related('environment', 'system', 'cluster').all()
+    from ops.task_resources import scope_task_resources
     from rbac.k8s_access import get_k8s_grants
+    queryset = scope_task_resources(queryset, user)
     grants = get_k8s_grants(user)
     if grants is not None:
         queryset = queryset.filter(~Q(resource_type=TaskResource.RESOURCE_K8S) | Q(cluster_id__in=grants))
@@ -4610,6 +4640,9 @@ def query_task_resources(session, user_message, user, query='', environment='', 
         queryset,
         query,
         allow_scope_fallback=has_environment_scope,
+        # K8s 任务里出现的是 Service/Pod 名称，不可能匹配 TaskResource.name；
+        # 此时应按环境/集群范围取资源，而不是判为“无目标”。
+        ignore_specific=resource_type == TaskResource.RESOURCE_K8S or _task_query_allows_scope_fallback(query),
     )
     resources = list(queryset.order_by('environment__sort_order', 'system__sort_order', 'resource_type', 'name', 'id')[:limit])
     formatted_resources = [_format_task_resource(item) for item in resources]
@@ -6261,7 +6294,7 @@ def query_logs(session, user_message, user, query='', service='', level='', leve
     started_at = time.time()
     knowledge_environment = _resolve_knowledge_environment_for_query(query)
     search_query = _strip_knowledge_environment_name(query, knowledge_environment)
-    service_options = _service_options_from_knowledge_environment(knowledge_environment)
+    service_options = _service_options_from_knowledge_environment(knowledge_environment, user=user)
     resolved_service = _detect_log_service(search_query, service, service_options=service_options)
     resolved_levels = _detect_log_levels_filter(query, level, levels)
     resolved_level = _primary_log_level(resolved_levels)
@@ -9577,7 +9610,7 @@ def query_knowledge_graph(session, user_message, user, query='', environment='',
         }
 
     params = _querydict_for_knowledge_graph(environment, system_name, service)
-    graph = build_knowledge_graph(params)
+    graph = build_knowledge_graph(params, user=user)
     nodes = graph.get('nodes') or []
     edges = graph.get('edges') or []
     node_map = {node.get('id'): node for node in nodes if isinstance(node, dict)}
@@ -13812,7 +13845,7 @@ def _extract_k8s_service_patch(text='', draft_request=None):
     return patch
 
 
-def _resolve_k8s_task_resource_targets(question='', environment='', draft_request=None, max_targets=20):
+def _resolve_k8s_task_resource_targets(question='', environment='', draft_request=None, max_targets=20, user=None):
     draft_request = draft_request or {}
     explicit_resource_ids = []
     for key in ['target_resource_ids', 'resource_ids', 'target_task_resource_ids', 'task_resource_ids']:
@@ -13834,11 +13867,20 @@ def _resolve_k8s_task_resource_targets(question='', environment='', draft_reques
         explicit_resource_ids=explicit_resource_ids,
         max_hosts=max_targets,
         knowledge_environment=resource_scope_environment,
+        user=user,
     )
     if resources:
         return resources, knowledge_environment
     cluster_ids = _dedupe_int_list(draft_request.get('cluster_ids') or draft_request.get('k8s_cluster_ids') or draft_request.get('cluster_id') or [])
     queryset = K8sCluster.objects.all()
+    if user is not None:
+        from rbac.k8s_access import get_k8s_grants
+        grants = get_k8s_grants(user)
+        if grants is not None:
+            # 与任务中心的 validate_k8s_task_access 保持一致，草稿阶段也不能枚举未授权集群。
+            queryset = queryset.filter(id__in=list(grants))
+            if not queryset.exists():
+                return [], knowledge_environment
     if cluster_ids:
         queryset = queryset.filter(id__in=cluster_ids)
     elif knowledge_environment and knowledge_environment.get('k8s_cluster_ids'):
@@ -13924,6 +13966,7 @@ def _build_k8s_service_patch_draft(user, question='', draft_request=None):
         environment=environment,
         draft_request=draft_request,
         max_targets=max_targets,
+        user=user,
     )
     if not k8s_sources:
         return {'error': '未识别到目标 K8s 集群，请在问题中指定集群或先配置任务中心 K8s 资源底座。'}
@@ -13982,6 +14025,7 @@ def _build_k8s_install_draft(user, question='', draft_request=None):
         environment=environment,
         draft_request=draft_request,
         max_targets=max_targets,
+        user=user,
     )
     if not k8s_sources:
         return {'error': '未识别到目标 K8s 集群，请在问题中指定集群或先配置任务中心 K8s 资源底座。'}
@@ -14110,6 +14154,7 @@ def _build_k8s_scale_workload_draft(user, question='', draft_request=None):
         environment=environment,
         draft_request=draft_request,
         max_targets=max_targets,
+        user=user,
     )
     if not k8s_sources:
         return {'error': '未识别到目标 K8s 集群，请在问题中指定集群或先配置任务中心 K8s 资源底座。'}
@@ -14161,6 +14206,7 @@ def _build_k8s_restart_pod_draft(user, question='', draft_request=None):
         environment=environment,
         draft_request=draft_request,
         max_targets=max_targets,
+        user=user,
     )
     if not k8s_sources:
         return {'error': '未识别到目标 K8s 集群，请在问题中指定集群或先配置任务中心 K8s 资源底座。'}
@@ -14210,7 +14256,7 @@ def build_task_draft(user, question='', draft_request=None):
 
     environment = draft_request.get('environment') or _extract_environment(question)
     target_status = draft_request.get('target_status') or ('offline' if '离线' in (question or '') else 'all')
-    max_hosts = draft_request.get('max_hosts') or 20
+    max_hosts = max(1, min(_safe_int(draft_request.get('max_hosts'), 20), 50))
     explicit_host_ids = draft_request.get('target_host_ids') or []
     hosts = _resolve_task_targets_from_draft(
         question=question,
@@ -14219,6 +14265,7 @@ def build_task_draft(user, question='', draft_request=None):
         explicit_host_ids=explicit_host_ids,
         max_hosts=max_hosts,
         draft_request=draft_request,
+        user=user,
     )
     target_refs = _host_source_refs_for_targets(hosts)
     host_ids = [item['id'] for item in target_refs if item.get('source') == 'host']
@@ -14566,11 +14613,14 @@ def _host_source_refs_for_targets(targets):
     return _dedupe_target_refs(refs)
 
 
-def _resolve_task_resource_targets_for_task(question='', environment='', system_name='', resource_type='host', status='active', explicit_resource_ids=None, max_hosts=20, knowledge_environment=None):
+def _resolve_task_resource_targets_for_task(question='', environment='', system_name='', resource_type='host', status='active', explicit_resource_ids=None, max_hosts=20, knowledge_environment=None, user=None):
     resource_type = (resource_type or TaskResource.RESOURCE_HOST).strip().lower()
     if resource_type in {'hosts', 'server', 'servers', 'machine', 'machines'}:
         resource_type = TaskResource.RESOURCE_HOST
     queryset = TaskResource.objects.select_related('environment', 'system', 'cluster').all()
+    if user is not None:
+        from ops.task_resources import scope_task_resources
+        queryset = scope_task_resources(queryset, user)
     if resource_type:
         queryset = queryset.filter(resource_type=resource_type)
     scoped_env_ids = _dedupe_int_list((knowledge_environment or {}).get('task_resource_environment_ids') or [])
@@ -14599,11 +14649,12 @@ def _resolve_task_resource_targets_for_task(question='', environment='', system_
         queryset,
         question,
         allow_scope_fallback=has_environment_scope,
+        ignore_specific=resource_type == TaskResource.RESOURCE_K8S or _task_query_allows_scope_fallback(question),
     )
     return list(queryset.order_by('environment__sort_order', 'system__sort_order', 'resource_type', 'name', 'id')[:max_hosts])
 
 
-def _resolve_task_targets_from_draft(question='', environment='', target_status='all', explicit_host_ids=None, max_hosts=20, draft_request=None):
+def _resolve_task_targets_from_draft(question='', environment='', target_status='all', explicit_host_ids=None, max_hosts=20, draft_request=None, user=None):
     draft_request = draft_request or {}
     explicit_resource_ids = []
     for key in ['target_resource_ids', 'resource_ids', 'target_task_resource_ids', 'task_resource_ids']:
@@ -14629,6 +14680,7 @@ def _resolve_task_targets_from_draft(question='', environment='', target_status=
             explicit_resource_ids=explicit_resource_ids,
             max_hosts=max_hosts,
             knowledge_environment=knowledge_environment,
+            user=user,
         )
         if resource_targets:
             return resource_targets
@@ -17182,8 +17234,30 @@ def _parse_tool_arguments(raw_arguments):
         return {}
 
 
+# 模型按 JSON Schema 生成参数并不可靠，常见把 integer 输出成 "5"；在进入工具前统一转换，
+# 避免 query_alerts 等函数直接用字符串做切片/比较而抛 TypeError，整轮取证作废。
+_TOOL_INT_ARGUMENTS = {
+    'limit', 'days', 'duration_minutes', 'step', 'max_hosts', 'max_targets', 'budget',
+    'replicas', 'container_port', 'tail', 'tail_lines', 'page', 'page_size', 'hours',
+    'minutes', 'top_n', 'window_minutes', 'neighbor_hops', 'after_minutes',
+}
+_TOOL_FLOAT_ARGUMENTS = {'threshold', 'confidence', 'timeout_seconds'}
+
+
+def _normalize_tool_arguments(arguments):
+    normalized = dict(arguments or {})
+    for key, value in list(normalized.items()):
+        if value in (None, ''):
+            continue
+        if key in _TOOL_INT_ARGUMENTS:
+            normalized[key] = _safe_int(value, default=0)
+        elif key in _TOOL_FLOAT_ARGUMENTS:
+            normalized[key] = _safe_float(value)
+    return normalized
+
+
 def _scope_tool_arguments(session, tool_name, arguments):
-    scoped = dict(arguments or {})
+    scoped = _normalize_tool_arguments(arguments)
     context = session.context if isinstance(getattr(session, 'context', None), dict) else {}
     current_environment = context.get('current_environment') or {}
     environment_name = current_environment.get('name') if isinstance(current_environment, dict) else current_environment
@@ -17871,7 +17945,7 @@ def _dispatch_with_tool_runtime(session, user_message, user, question, progress_
         return _build_environment_required_result(environment_resolution)
     knowledge_environment = environment_resolution['environment']
     try:
-        analysis_scope = _build_analysis_scope(knowledge_environment)
+        analysis_scope = _build_analysis_scope(knowledge_environment, user=user)
     except Exception as exc:
         analysis_scope = {'environment': knowledge_environment.get('name'), 'error': str(exc)[:200]}
     _persist_session_context(
@@ -19227,7 +19301,9 @@ def dispatch_chat(session, user_message, user, question, analysis_only=False):
 
 def build_audit_overview():
     now = timezone.now()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # timezone.now() 是 UTC；直接 replace(hour=0) 得到的是 UTC 零点（东八区 08:00），
+    # 会把当天 0-8 点的数据算到“昨天”。
+    today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
     model_today = AIOpsModelInvocation.objects.filter(created_at__gte=today_start)
     model_totals = model_today.aggregate(tokens=Sum('total_tokens'), cost=Sum('estimated_cost_usd'))
     return {
