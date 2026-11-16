@@ -603,3 +603,86 @@ class EventSourceTests(TestCase):
         self.assertEqual(filter_response.status_code, 200)
         self.assertIn('system_names', filter_response.data)
         self.assertIn('trade', filter_response.data['system_names'])
+
+    def _enable_source(self, code, default_environment=''):
+        _ensure_default_event_sources()
+        source = EventSource.objects.get(code=code)
+        token = source.issue_token()
+        source.enabled = True
+        source.status = EventSource.STATUS_HEALTHY
+        if default_environment:
+            source.config = {**(source.config or {}), 'default_environment': default_environment}
+        source.save(update_fields=['token_hash', 'token_preview', 'enabled', 'status', 'config', 'updated_at'])
+        return source, token
+
+    def test_external_ingest_returns_202_when_event_is_rejected(self):
+        EventEnvironment.objects.get_or_create(code='ecommerce-test', defaults={'name': '电商测试环境'})
+        _, token = self._enable_source('custom')
+
+        response = APIClient().post(
+            '/api/event-sources/custom/ingest/',
+            {
+                'event_id': 'rejected-001',
+                'event_category': 'ops_transaction',
+                'title': '被拒绝的事件',
+                'result': EventRecord.RESULT_REJECTED,
+                'environment': 'ecommerce-test',
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertFalse(
+            EventRecord.objects.filter(metadata__external_event_id='rejected-001').exists()
+        )
+
+    def test_jira_events_with_different_timestamps_are_not_deduplicated(self):
+        EventEnvironment.objects.get_or_create(code='prod', defaults={'name': '生产环境'})
+        _, token = self._enable_source('jira', default_environment='prod')
+        client = APIClient()
+        statuses = []
+        for timestamp in ('1700000000', '1700000060'):
+            response = client.post(
+                '/api/event-sources/jira/ingest/',
+                {
+                    'webhookEvent': 'jira:issue_updated',
+                    'timestamp': timestamp,
+                    'issue': {'id': '10001', 'key': 'OPS-1', 'fields': {'summary': '订单接口异常'}},
+                },
+                format='json',
+                HTTP_AUTHORIZATION=f'Bearer {token}',
+            )
+            statuses.append(response.status_code)
+
+        self.assertEqual(statuses, [201, 201])
+        self.assertEqual(
+            EventRecord.objects.filter(metadata__event_source_code='jira').count(),
+            2,
+        )
+
+    def test_argocd_event_with_environment_is_accepted(self):
+        EventEnvironment.objects.get_or_create(code='prod', defaults={'name': '生产环境'})
+        _, token = self._enable_source('argocd')
+
+        response = APIClient().post(
+            '/api/event-sources/argocd/ingest/',
+            {
+                'action': 'sync',
+                'environment': 'prod',
+                'system_name': '交易',
+                'app': {
+                    'metadata': {'name': 'order-api'},
+                    'status': {'sync': {'revision': 'abc123', 'status': 'Synced'}, 'health': {'status': 'Healthy'}},
+                },
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {token}',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        event = EventRecord.objects.get(
+            metadata__event_source_code='argocd',
+            metadata__external_event_id='order-api:abc123:sync:',
+        )
+        self.assertEqual(event.application, 'order-api')

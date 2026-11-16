@@ -383,9 +383,19 @@ def _normalize_provider_payload(source, payload):
     if source.source_type == EventSource.TYPE_JIRA:
         issue = payload.get('issue') or {}
         fields = issue.get('fields') or {}
-        return {'event_id': payload.get('webhookEvent') or issue.get('id') or issue.get('key'), 'title': fields.get('summary') or f"Jira {issue.get('key', '')}".strip(), 'summary': payload.get('webhookEvent') or 'Jira 事件', 'event_type': 'jira_issue', 'action': payload.get('webhookEvent') or 'issue_event', 'result': EventRecord.RESULT_SUCCESS, 'actor': _safe_get(payload, 'user.name') or _safe_get(payload, 'user.displayName'), 'resource_type': 'jira_issue', 'resource_id': issue.get('key') or issue.get('id') or '', 'resource_name': fields.get('summary') or issue.get('key') or '', 'metadata': payload}
+        source_config = source.config or {}
+        event_id = f"jira:{issue.get('id') or issue.get('key') or ''}:{payload.get('webhookEvent') or 'event'}:{payload.get('timestamp') or ''}"
+        system_name = payload.get('system_name') or payload.get('business_line') or _safe_get(payload, 'issue.fields.customfield_team') or source_config.get('default_system_name', '') or ''
+        environment = payload.get('environment') or _safe_get(payload, 'issue.fields.environment') or source_config.get('default_environment', '') or ''
+        return {'event_id': event_id, 'title': fields.get('summary') or f"Jira {issue.get('key', '')}".strip(), 'summary': payload.get('webhookEvent') or 'Jira 事件', 'event_type': 'jira_issue', 'action': payload.get('webhookEvent') or 'issue_event', 'result': EventRecord.RESULT_SUCCESS, 'actor': _safe_get(payload, 'user.name') or _safe_get(payload, 'user.displayName'), 'system_name': system_name, 'environment': environment, 'resource_type': 'jira_issue', 'resource_id': issue.get('key') or issue.get('id') or '', 'resource_name': fields.get('summary') or issue.get('key') or '', 'metadata': payload}
     if source.source_type == EventSource.TYPE_GITLAB:
-        return {'event_id': payload.get('checkout_sha') or payload.get('object_kind') or payload.get('event_name'), 'title': payload.get('object_kind') or payload.get('event_name') or 'GitLab 事件', 'summary': payload.get('message') or payload.get('ref') or '', 'event_type': payload.get('object_kind') or 'gitlab', 'action': payload.get('event_name') or payload.get('object_kind') or 'gitlab_event', 'result': EventRecord.RESULT_SUCCESS, 'actor': payload.get('user_username') or payload.get('user_name') or '', 'environment': payload.get('environment') or '', 'application': _safe_get(payload, 'project.name'), 'resource_type': 'gitlab_project', 'resource_id': _safe_get(payload, 'project.id') or '', 'resource_name': _safe_get(payload, 'project.path_with_namespace') or _safe_get(payload, 'project.name'), 'metadata': payload}
+        attributes = payload.get('object_attributes') or {}
+        event_id = (
+            attributes.get('id')
+            or payload.get('checkout_sha')
+            or f"{payload.get('object_kind') or 'event'}:{payload.get('event_name') or ''}:{payload.get('id') or ''}"
+        )
+        return {'event_id': event_id, 'title': payload.get('object_kind') or payload.get('event_name') or 'GitLab 事件', 'summary': payload.get('message') or payload.get('ref') or '', 'event_type': payload.get('object_kind') or 'gitlab', 'action': payload.get('event_name') or payload.get('object_kind') or 'gitlab_event', 'result': EventRecord.RESULT_SUCCESS, 'actor': payload.get('user_username') or payload.get('user_name') or '', 'environment': payload.get('environment') or '', 'application': _safe_get(payload, 'project.name'), 'resource_type': 'gitlab_project', 'resource_id': _safe_get(payload, 'project.id') or '', 'resource_name': _safe_get(payload, 'project.path_with_namespace') or _safe_get(payload, 'project.name'), 'metadata': payload}
     if source.source_type == EventSource.TYPE_JENKINS:
         status_value = str(payload.get('status') or _safe_get(payload, 'build.status') or '').lower()
         result = EventRecord.RESULT_FAILED if status_value in {'failed', 'failure', 'aborted'} else EventRecord.RESULT_SUCCESS
@@ -400,7 +410,12 @@ def _normalize_provider_payload(source, payload):
         app_name = _safe_get(app, 'metadata.name') or payload.get('app_name') or payload.get('application')
         health = str(_safe_get(app, 'status.health.status') or payload.get('health') or '').lower()
         result = EventRecord.RESULT_FAILED if health in {'degraded', 'missing', 'unknown'} else EventRecord.RESULT_SUCCESS
-        return {'event_id': payload.get('event_id') or app_name, 'title': payload.get('title') or f'ArgoCD {app_name or "应用同步"}', 'summary': payload.get('summary') or _safe_get(app, 'status.sync.status') or 'ArgoCD 应用事件', 'event_type': 'argocd_app', 'action': payload.get('action') or 'sync', 'result': result, 'severity': EventRecord.SEVERITY_DANGER if result == EventRecord.RESULT_FAILED else EventRecord.SEVERITY_INFO, 'actor': payload.get('actor') or 'argocd', 'application': app_name or '', 'resource_type': 'argocd_application', 'resource_id': app_name or '', 'resource_name': app_name or '', 'metadata': payload}
+        source_config = source.config or {}
+        revision = _safe_get(app, 'status.sync.revision') or payload.get('revision') or ''
+        environment = payload.get('environment') or _safe_get(app, 'metadata.labels.environment') or source_config.get('default_environment', '') or ''
+        system_name = payload.get('system_name') or payload.get('business_line') or _safe_get(app, 'metadata.labels.system') or source_config.get('default_system_name', '') or ''
+        event_id = f"{app_name or 'argocd'}:{revision}:{payload.get('action') or 'sync'}:{payload.get('timestamp') or ''}"
+        return {'event_id': event_id, 'title': payload.get('title') or f'ArgoCD {app_name or "应用同步"}', 'summary': payload.get('summary') or _safe_get(app, 'status.sync.status') or 'ArgoCD 应用事件', 'event_type': 'argocd_app', 'action': payload.get('action') or 'sync', 'result': result, 'severity': EventRecord.SEVERITY_DANGER if result == EventRecord.RESULT_FAILED else EventRecord.SEVERITY_INFO, 'actor': payload.get('actor') or 'argocd', 'system_name': system_name, 'environment': environment, 'application': app_name or '', 'resource_type': 'argocd_application', 'resource_id': app_name or '', 'resource_name': app_name or '', 'metadata': payload}
     return payload
 
 
@@ -1448,10 +1463,15 @@ class ExternalEventIngestView(APIView):
             correlation_id=data.get('correlation_id') or f'{source.code}:{data.get("event_id") or timezone.now().strftime("%Y%m%d%H%M%S")}',
             occurred_at=data.get('occurred_at'),
         )
+        if event is None:
+            return Response(
+                {'detail': '\u4e8b\u4ef6\u88ab\u62d2\u7edd\uff0c\u672a\u5199\u5165\u4e8b\u4ef6\u5899\u3002'},
+                status=status.HTTP_202_ACCEPTED,
+            )
         source.status = EventSource.STATUS_HEALTHY
         source.last_error = ''
         source.last_sync_at = timezone.now()
-        source.last_event_at = event.occurred_at if event else timezone.now()
+        source.last_event_at = event.occurred_at
         source.save(update_fields=['status', 'last_error', 'last_sync_at', 'last_event_at', 'updated_at'])
         return Response(EventRecordSerializer(event).data, status=status.HTTP_201_CREATED)
 
