@@ -49,6 +49,8 @@ PERMISSION_DEFINITIONS = [
     ('ops.k8s.exec', '执行 K8s Pod 命令', 'ops', '通过浏览器对 Pod 执行命令并进入轻量控制台'),
     ('ops.k8s.kubectl', '执行 K8s 集群命令', 'ops', '在已授权的集群控制台中执行 kubectl 命令'),
     ('ops.k8s.terminal', '使用 K8s 集群终端', 'ops', '通过浏览器打开绑定指定集群 kubeconfig 的交互式 Shell'),
+    ('ops.middleware.view', '查看中间件', 'ops', '查看 Redis、RocketMQ、Elasticsearch 集群、实例与运行指标'),
+    ('ops.middleware.manage', '管理中间件', 'ops', '创建、修改、删除中间件集群/实例并执行运行时操作'),
     ('ops.docker.view', '查看 Docker 环境', 'ops', '查看 Docker 主机、容器、镜像与日志'),
     ('ops.docker.manage', '管理 Docker 环境', 'ops', '维护 Docker 主机并执行容器操作'),
     ('ops.docker.exec', 'Docker 容器终端', 'ops', '进入 Docker 容器执行交互式 Shell 命令'),
@@ -156,6 +158,7 @@ BUILTIN_ROLES = [
             'ops.metric.query', 'ops.metric.datasource.view', 'ops.metric.datasource.manage',
             'ops.observability.system_posture.view', 'ops.observability.system_posture.manage', 'ops.observability.link.view', 'ops.observability.link.manage', 'ops.rum.view', 'ops.grafana.view', 'ops.grafana.manage',
             'ops.k8s.view', 'ops.k8s.secret.view', 'ops.k8s.manage', 'ops.k8s.exec', 'ops.k8s.kubectl', 'ops.k8s.terminal', 'ops.docker.view', 'ops.docker.manage', 'ops.docker.exec',
+            'ops.middleware.view', 'ops.middleware.manage',
             'cloudsecurity.waf.view', 'cloudsecurity.internal_platform.view', 'cloudsecurity.internal_platform.manage',
             'eventwall.view', 'eventwall.source.view', 'eventwall.source.manage', 'eventwall.environment.view', 'eventwall.environment.manage',
             'rbac.audit.view',
@@ -179,7 +182,7 @@ BUILTIN_ROLES = [
         'permissions': [
             'aiops.knowledge.view',
             'ops.dashboard.view', 'ops.host.view', 'ops.task.resource.view', 'ops.host.schedule.view', 'ops.deployment.view', 'ops.ticket.view', 'ops.alert.view', 'ops.alert.config.view',
-            'ops.log.query', 'ops.log.datasource.view', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view',
+            'ops.log.query', 'ops.log.datasource.view', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view', 'ops.middleware.view',
             'eventwall.view', 'eventwall.source.view', 'eventwall.environment.view',
             'aiops.chat.view', 'aiops.chat.analyze', 'aiops.task.generate', 'aiops.runbook.view', 'aiops.review.view',
             'cmdb.dashboard.view', 'cmdb.ci.view',
@@ -196,7 +199,7 @@ BUILTIN_ROLES = [
         'description': '查看日志、安全告警并审核 SQL 工单。',
         'permissions': [
             'aiops.knowledge.view',
-            'ops.dashboard.view', 'ops.alert.view', 'ops.alert.config.view', 'ops.log.datasource.view', 'ops.log.query', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view',
+            'ops.dashboard.view', 'ops.alert.view', 'ops.alert.config.view', 'ops.log.datasource.view', 'ops.log.query', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view', 'ops.middleware.view',
             'cloudsecurity.waf.view', 'cloudsecurity.internal_platform.view',
             'ops.webshell.rule.view',
             'eventwall.view', 'eventwall.source.view', 'eventwall.environment.view', 'rbac.audit.view', 'aiops.chat.view', 'aiops.chat.analyze', 'aiops.runbook.view', 'aiops.review.view',
@@ -213,7 +216,7 @@ BUILTIN_ROLES = [
         'description': '只能浏览各模块的只读信息。',
         'permissions': [
             'ops.dashboard.view', 'ops.host.view', 'ops.task.resource.view', 'ops.host.schedule.view', 'ops.deployment.view', 'ops.ticket.view', 'ops.alert.view', 'ops.alert.config.view',
-            'ops.log.entry.view', 'ops.log.datasource.view', 'ops.log.query', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view', 'ops.k8s.view', 'ops.docker.view',
+            'ops.log.entry.view', 'ops.log.datasource.view', 'ops.log.query', 'ops.trace.view', 'ops.trace.datasource.view', 'ops.metric.query', 'ops.metric.datasource.view', 'ops.observability.system_posture.view', 'ops.observability.link.view', 'ops.rum.view', 'ops.grafana.view', 'ops.k8s.view', 'ops.docker.view', 'ops.middleware.view',
             'cloudsecurity.waf.view', 'cloudsecurity.internal_platform.view',
             'cmdb.dashboard.view', 'cmdb.ci.view', 'cmdb.topology.view', 'cmdb.ipam.view',
             'cmdb.model.view', 'cmdb.sync.view', 'cmdb.cost.view',

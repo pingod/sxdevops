@@ -116,11 +116,12 @@ class UserViewSet(IdentityWriteMixin, EventWallModelViewSetMixin, RBACPermission
         'destroy': ['rbac.user.manage'],
         'reset_password': ['rbac.user.manage'],
         'k8s_access': ['rbac.user.manage'],
-        'options': ['rbac.group.manage'],
+        'user_options': ['rbac.group.manage'],
     }
 
-    @action(detail=False, methods=['get'])
-    def options(self, request):
+    @action(detail=False, methods=['get'], url_path='options', url_name='options')
+    def user_options(self, request):
+        # 不能把方法命名为 options：会覆盖 APIView.options，导致 OPTIONS 请求返回用户列表。
         candidates = self.filter_queryset(self.get_queryset())
         if is_preview_user(request.user):
             page = self.paginate_queryset(candidates.order_by('username', 'id'))
