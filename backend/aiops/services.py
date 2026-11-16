@@ -8178,7 +8178,7 @@ def _run_task_generation_evidence(session, user_message, user, question, scoped_
             draft_args['service_name'] = profile.get('service') or ''
             if is_k8s_install_request:
                 draft_args['package_name'] = install_target
-                draft_args['namespace'] = _extract_k8s_namespace(question, {}) or 'default'
+                draft_args['namespace'] = _extract_k8s_namespace(question, {})
     if shell_command:
         draft_args['command'] = shell_command
         draft_args['script_kind'] = 'shell'
@@ -14413,11 +14413,17 @@ def _build_runtime_prompt(config, active_mcp_servers, active_skills, user, mcp_d
 def _build_history_messages(session, config):
     history = list(session.messages.order_by('-created_at', '-id')[: max(config.max_history_messages, 4)])
     history.reverse()
-    return [
-        {'role': item.role, 'content': item.content}
-        for item in history
-        if item.role in {AIOpsChatMessage.ROLE_USER, AIOpsChatMessage.ROLE_ASSISTANT}
-    ]
+    in_progress = {PROCESSING_STATUS_PENDING, PROCESSING_STATUS_RUNNING, PROCESSING_STATUS_STREAMING}
+    messages = []
+    for item in history:
+        if item.role not in {AIOpsChatMessage.ROLE_USER, AIOpsChatMessage.ROLE_ASSISTANT}:
+            continue
+        if not str(item.content or '').strip():
+            continue
+        if (item.metadata or {}).get('processing_status') in in_progress:
+            continue
+        messages.append({'role': item.role, 'content': item.content})
+    return messages
 
 
 def _tool_allowed(user, tool_name):
@@ -14944,9 +14950,10 @@ def _parse_tool_arguments(raw_arguments):
     if not raw_arguments:
         return {}
     try:
-        return json.loads(raw_arguments)
+        parsed = json.loads(raw_arguments)
     except (TypeError, ValueError):
         return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _scope_tool_arguments(session, tool_name, arguments):
@@ -15881,6 +15888,11 @@ def _dispatch_with_tool_runtime(session, user_message, user, question, progress_
                     tool_name = function_payload.get('name', '')
                     registry_entry = registry.get(tool_name)
                     if not registry_entry:
+                        messages.append({
+                            'role': 'tool',
+                            'tool_call_id': tool_call.get('id'),
+                            'content': json.dumps({'error': f'unknown tool: {tool_name}'}, ensure_ascii=False),
+                        })
                         continue
                     arguments = _parse_tool_arguments(function_payload.get('arguments'))
                     emit(

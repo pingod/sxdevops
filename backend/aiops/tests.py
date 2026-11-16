@@ -52,6 +52,7 @@ from .services import (
     _is_direct_log_question,
     _normalize_formatter_output,
     _normalize_mcp_input_schema,
+    _parse_tool_arguments,
     _build_evidence_bundle_result,
     _infer_alert_root_cause,
     _request_model_completion,
@@ -6895,6 +6896,28 @@ class AIOpsApiTests(TestCase):
         history = _build_history_messages(session, config)
 
         self.assertEqual([item['content'] for item in history], ['msg-2', 'msg-3', 'msg-4', 'msg-5'])
+
+    def test_history_window_skips_placeholder_and_empty_messages(self):
+        config = get_agent_config()
+        config.max_history_messages = 6
+        config.save(update_fields=['max_history_messages'])
+        session = AIOpsChatSession.objects.create(user=self.user, title='context-placeholder')
+        AIOpsChatMessage.objects.create(session=session, role=AIOpsChatMessage.ROLE_USER, content='查询订单服务日志')
+        AIOpsChatMessage.objects.create(
+            session=session,
+            role=AIOpsChatMessage.ROLE_ASSISTANT,
+            content='',
+            metadata={'processing_status': 'running'},
+        )
+
+        history = _build_history_messages(session, config)
+
+        self.assertEqual(history, [{'role': AIOpsChatMessage.ROLE_USER, 'content': '查询订单服务日志'}])
+
+    def test_parse_tool_arguments_returns_empty_dict_for_non_object_json(self):
+        self.assertEqual(_parse_tool_arguments('{"limit": 5}'), {'limit': 5})
+        self.assertEqual(_parse_tool_arguments('"{\\"limit\\": 5}"'), {})
+        self.assertEqual(_parse_tool_arguments('[1, 2]'), {})
 
     @mock.patch('aiops.services._request_model_completion')
     def test_send_message_uses_llm_tool_calling_runtime(self, mocked_completion):

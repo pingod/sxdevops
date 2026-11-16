@@ -856,7 +856,12 @@ class AIOpsChatSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self.request.user, 'username', '') == 'demo':
             sync_admin_sessions_to_demo()
-        return AIOpsChatSession.objects.filter(user=self.request.user).prefetch_related('messages').order_by('-last_message_at', '-id')
+        return (
+            AIOpsChatSession.objects.filter(user=self.request.user)
+            .exclude(Q(context__has_key='source') & Q(context__source='platform_mcp_server'))
+            .prefetch_related('messages')
+            .order_by('-last_message_at', '-id')
+        )
 
     def get_object(self):
         try:
@@ -1918,9 +1923,7 @@ def confirm_pending_action(request, pk):
         task_draft = confirm_action(action, request.user, request=request)
         return Response({'success': True, 'task_name': task_draft['name'], 'task_draft': task_draft})
     except ValueError as exc:
-        action.status = AIOpsPendingAction.STATUS_FAILED
-        action.result_payload = {'error': str(exc)}
-        action.save(update_fields=['status', 'result_payload', 'updated_at'])
+        # 校验失败（无权限、状态不可确认等）不改变动作状态，只回报原因
         return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
 
