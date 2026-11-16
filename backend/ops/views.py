@@ -2035,19 +2035,17 @@ class AlertNotificationChannelViewSet(EventWallModelViewSetMixin, RBACPermission
     def test(self, request, pk=None):
         channel = self.get_object()
         alert = Alert.objects.order_by('-created_at').first()
-        if not alert:
-            alert = Alert.objects.create(
-                title='告警通知测试',
-                level='info',
-                source='SxDevOps',
-                source_type=Alert.SOURCE_GENERIC,
-                message='这是一条用于验证通知渠道的测试告警。',
-                status=Alert.STATUS_ACTIVE,
-            )
-        temp_rule = AlertNotificationRule(name='渠道测试', is_enabled=True)
+        target_alert = alert or Alert(
+            title='告警通知测试',
+            level='info',
+            source='SxDevOps',
+            source_type=Alert.SOURCE_GENERIC,
+            message='这是一条用于验证通知渠道的测试告警。',
+            status=Alert.STATUS_ACTIVE,
+        )
         logs = []
         from .alerting import send_alert_notification
-        logs.append(send_alert_notification(channel, alert, {'names': ['渠道测试']}, action='test', rule=None, request=request))
+        logs.append(send_alert_notification(channel, target_alert, {'names': ['渠道测试']}, action='test', rule=None, request=request))
         return Response(AlertNotificationLogSerializer(logs, many=True).data)
 
 

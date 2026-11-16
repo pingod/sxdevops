@@ -6,6 +6,8 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
@@ -201,21 +203,25 @@ def system_module_settings_view(request):
     return Response({'success': True, 'data': get_system_module_settings()})
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def login_view(request):
-    serializer = LoginSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    user = authenticate(
-        username=serializer.validated_data['username'],
-        password=serializer.validated_data['password'],
-    )
-    if not user:
-        return Response({'detail': '用户名或密码错误。'}, status=status.HTTP_400_BAD_REQUEST)
-    if not user.is_active:
-        return Response({'detail': '用户已被禁用。'}, status=status.HTTP_403_FORBIDDEN)
-    token, _ = Token.objects.get_or_create(user=user)
-    return Response({'token': token.key, 'user': UserSerializer(user).data})
+class LoginView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = authenticate(
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password'],
+        )
+        if not user:
+            return Response({'detail': '用户名或密码错误。'}, status=status.HTTP_400_BAD_REQUEST)
+        if not user.is_active:
+            return Response({'detail': '用户已被禁用。'}, status=status.HTTP_403_FORBIDDEN)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key, 'user': UserSerializer(user).data})
 
 
 @api_view(['POST'])

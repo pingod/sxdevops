@@ -691,6 +691,9 @@ def _base_url(request=None):
 
 
 def _interaction_url(alert, action, provider='', request=None):
+    if not getattr(alert, 'pk', None):
+        # 未落库的告警（如渠道测试）无法生成可点击的卡片动作
+        return ''
     token = AlertInteractionToken.objects.create(
         alert=alert,
         action=action,

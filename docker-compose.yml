@@ -22,6 +22,8 @@ services:
       CHANNEL_REDIS_URL: redis://redis:6379/1
       SECRET_KEY: sxdevops-change-me-in-production
       DEBUG: "0"
+      ALLOWED_HOSTS: "*"
+      # 下面两项仅为本地演示放宽，生产部署必须替换 SECRET_KEY 并收紧 ALLOWED_HOSTS / CORS
       CORS_ALLOW_ALL_ORIGINS: "1"
       SXDEVOPS_WAIT_FOR_DB: "1"
       SXDEVOPS_MIGRATE: "1"

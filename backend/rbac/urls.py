@@ -11,7 +11,7 @@ router.register('groups', views.UserGroupViewSet, basename='rbac-group')
 router.register('permissions', views.PermissionDefinitionViewSet, basename='rbac-permission')
 
 urlpatterns = [
-    path('auth/login/', views.login_view, name='rbac-login'),
+    path('auth/login/', views.LoginView.as_view(), name='rbac-login'),
     path('auth/logout/', views.logout_view, name='rbac-logout'),
     path('auth/me/', views.current_user_view, name='rbac-me'),
     path('auth/sync/', views.sync_permissions_view, name='rbac-sync'),

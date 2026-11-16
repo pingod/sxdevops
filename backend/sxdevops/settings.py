@@ -337,18 +337,20 @@ def _build_cache_config():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv(
-    'SECRET_KEY',
-    'django-insecure-ag#xxnjm^46$=ye()w$yma8r8oy3&wfq!8_=bm!kwe0e((&y3-',
-)
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _bool_value(os.getenv('DEBUG'), True)
 
+# SECURITY WARNING: keep the secret key used in production secret!
+# 生产模式必须显式提供 SECRET_KEY，仓库中的兜底值只允许在 DEBUG 下使用
+SECRET_KEY = os.getenv('SECRET_KEY', '')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise RuntimeError('生产模式（DEBUG=0）必须显式配置 SECRET_KEY 环境变量。')
+    SECRET_KEY = 'django-insecure-ag#xxnjm^46$=ye()w$yma8r8oy3&wfq!8_=bm!kwe0e((&y3-'
+
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.getenv('ALLOWED_HOSTS', '*').split(',')
+    for host in os.getenv('ALLOWED_HOSTS', '*' if DEBUG else 'localhost,127.0.0.1').split(',')
     if host.strip()
 ]
 
@@ -460,7 +462,7 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS
-CORS_ALLOW_ALL_ORIGINS = _bool_value(os.getenv('CORS_ALLOW_ALL_ORIGINS'), True)
+CORS_ALLOW_ALL_ORIGINS = _bool_value(os.getenv('CORS_ALLOW_ALL_ORIGINS'), DEBUG)
 
 # DRF
 REST_FRAMEWORK = {
@@ -477,6 +479,9 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        'login': os.getenv('LOGIN_THROTTLE_RATE', '10/min'),
+    },
 }
 
 # Loki
