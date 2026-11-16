@@ -100,7 +100,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowRight,
@@ -112,8 +112,10 @@ import {
   User,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { landingRoute, safeRedirectTarget } from '@/utils/router'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const form = reactive({
@@ -160,7 +162,7 @@ async function handleLogin() {
   try {
     await authStore.login(form)
     ElMessage.success('登录成功')
-    router.replace('/dashboard')
+    router.replace(safeRedirectTarget(route.query.redirect) || landingRoute(authStore))
   } finally {
     loading.value = false
   }

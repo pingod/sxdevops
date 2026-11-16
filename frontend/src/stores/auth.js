@@ -96,6 +96,8 @@ export const useAuthStore = defineStore('auth', () => {
       if (token.value) {
         await logoutApi()
       }
+    } catch {
+      // 服务端注销失败不影响本地会话清理，调用方仍需跳转登录页
     } finally {
       clearSession()
       initialized.value = true

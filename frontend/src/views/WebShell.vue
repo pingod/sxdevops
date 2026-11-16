@@ -37,6 +37,7 @@ const statusText = ref('连接中...')
 let term = null
 let fitAddon = null
 let ws = null
+let resizeObserver = null
 
 // 获取主机信息
 async function fetchHostInfo() {
@@ -92,7 +93,8 @@ function initTerminal() {
   })
 
   // 监听窗口变化
-  const resizeObserver = new ResizeObserver(() => {
+  resizeObserver = new ResizeObserver(() => {
+    if (!term || !fitAddon) return
     if (fitAddon) {
       fitAddon.fit()
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -160,6 +162,10 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   if (ws) {
     ws.close()
     ws = null
@@ -168,5 +174,6 @@ onBeforeUnmount(() => {
     term.dispose()
     term = null
   }
+  fitAddon = null
 })
 </script>

@@ -41,7 +41,7 @@
           <el-menu-item
             v-else
             class="sidebar-direct-item"
-            :index="item.menuKey || item.moduleKey || item.path"
+            :index="item.path || item.menuKey || item.moduleKey"
             :route="item.route || item.path"
           >
             <el-icon><component :is="item.icon" /></el-icon>
@@ -640,8 +640,12 @@ function goSection(section) {
 
 async function handleUserCommand(command) {
   if (command === 'refresh') {
-    await authStore.reloadProfile()
-    ElMessage.success('权限已刷新')
+    const profile = await authStore.reloadProfile()
+    if (profile) {
+      ElMessage.success('权限已刷新')
+    } else {
+      ElMessage.error('刷新权限失败，请重新登录后重试')
+    }
     return
   }
   if (command === 'logout') {

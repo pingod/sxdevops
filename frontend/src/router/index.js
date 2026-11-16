@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import AppLayout from '@/layout/AppLayout.vue'
 import { pinia } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
+import { landingRoute, safeRedirectTarget } from '@/utils/router'
 
 const TASK_SCHEDULES_VISIBLE = false
 const observabilityBoardPermissions = ['ops.grafana.view']
@@ -41,7 +42,7 @@ const routes = [
   {
     path: '/',
     component: AppLayout,
-    redirect: '/dashboard',
+    redirect: () => landingRoute(useAuthStore(pinia)),
     children: [
       {
         path: 'dashboard',
@@ -469,6 +470,11 @@ const routes = [
     component: () => import('@/views/WebShell.vue'),
     meta: { title: 'WebShell', permission: 'ops.host.terminal' },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    redirect: () => landingRoute(useAuthStore(pinia)),
+  },
 ]
 
 const router = createRouter({
@@ -490,7 +496,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta.public) {
     if (to.name === 'Login' && authStore.isAuthenticated) {
-      return '/dashboard'
+      return safeRedirectTarget(to.query.redirect) || landingRoute(authStore)
     }
     return true
   }
