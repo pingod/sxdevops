@@ -1,12 +1,12 @@
 <template>
   <figure class="product-figure" :class="{ 'figure-light': light }">
-    <div class="figure-header"><span>{{ label }}</span><span><el-icon><FullScreen /></el-icon> 点击放大查看</span></div>
+    <div class="figure-header"><span>{{ label }}</span><span><SxIcon><FullScreen /></SxIcon> 点击放大查看</span></div>
     <button class="figure-image" type="button" :aria-label="`放大查看${title}`" @click="openFigure">
       <img :src="src" :alt="alt" :width="width" :height="height" loading="lazy" decoding="async" />
     </button>
     <figcaption><strong>{{ title }}</strong><p>{{ caption }}</p></figcaption>
     <dialog ref="dialog" class="figure-dialog" :aria-label="`${title}大图`" @click="closeBackdrop" @close="fullSize = false">
-      <div class="figure-dialog-header"><strong>{{ title }}</strong><div><button type="button" :aria-pressed="fullSize" @click="fullSize = !fullSize">{{ fullSize ? '适应窗口' : '原尺寸查看' }}</button><a :href="src" target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开原图"><el-icon><TopRight /></el-icon></a><button type="button" aria-label="关闭图片" @click="dialog.close()"><el-icon><Close /></el-icon></button></div></div>
+      <div class="figure-dialog-header"><strong>{{ title }}</strong><div><button type="button" :aria-pressed="fullSize" @click="fullSize = !fullSize">{{ fullSize ? '适应窗口' : '原尺寸查看' }}</button><a :href="src" target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开原图"><SxIcon><TopRight /></SxIcon></a><button type="button" aria-label="关闭图片" @click="dialog.close()"><SxIcon><Close /></SxIcon></button></div></div>
       <div class="figure-dialog-content" :class="{ 'is-full-size': fullSize }" tabindex="0" aria-label="图片区域，可滚动查看"><img v-if="opened" :src="src" :alt="alt" /></div>
       <p class="figure-dialog-note">{{ fullSize ? '可横向和纵向滚动查看细节。' : '切换原尺寸查看细节，也可在新窗口打开。' }} 按 Esc 关闭。</p>
     </dialog>

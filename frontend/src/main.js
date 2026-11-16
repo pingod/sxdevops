@@ -18,7 +18,9 @@ initializeTheme()
 const app = createApp(App)
 
 app.use(pinia)
-app.use(ElIcon)
+// 公开产品页不加载 Element Plus，仅注册一个图标组件的全局别名；
+// 用独立名称避免与 Element Plus 安装时的 ElIcon 重复注册。
+app.component('SxIcon', ElIcon)
 
 let workbenchUi
 router.beforeResolve(async to => {

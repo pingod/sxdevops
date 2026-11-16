@@ -8,7 +8,7 @@
           <span>SxDevOps<span class="brand-version">v2</span></span>
         </a>
         <button class="menu-toggle" type="button" :aria-expanded="mobileMenu" aria-controls="product-nav" :aria-label="mobileMenu ? '关闭导航' : '打开导航'" @click="mobileMenu = !mobileMenu">
-          <el-icon><Close v-if="mobileMenu" /><Menu v-else /></el-icon>
+          <SxIcon><Close v-if="mobileMenu" /><Menu v-else /></SxIcon>
         </button>
         <nav id="product-nav" class="main-nav" :class="{ 'is-open': mobileMenu }" aria-label="产品导航">
           <a v-for="item in navigation" :key="item.id" :href="`#${item.id}`" :aria-current="activeSection === item.id ? 'location' : undefined">{{ item.label }}</a>
@@ -17,7 +17,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .9a11.1 11.1 0 0 0-3.51 21.63c.56.1.76-.24.76-.54v-2.07c-3.1.67-3.75-1.32-3.75-1.32-.5-1.29-1.24-1.64-1.24-1.64-1.01-.69.08-.68.08-.68 1.12.08 1.71 1.15 1.71 1.15.99 1.7 2.6 1.21 3.23.92.1-.72.39-1.21.71-1.49-2.47-.28-5.07-1.24-5.07-5.49 0-1.21.43-2.2 1.14-2.98-.11-.28-.5-1.41.11-2.94 0 0 .93-.3 3.05 1.14a10.6 10.6 0 0 1 5.55 0c2.12-1.44 3.05-1.14 3.05-1.14.61 1.53.22 2.66.11 2.94.71.78 1.14 1.77 1.14 2.98 0 4.26-2.6 5.21-5.08 5.49.4.35.75 1.02.75 2.06v3.07c0 .3.2.65.77.54A11.1 11.1 0 0 0 12 .9Z" /></svg>
           <span class="github-label">GitHub</span>
           <span class="repository-stars" :aria-label="`GitHub Star 数：${starsLabel}`"><span aria-hidden="true">☆</span>{{ starsLabel }}</span>
-          <el-icon><TopRight /></el-icon>
+          <SxIcon><TopRight /></SxIcon>
         </a>
       </div>
     </header>
@@ -28,23 +28,23 @@
         <div class="page-width hero-layout">
           <div class="hero-copy">
             <a class="release-pill" :href="`${repository}/blob/main/docs/releases/v2.0.0.md`" target="_blank" rel="noopener noreferrer">
-              <span>v2.0.0</span> 从资产底座，到智能运维 <el-icon><ArrowRight /></el-icon>
+              <span>v2.0.0</span> 从资产底座，到智能运维 <SxIcon><ArrowRight /></SxIcon>
             </a>
             <p class="eyebrow hero-eyebrow"><span></span> 开源 · 智能运维平台</p>
             <h1>看清每个异常，<br />让<span class="hero-accent">行动有据可依。</span></h1>
             <p class="hero-description">把资产、可观测数据与运维任务连成一条线。<br class="desktop-break" />让 AI 帮你找证据、理思路，把关键决策留给你。</p>
             <div class="hero-actions">
-              <router-link class="button button-primary" to="/dashboard">进入工作台 <el-icon><ArrowRight /></el-icon></router-link>
-              <a class="button button-secondary" href="#screenshots"><el-icon><Monitor /></el-icon> 看看真实界面</a>
+              <router-link class="button button-primary" to="/dashboard">进入工作台 <SxIcon><ArrowRight /></SxIcon></router-link>
+              <a class="button button-secondary" href="#screenshots"><SxIcon><Monitor /></SxIcon> 看看真实界面</a>
             </div>
-            <div class="hero-footnote"><span><el-icon><CircleCheck /></el-icon> MIT 开源</span><span><el-icon><CircleCheck /></el-icon> 支持私有部署</span><span><el-icon><CircleCheck /></el-icon> 关键动作人工确认</span></div>
+            <div class="hero-footnote"><span><SxIcon><CircleCheck /></SxIcon> MIT 开源</span><span><SxIcon><CircleCheck /></SxIcon> 支持私有部署</span><span><SxIcon><CircleCheck /></SxIcon> 关键动作人工确认</span></div>
           </div>
 
           <div class="scenario-wrap">
             <div class="scenario-orbit" aria-hidden="true"></div>
             <div class="scenario-window">
               <div class="window-topline">
-                <div class="window-identity"><span class="agent-mark"><el-icon><MagicStick /></el-icon></span><strong>SxDevOps Agent</strong></div>
+                <div class="window-identity"><span class="agent-mark"><SxIcon><MagicStick /></SxIcon></span><strong>SxDevOps Agent</strong></div>
                 <span class="demo-badge">交互示意</span>
               </div>
               <div class="scenario-switch" role="group" aria-label="切换运维场景">
@@ -53,15 +53,15 @@
               <div class="scenario-content" aria-live="polite">
                 <div class="context-line"><span class="status-dot"></span>{{ currentScenario.context }}<span class="context-label">范围已明确</span></div>
                 <div class="user-question"><span class="user-avatar">你</span><p>{{ currentScenario.question }}</p></div>
-                <div class="evidence-heading"><span><el-icon><Connection /></el-icon> 汇集证据</span><span>{{ currentScenario.sources.length }} 类来源</span></div>
+                <div class="evidence-heading"><span><SxIcon><Connection /></SxIcon> 汇集证据</span><span>{{ currentScenario.sources.length }} 类来源</span></div>
                 <div class="evidence-list">
-                  <div v-for="source in currentScenario.sources" :key="source.name" class="evidence-row"><span class="evidence-check"><el-icon><Check /></el-icon></span><span>{{ source.name }}</span><span>{{ source.result }}</span></div>
+                  <div v-for="source in currentScenario.sources" :key="source.name" class="evidence-row"><span class="evidence-check"><SxIcon><Check /></SxIcon></span><span>{{ source.name }}</span><span>{{ source.result }}</span></div>
                 </div>
                 <div class="agent-insight"><span class="insight-label">分析与建议</span><p>{{ currentScenario.insight }}</p><div class="source-tags"><span v-for="tag in currentScenario.tags" :key="tag">{{ tag }}</span></div></div>
                 <div class="confirmation-card" :class="{ 'is-previewed': confirmationPreview }">
-                  <span class="confirmation-icon"><el-icon><CircleCheck v-if="confirmationPreview" /><Lock v-else /></el-icon></span>
+                  <span class="confirmation-icon"><SxIcon><CircleCheck v-if="confirmationPreview" /><Lock v-else /></SxIcon></span>
                   <div><strong>{{ confirmationPreview ? '确认后，交由任务中心执行' : '下一步：生成任务草稿' }}</strong><span>{{ confirmationPreview ? '执行记录与结果回到审计链路' : '检查目标与参数，由你决定是否执行' }}</span></div>
-                  <button type="button" :aria-pressed="confirmationPreview" @click="confirmationPreview = !confirmationPreview">{{ confirmationPreview ? '返回' : '预览流程' }}<el-icon><ArrowRight /></el-icon></button>
+                  <button type="button" :aria-pressed="confirmationPreview" @click="confirmationPreview = !confirmationPreview">{{ confirmationPreview ? '返回' : '预览流程' }}<SxIcon><ArrowRight /></SxIcon></button>
                 </div>
               </div>
               <div class="window-footer"><span class="status-dot"></span> 先有证据，再有行动 <span>场景 / {{ String(scenarioIndex + 1).padStart(2, '0') }}</span></div>
@@ -85,12 +85,12 @@
         <div class="section-heading"><div><p class="eyebrow">{{ sectionLabel('capabilities') }}</p><h2>一个工作台，<br />连接你的运维现场。</h2></div><p class="section-description">从资源归属到异常取证，从日常巡检到变更留痕。<br />把分散的能力组织起来，为每次判断提供上下文。</p></div>
         <div class="capability-grid">
           <article class="capability-card capability-featured">
-            <span class="feature-icon"><el-icon><MagicStick /></el-icon></span><span class="card-kicker">智能运维助手</span><h3>让 AI 带着证据工作</h3><p>用自然语言发起分析，联合可观测数据与资源上下文，输出依据、风险和建议，进一步生成可确认的任务草稿。</p>
-            <div class="agent-pipeline" aria-label="智能体工作链路"><span>理解问题</span><el-icon><ArrowRight /></el-icon><span>工具取证</span><el-icon><ArrowRight /></el-icon><span>结构化结论</span></div>
+            <span class="feature-icon"><SxIcon><MagicStick /></SxIcon></span><span class="card-kicker">智能运维助手</span><h3>让 AI 带着证据工作</h3><p>用自然语言发起分析，联合可观测数据与资源上下文，输出依据、风险和建议，进一步生成可确认的任务草稿。</p>
+            <div class="agent-pipeline" aria-label="智能体工作链路"><span>理解问题</span><SxIcon><ArrowRight /></SxIcon><span>工具取证</span><SxIcon><ArrowRight /></SxIcon><span>结构化结论</span></div>
             <div class="feature-bottom"><span>LangGraph</span><span>MCP 工具</span><span>可复用 Skills</span></div>
           </article>
           <article v-for="feature in features" :key="feature.title" class="capability-card" :class="feature.className">
-            <span class="feature-icon"><el-icon><component :is="feature.icon" /></el-icon></span><span class="card-kicker">{{ feature.eyebrow }}</span><h3>{{ feature.title }}</h3><p>{{ feature.description }}</p><div class="feature-bottom"><span v-for="tag in feature.tags" :key="tag">{{ tag }}</span></div>
+            <span class="feature-icon"><SxIcon><component :is="feature.icon" /></SxIcon></span><span class="card-kicker">{{ feature.eyebrow }}</span><h3>{{ feature.title }}</h3><p>{{ feature.description }}</p><div class="feature-bottom"><span v-for="tag in feature.tags" :key="tag">{{ tag }}</span></div>
           </article>
         </div>
       </section>
@@ -101,9 +101,9 @@
         <div class="page-width">
           <div class="section-heading"><div><p class="eyebrow">{{ sectionLabel('workflow') }}</p><h2>思而后行，<span class="accent-text">行必有证。</span></h2></div><p class="section-description">模型负责理解与规划，平台负责权限与执行。<br />从发现异常到复盘，让每一步都能被追溯。</p></div>
           <ol class="workflow-steps">
-            <li v-for="(step, index) in workflow" :key="step.title"><span class="step-number">0{{ index + 1 }}</span><span class="step-node"><el-icon><component :is="step.icon" /></el-icon></span><h3>{{ step.title }}</h3><p>{{ step.description }}</p></li>
+            <li v-for="(step, index) in workflow" :key="step.title"><span class="step-number">0{{ index + 1 }}</span><span class="step-node"><SxIcon><component :is="step.icon" /></SxIcon></span><h3>{{ step.title }}</h3><p>{{ step.description }}</p></li>
           </ol>
-          <div class="boundary-strip"><span class="boundary-icon"><el-icon><Lock /></el-icon></span><p><strong>执行有边界，结论有依据。</strong><span>操作沿用平台 RBAC 与确认机制；查询失败、权限不足和证据缺失会明确展示。</span></p><a :href="`${repository}/blob/main/docs/AIOps-LangGraph-试点说明.md`" target="_blank" rel="noopener noreferrer">了解运行机制 <el-icon><TopRight /></el-icon></a></div>
+          <div class="boundary-strip"><span class="boundary-icon"><SxIcon><Lock /></SxIcon></span><p><strong>执行有边界，结论有依据。</strong><span>操作沿用平台 RBAC 与确认机制；查询失败、权限不足和证据缺失会明确展示。</span></p><a :href="`${repository}/blob/main/docs/AIOps-LangGraph-试点说明.md`" target="_blank" rel="noopener noreferrer">了解运行机制 <SxIcon><TopRight /></SxIcon></a></div>
         </div>
       </section>
 
@@ -112,10 +112,10 @@
 
       <section id="screenshots" class="section-block page-width screenshots-section">
         <div class="section-heading"><div><p class="eyebrow">{{ sectionLabel('screenshots') }}</p><h2>能力不止于介绍，<br />打开就能看见。</h2></div><p class="section-description">真实产品截图，呈现各模块的工作方式。<br />切换查看，点击图片可放大浏览。</p></div>
-        <div class="gallery-selectors" role="group" aria-label="选择产品界面"><button v-for="(shot, index) in screenshots" :key="shot.id" type="button" :aria-pressed="screenshotIndex === index" @click="screenshotIndex = index"><el-icon><component :is="shot.icon" /></el-icon>{{ shot.label }}</button></div>
+        <div class="gallery-selectors" role="group" aria-label="选择产品界面"><button v-for="(shot, index) in screenshots" :key="shot.id" type="button" :aria-pressed="screenshotIndex === index" @click="screenshotIndex = index"><SxIcon><component :is="shot.icon" /></SxIcon>{{ shot.label }}</button></div>
         <div class="gallery-frame">
           <div class="gallery-topline"><div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>{{ currentScreenshot.path }}</span><span class="gallery-counter">{{ String(screenshotIndex + 1).padStart(2, '0') }} / {{ String(screenshots.length).padStart(2, '0') }}</span></div>
-          <button class="screenshot-button" type="button" :aria-label="`放大查看${currentScreenshot.label}截图`" @click="openLightbox(screenshotIndex)"><img :src="currentScreenshot.src" :alt="currentScreenshot.alt" :width="currentScreenshot.width || 1679" :height="currentScreenshot.height || 944" loading="lazy" decoding="async" /><span class="zoom-hint"><el-icon><FullScreen /></el-icon> 点击查看大图</span></button>
+          <button class="screenshot-button" type="button" :aria-label="`放大查看${currentScreenshot.label}截图`" @click="openLightbox(screenshotIndex)"><img :src="currentScreenshot.src" :alt="currentScreenshot.alt" :width="currentScreenshot.width || 1679" :height="currentScreenshot.height || 944" loading="lazy" decoding="async" /><span class="zoom-hint"><SxIcon><FullScreen /></SxIcon> 点击查看大图</span></button>
           <div class="gallery-caption" aria-live="polite"><div><h3>{{ currentScreenshot.title }}</h3><p>{{ currentScreenshot.description }}</p></div><span class="real-capture"><span class="status-dot"></span> 真实界面</span></div>
         </div>
         <p class="gallery-note">截图展示已实现功能，界面细节随版本持续迭代。</p>
@@ -123,26 +123,26 @@
 
       <ProductResources>
         <div class="start-grid">
-          <div class="start-main"><span class="card-kicker">从这里开始</span><h3>你的基础设施，<br />你的运维工作台。</h3><p>支持 Docker Compose 与 Kubernetes 部署。<br />按部署指南配置环境，再逐步连接 CMDB、可观测数据与 AI 模型。</p><div class="start-actions"><a class="button button-primary" href="/login" target="_blank" rel="noopener noreferrer">在线体验 <el-icon><TopRight /></el-icon></a><a class="text-link" :href="repository" target="_blank" rel="noopener noreferrer">查看源码 <el-icon><ArrowRight /></el-icon></a></div><span class="license-note">MIT 开源许可 · 自由使用，欢迎共建</span></div>
+          <div class="start-main"><span class="card-kicker">从这里开始</span><h3>你的基础设施，<br />你的运维工作台。</h3><p>支持 Docker Compose 与 Kubernetes 部署。<br />按部署指南配置环境，再逐步连接 CMDB、可观测数据与 AI 模型。</p><div class="start-actions"><a class="button button-primary" href="/login" target="_blank" rel="noopener noreferrer">在线体验 <SxIcon><TopRight /></SxIcon></a><a class="text-link" :href="repository" target="_blank" rel="noopener noreferrer">查看源码 <SxIcon><ArrowRight /></SxIcon></a></div><span class="license-note">MIT 开源许可 · 自由使用，欢迎共建</span></div>
           <div class="start-resources">
-            <div class="clone-block"><div><span><el-icon><FolderOpened /></el-icon> 获取源码</span><button type="button" @click="copyCloneCommand">{{ copyState === 'copied' ? '已复制' : copyState === 'failed' ? '请手动复制' : '复制命令' }}</button></div><pre><code>{{ cloneCommand }}</code></pre><span class="sr-only" role="status">{{ copyState === 'copied' ? '源码命令已复制到剪贴板' : copyState === 'failed' ? '无法访问剪贴板，请选中命令手动复制' : '' }}</span></div>
-            <a v-for="resource in resources" :key="resource.title" class="resource-link" :href="resource.href" target="_blank" rel="noopener noreferrer"><span class="resource-icon"><el-icon><component :is="resource.icon" /></el-icon></span><div><h3>{{ resource.title }}</h3><p>{{ resource.description }}</p></div><el-icon><TopRight /></el-icon></a>
+            <div class="clone-block"><div><span><SxIcon><FolderOpened /></SxIcon> 获取源码</span><button type="button" @click="copyCloneCommand">{{ copyState === 'copied' ? '已复制' : copyState === 'failed' ? '请手动复制' : '复制命令' }}</button></div><pre><code>{{ cloneCommand }}</code></pre><span class="sr-only" role="status">{{ copyState === 'copied' ? '源码命令已复制到剪贴板' : copyState === 'failed' ? '无法访问剪贴板，请选中命令手动复制' : '' }}</span></div>
+            <a v-for="resource in resources" :key="resource.title" class="resource-link" :href="resource.href" target="_blank" rel="noopener noreferrer"><span class="resource-icon"><SxIcon><component :is="resource.icon" /></SxIcon></span><div><h3>{{ resource.title }}</h3><p>{{ resource.description }}</p></div><SxIcon><TopRight /></SxIcon></a>
           </div>
         </div>
       </ProductResources>
 
-      <section class="closing-section page-width"><span class="closing-label">为真实运维现场而建</span><h2>少一些来回切换，<br /><span>多一些有据可依。</span></h2><router-link class="button button-primary" to="/dashboard">开始探索 SxDevOps <el-icon><ArrowRight /></el-icon></router-link><div class="closing-orbit" aria-hidden="true"></div></section>
+      <section class="closing-section page-width"><span class="closing-label">为真实运维现场而建</span><h2>少一些来回切换，<br /><span>多一些有据可依。</span></h2><router-link class="button button-primary" to="/dashboard">开始探索 SxDevOps <SxIcon><ArrowRight /></SxIcon></router-link><div class="closing-orbit" aria-hidden="true"></div></section>
       <ProductCommunity />
     </main>
 
     <footer class="site-footer page-width">
       <a class="brand footer-brand" href="#top"><img :src="brandMark" alt="" width="36" height="36" />SxDevOps</a>
       <p>开源智能运维 Agent 平台</p>
-      <nav aria-label="页脚导航"><router-link to="/about">网站说明与隐私</router-link><a :href="`${repository}/blob/main/LICENSE`" target="_blank" rel="noopener noreferrer">MIT License</a><a :href="`${repository}/issues`" target="_blank" rel="noopener noreferrer">反馈与共建 <el-icon><TopRight /></el-icon></a><a href="#top">回到顶部 ↑</a><a class="footer-registration" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026013039号-1</a></nav>
+      <nav aria-label="页脚导航"><router-link to="/about">网站说明与隐私</router-link><a :href="`${repository}/blob/main/LICENSE`" target="_blank" rel="noopener noreferrer">MIT License</a><a :href="`${repository}/issues`" target="_blank" rel="noopener noreferrer">反馈与共建 <SxIcon><TopRight /></SxIcon></a><a href="#top">回到顶部 ↑</a><a class="footer-registration" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">苏ICP备2026013039号-1</a></nav>
     </footer>
 
     <dialog ref="lightbox" class="screenshot-dialog" aria-label="产品截图大图预览" @click="onBackdropClick" @close="lightboxIndex = null" @keydown.left.prevent="moveLightbox(-1)" @keydown.right.prevent="moveLightbox(1)">
-      <template v-if="lightboxScreenshot"><div class="lightbox-toolbar"><strong>{{ lightboxScreenshot.label }}</strong><span>{{ (lightboxIndex ?? 0) + 1 }} / {{ screenshots.length }}</span><button type="button" aria-label="关闭大图" @click="lightbox.close()"><el-icon><Close /></el-icon></button></div><img :src="lightboxScreenshot.src" :alt="lightboxScreenshot.alt" /><div class="lightbox-bottom"><button type="button" aria-label="上一张截图" @click="moveLightbox(-1)"><el-icon><ArrowLeft /></el-icon> 上一张</button><p>{{ lightboxScreenshot.title }}</p><button type="button" aria-label="下一张截图" @click="moveLightbox(1)">下一张 <el-icon><ArrowRight /></el-icon></button></div></template>
+      <template v-if="lightboxScreenshot"><div class="lightbox-toolbar"><strong>{{ lightboxScreenshot.label }}</strong><span>{{ (lightboxIndex ?? 0) + 1 }} / {{ screenshots.length }}</span><button type="button" aria-label="关闭大图" @click="lightbox.close()"><SxIcon><Close /></SxIcon></button></div><img :src="lightboxScreenshot.src" :alt="lightboxScreenshot.alt" /><div class="lightbox-bottom"><button type="button" aria-label="上一张截图" @click="moveLightbox(-1)"><SxIcon><ArrowLeft /></SxIcon> 上一张</button><p>{{ lightboxScreenshot.title }}</p><button type="button" aria-label="下一张截图" @click="moveLightbox(1)">下一张 <SxIcon><ArrowRight /></SxIcon></button></div></template>
     </dialog>
   </div>
 </template>

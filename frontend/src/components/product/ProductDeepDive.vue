@@ -2,12 +2,12 @@
   <div class="product-deep-dive">
     <section id="modules" class="detail-section detail-width">
       <div class="detail-heading"><div><p class="detail-eyebrow">{{ sectionLabel('modules') }}</p><h2>把日常工作，<br />连成可复用的流程。</h2></div><p>资产是底座，观测是事实，任务承接行动。<br />深入每个模块，看看它们如何协同工作。</p></div>
-      <div class="module-selector" role="group" aria-label="了解模块详细能力"><button v-for="(module, index) in modules" :key="module.id" type="button" :aria-pressed="moduleIndex === index" @click="moduleIndex = index"><el-icon><component :is="module.icon" /></el-icon>{{ module.label }}</button></div>
+      <div class="module-selector" role="group" aria-label="了解模块详细能力"><button v-for="(module, index) in modules" :key="module.id" type="button" :aria-pressed="moduleIndex === index" @click="moduleIndex = index"><SxIcon><component :is="module.icon" /></SxIcon>{{ module.label }}</button></div>
       <article class="module-detail" aria-live="polite">
-        <div class="module-intro"><span class="detail-eyebrow">{{ currentModule.eyebrow }}</span><h3>{{ currentModule.title }}</h3><p>{{ currentModule.description }}</p><div class="module-chain"><span v-for="(step, index) in currentModule.chain" :key="step"><span v-if="index" aria-hidden="true">→</span>{{ step }}</span></div><a :href="doc(currentModule.document)" target="_blank" rel="noopener noreferrer">{{ currentModule.linkLabel }} <el-icon><TopRight /></el-icon></a></div>
-        <ul class="module-points"><li v-for="point in currentModule.points" :key="point.title"><el-icon><Check /></el-icon><div><h4>{{ point.title }}</h4><p>{{ point.description }}</p></div></li></ul>
+        <div class="module-intro"><span class="detail-eyebrow">{{ currentModule.eyebrow }}</span><h3>{{ currentModule.title }}</h3><p>{{ currentModule.description }}</p><div class="module-chain"><span v-for="(step, index) in currentModule.chain" :key="step"><span v-if="index" aria-hidden="true">→</span>{{ step }}</span></div><a :href="doc(currentModule.document)" target="_blank" rel="noopener noreferrer">{{ currentModule.linkLabel }} <SxIcon><TopRight /></SxIcon></a></div>
+        <ul class="module-points"><li v-for="point in currentModule.points" :key="point.title"><SxIcon><Check /></SxIcon><div><h4>{{ point.title }}</h4><p>{{ point.description }}</p></div></li></ul>
       </article>
-      <div class="scenario-cards"><article v-for="scenario in useCases" :key="scenario.title"><span>{{ scenario.number }} / {{ scenario.label }}</span><h3>{{ scenario.title }}</h3><p>{{ scenario.description }}</p><div><el-icon><ArrowRight /></el-icon>{{ scenario.outcome }}</div></article></div>
+      <div class="scenario-cards"><article v-for="scenario in useCases" :key="scenario.title"><span>{{ scenario.number }} / {{ scenario.label }}</span><h3>{{ scenario.title }}</h3><p>{{ scenario.description }}</p><div><SxIcon><ArrowRight /></SxIcon>{{ scenario.outcome }}</div></article></div>
     </section>
 
     <section id="architecture" class="detail-section detail-width">
@@ -23,8 +23,8 @@
         <div class="agent-facts"><div><strong>6<span> 类问答入口</span></strong><p>从故障排查到资产查询，按问题选择工作方式</p></div><div><strong>13<span> 个内置 Skill</span></strong><p>复用证据方法、查询规范、输出结构与安全边界</p></div><div><strong>3<span> 条流程主线</span></strong><p>聊天分析、动作确认与处置效果验证分别管理</p></div></div>
         <ProductFigure src="/promo/v2/aiops-execution-flow.svg" title="AIOps 实现原理与执行链路" alt="AIOps 原理图：问题与范围、Action 路由、LangGraph 专业取证或模型工具循环、MCP 事实、Skill 整形、只读回复或待确认动作、平台执行与验证" label="AIOps 原理 / 从输入到执行" :height="960" caption="按当前聊天、确认与验证流程梳理。图中展示主要职责和路径，完整节点、恢复条件与运行配置见 LangGraph 文档。" />
         <div class="mechanism-grid"><article v-for="mechanism in mechanisms" :key="mechanism.title"><span>{{ mechanism.label }}</span><h3>{{ mechanism.title }}</h3><p>{{ mechanism.description }}</p></article></div>
-        <div class="question-types"><div class="subsection-heading"><h3>六类问题入口，背后复用专业方法</h3><p>自动识别任务，也可按问答类型进入；权限与环境范围始终生效。</p></div><div class="question-grid"><article v-for="question in questionTypes" :key="question.title"><el-icon><component :is="question.icon" /></el-icon><div><h4>{{ question.title }}</h4><p>{{ question.description }}</p></div></article></div></div>
-        <div class="runtime-note"><el-icon><Connection /></el-icon><p><strong>中断后，继续已保存的工作。</strong>已完成并保存 checkpoint 的阶段可在恢复时复用；恢复仍检查当前权限、MCP 状态与原始范围。节点内部中断可能重试当前请求，外部工具需要幂等。</p><a :href="doc('AIOps-LangGraph-试点说明.md')" target="_blank" rel="noopener noreferrer">实现文档 <el-icon><TopRight /></el-icon></a></div>
+        <div class="question-types"><div class="subsection-heading"><h3>六类问题入口，背后复用专业方法</h3><p>自动识别任务，也可按问答类型进入；权限与环境范围始终生效。</p></div><div class="question-grid"><article v-for="question in questionTypes" :key="question.title"><SxIcon><component :is="question.icon" /></SxIcon><div><h4>{{ question.title }}</h4><p>{{ question.description }}</p></div></article></div></div>
+        <div class="runtime-note"><SxIcon><Connection /></SxIcon><p><strong>中断后，继续已保存的工作。</strong>已完成并保存 checkpoint 的阶段可在恢复时复用；恢复仍检查当前权限、MCP 状态与原始范围。节点内部中断可能重试当前请求，外部工具需要幂等。</p><a :href="doc('AIOps-LangGraph-试点说明.md')" target="_blank" rel="noopener noreferrer">实现文档 <SxIcon><TopRight /></SxIcon></a></div>
       </div>
     </section>
 
@@ -32,7 +32,7 @@
       <div class="detail-heading"><div><p class="detail-eyebrow">{{ sectionLabel('verification') }}</p><h2>执行完成之后，<br />继续看<span>恢复的证据。</span></h2></div><p>把任务结果与告警恢复分开检查。<br />保存处置前基线，等待观察窗口，再给出有边界的结论。</p></div>
       <div class="verification-flow" aria-label="处置效果验证流程"><div v-for="(step, index) in verificationSteps" :key="step.title"><span>0{{ index + 1 }}</span><h3>{{ step.title }}</h3><p>{{ step.description }}</p></div></div>
       <div class="verification-results"><article v-for="result in verificationResults" :key="result.title" :class="result.className"><span class="result-indicator"></span><h3>{{ result.title }}</h3><p>{{ result.description }}</p></article></div>
-      <div class="verification-boundary"><p>当前验证以平台接收的同一告警恢复事件为依据。观察到恢复，可以说明告警状态变化；操作因果、业务整体健康与指标持续达标，需要进一步的证据支持。</p><a :href="doc('AIOps-处置效果验证.md')" target="_blank" rel="noopener noreferrer">查看验证口径 <el-icon><TopRight /></el-icon></a></div>
+      <div class="verification-boundary"><p>当前验证以平台接收的同一告警恢复事件为依据。观察到恢复，可以说明告警状态变化；操作因果、业务整体健康与指标持续达标，需要进一步的证据支持。</p><a :href="doc('AIOps-处置效果验证.md')" target="_blank" rel="noopener noreferrer">查看验证口径 <SxIcon><TopRight /></SxIcon></a></div>
     </section>
 
   </div>

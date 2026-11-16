@@ -734,6 +734,12 @@ const routes = [
     component: () => import('@/views/WebShell.vue'),
     meta: { title: 'WebShell', permission: 'ops.host.terminal' },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/NotFound.vue'),
+    meta: { public: true, title: '页面不存在' },
+  },
 ]
 
 const router = createRouter({

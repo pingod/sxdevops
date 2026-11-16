@@ -89,6 +89,12 @@ async function extractErrorMessage(error) {
     return error.message || '请求失败'
 }
 
+const PUBLIC_PATH_PREFIXES = ['/login', '/product', '/about']
+
+function isPublicPath(pathname) {
+    return pathname === '/' || PUBLIC_PATH_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
+}
+
 function redirectToLogin() {
     if (window.location.pathname.startsWith('/login')) return
     const redirect = encodeURIComponent(window.location.pathname + window.location.search)
@@ -99,6 +105,8 @@ function handleSessionExpired() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
 
+    // 公开页面（产品介绍 / 网站说明）不需要登录；残留的过期 token 不应把访客强制踢到登录页。
+    if (isPublicPath(window.location.pathname)) return
     if (isHandlingSessionExpired) return
     isHandlingSessionExpired = true
     ElMessage.error('登录状态已过期，请重新登录')
@@ -142,6 +150,10 @@ request.interceptors.request.use((config) => {
 request.interceptors.response.use(
     (response) => response.data,
     async (error) => {
+        // 主动取消的请求（切换主机/关闭日志弹窗等）不是错误，不要弹出 “canceled”。
+        if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+            return Promise.reject(error)
+        }
         const status = error.response?.status
         const requestUrl = String(error.config?.url || '')
         const isProfileRequest = requestUrl.includes('/auth/me/')

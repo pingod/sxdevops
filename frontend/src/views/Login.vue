@@ -192,6 +192,7 @@ const features = [
 const flowSteps = ['看态势', '找证据', '问系统', '确认动作']
 
 async function handleLogin() {
+  if (loading.value) return
   if (!form.username || !form.password) {
     ElMessage.warning('请输入用户名和密码')
     return

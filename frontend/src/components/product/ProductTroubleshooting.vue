@@ -8,25 +8,25 @@
     <ol class="investigation-journey" aria-label="从发现异常到处置的排障路径">
       <li v-for="(stage, index) in journey" :key="stage.title">
         <div class="journey-top"><span>0{{ index + 1 }}</span><span>{{ stage.value }}</span></div>
-        <el-icon class="journey-icon"><component :is="stage.icon" /></el-icon>
+        <SxIcon class="journey-icon"><component :is="stage.icon" /></SxIcon>
         <h3>{{ stage.title }}</h3><p>{{ stage.description }}</p><span class="journey-context">{{ stage.context }}</span>
       </li>
     </ol>
 
     <div class="case-heading"><div><p class="path-eyebrow">同一问题 / 两条处理路径</p><h3>从一个具体问题，看清两条处理路径。</h3></div><div class="case-selector" role="group" aria-label="选择排障对照场景"><button v-for="(scenario, index) in scenarios" :key="scenario.id" type="button" :aria-pressed="scenarioIndex === index" @click="scenarioIndex = index">{{ scenario.label }}</button></div></div>
     <div class="case-body" aria-live="polite">
-      <div class="case-question"><span><el-icon><ChatDotRound /></el-icon> 现场提问</span><p>{{ currentScenario.question }}</p><div><span>{{ currentScenario.scope }}</span><span>场景示意</span></div></div>
+      <div class="case-question"><span><SxIcon><ChatDotRound /></SxIcon> 现场提问</span><p>{{ currentScenario.question }}</p><div><span>{{ currentScenario.scope }}</span><span>场景示意</span></div></div>
       <div class="path-comparison">
         <article class="manual-path"><div class="comparison-title"><span>MANUAL / 人工排查</span><h4>逐项查询，人工串起上下文</h4></div><ol><li v-for="(step, index) in currentScenario.manual" :key="step.title"><span>0{{ index + 1 }}</span><div><h5>{{ step.title }}</h5><p>{{ step.description }}</p></div></li></ol><p class="path-result">{{ currentScenario.manualResult }}</p></article>
-        <article class="agent-path"><div class="comparison-title"><span>WITH AGENT / 智能体协同</span><h4>围绕同一范围，组织证据与建议</h4></div><ol><li v-for="(step, index) in currentScenario.agent" :key="step.title"><span><el-icon><Check /></el-icon></span><div><h5>{{ step.title }}</h5><p>{{ step.description }}</p></div></li></ol><p class="path-result">{{ currentScenario.agentResult }}</p></article>
+        <article class="agent-path"><div class="comparison-title"><span>WITH AGENT / 智能体协同</span><h4>围绕同一范围，组织证据与建议</h4></div><ol><li v-for="(step, index) in currentScenario.agent" :key="step.title"><span><SxIcon><Check /></SxIcon></span><div><h5>{{ step.title }}</h5><p>{{ step.description }}</p></div></li></ol><p class="path-result">{{ currentScenario.agentResult }}</p></article>
       </div>
       <div class="answer-preview"><div class="answer-heading"><span>交付给你的，不止一句结论</span><span>输出结构示意</span></div><dl><div v-for="part in currentScenario.output" :key="part.title"><dt>{{ part.title }}</dt><dd>{{ part.description }}</dd></div></dl></div>
       <p class="case-note">以上展示处理方式与输出结构，不代表实际查询结果。取证以已配置的数据源、资源关联和当前权限为准；时间接近的变更仍需交叉验证。</p>
     </div>
 
     <div class="review-panel">
-      <div class="review-story"><span class="path-eyebrow">EVENT CENTER / 从处理到复盘</span><h3>把一次处理，<br />留成下一次能查的现场。</h3><p>事件中心围绕最终执行结果、关键写操作和失败线索组织记录，按系统、环境、应用与时间收敛范围。结合任务历史和智能体审计，回看谁做了什么、结果如何。</p><a href="#screenshots" @click="$emit('show-events')">查看事件中心界面 <el-icon><ArrowRight /></el-icon></a></div>
-      <div class="review-details"><div class="review-questions"><span>复盘时，可以从这些问题开始</span><p v-for="question in reviewQuestions" :key="question"><el-icon><Search /></el-icon>{{ question }}</p></div><div class="review-boundaries"><div><h4>保留结果与责任</h4><p>关注最终执行和关键写入，默认排除未执行的驳回审批记录，避免把审批过程误当成实际变更。</p></div><div><h4>回到具体记录核对</h4><p>时间线提供关联线索，任务返回内容和工具调用审计补充细节；关联仍需结合现场证据判断。</p></div></div></div>
+      <div class="review-story"><span class="path-eyebrow">EVENT CENTER / 从处理到复盘</span><h3>把一次处理，<br />留成下一次能查的现场。</h3><p>事件中心围绕最终执行结果、关键写操作和失败线索组织记录，按系统、环境、应用与时间收敛范围。结合任务历史和智能体审计，回看谁做了什么、结果如何。</p><a href="#screenshots" @click="$emit('show-events')">查看事件中心界面 <SxIcon><ArrowRight /></SxIcon></a></div>
+      <div class="review-details"><div class="review-questions"><span>复盘时，可以从这些问题开始</span><p v-for="question in reviewQuestions" :key="question"><SxIcon><Search /></SxIcon>{{ question }}</p></div><div class="review-boundaries"><div><h4>保留结果与责任</h4><p>关注最终执行和关键写入，默认排除未执行的驳回审批记录，避免把审批过程误当成实际变更。</p></div><div><h4>回到具体记录核对</h4><p>时间线提供关联线索，任务返回内容和工具调用审计补充细节；关联仍需结合现场证据判断。</p></div></div></div>
     </div>
   </section>
 </template>

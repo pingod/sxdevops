@@ -613,27 +613,30 @@ function formatScopeText(item) {
 async function loadNotifications() {
   notificationsLoading.value = true
   try {
+    // 轮询请求失败时不要每 60 秒弹一次全局错误提示；权限判断也要以后端接口要求的 *.view 为准，
+    // 否则只有审批权限的角色永远收不到待审批通知。
+    const silent = { suppressErrorMessage: true }
     const tasks = []
-    if (authStore.hasPermission('ops.deployment.approve')) {
-      tasks.push(getDeployments({ approval_status: 'pending' }))
+    if (authStore.hasPermission('ops.deployment.view')) {
+      tasks.push(getDeployments({ approval_status: 'pending' }, silent))
     } else {
       tasks.push(Promise.resolve(null))
     }
 
-    if (authStore.hasPermission('ops.ticket.approve')) {
-      tasks.push(getTransactionTickets({ status: 'pending' }))
+    if (authStore.hasPermission('ops.ticket.view')) {
+      tasks.push(getTransactionTickets({ status: 'pending' }, silent))
     } else {
       tasks.push(Promise.resolve(null))
     }
 
     if (authStore.hasPermission('ops.dashboard.view')) {
-      tasks.push(getDashboardStats())
+      tasks.push(getDashboardStats(silent))
     } else {
       tasks.push(Promise.resolve(null))
     }
 
     if (authStore.hasPermission('eventwall.view')) {
-      tasks.push(getEventWallAnalysis({ limit: 80 }))
+      tasks.push(getEventWallAnalysis({ limit: 80 }, silent))
     } else {
       tasks.push(Promise.resolve(null))
     }
@@ -727,7 +730,12 @@ function goSection(section) {
 
 async function handleUserCommand(command) {
   if (command === 'refresh') {
-    await authStore.reloadProfile()
+    const user = await authStore.reloadProfile()
+    if (!user) {
+      if (!authStore.isAuthenticated) router.replace('/login')
+      else ElMessage.error('权限刷新失败，请稍后重试')
+      return
+    }
     ElMessage.success('权限已刷新')
     return
   }
