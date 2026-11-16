@@ -1,0 +1,150 @@
+/* 响应式与无障碍断点：窄桌面、横屏手机、底部上下分区、紧凑手机、触屏命中区、减少动效。 */
+
+/* 窄桌面 / 矮视口：轨道与抽屉同步缩窄 */
+@media (min-width: 761px) and (max-width: 1100px), (max-height: 500px) {
+  :root { --tool-rail: 66px; --tool-panel: 320px; }
+}
+
+/* 横屏手机：轨道可滚动，按钮按可用高度压缩但保持 44px */
+@media (max-height: 500px) and (min-width: 521px) {
+  .action-dock.task-dock { justify-content: flex-start; overflow-y: auto; gap: 2px; padding: 6px; }
+  .tool-open { flex: none; height: clamp(44px, calc((100dvh - 22px) / 6), 58px); }
+}
+
+/* ≤520：紧凑字号与两列控件；几何由下方底部上下分区统一接管 */
+@media (max-width: 520px) {
+  .tour-hud { bottom: 14px; padding: 10px 12px 11px; }
+  .tour-hud .th-hint { font-size: 11px; }
+  .tour-hud .th-btn { min-height: 44px; padding: 4px 9px; }
+  .tour-hud .th-route { max-width: 42%; }
+  .tour-hud .th-rbtn { min-height: 44px; }
+  .walk-hud { top: 10px; width: calc(100vw - 16px); padding: 8px 10px; gap: 4px; }
+  .walk-hud .wh-title { font-size: 12.5px; }
+  .walk-hud .wh-meta { font-size: 10.5px; }
+  .walk-hud .wh-btn { min-height: 44px; min-width: 44px; padding: 0 10px; }
+  .walk-hud .wh-hint { font-size: 10.5px; }
+  .walk-joystick { left: 14px; bottom: 20px; width: 104px; height: 104px; }
+  .wj-knob { width: 42px; height: 42px; }
+  .wj-arrow { font-size: 8px; }
+  .row-label { font-size: 10px; line-height: 1.35; padding: 0 4px; letter-spacing: .04em; }
+  .cab-label { font-size: 9.5px; line-height: 1.3; padding: 0 3px; letter-spacing: 0; }
+  .vd-items-3,
+  .vd-items-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vd-items-3 .vd-item:last-child { grid-column: 1 / -1; }
+  .vd-side-btns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vd-side-btns .vd-flip { grid-column: 1 / -1; }
+  .vd-clip-toggle { grid-column: 1 / -1; }
+  .vd-clip-btns [data-clip-axis="z"] { grid-column: 1 / -1; }
+  .vd-box-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vd-box-exit { grid-column: 1 / -1; }
+  .vd-box-row { grid-template-columns: 48px minmax(0, 1fr) 48px; gap: 6px; }
+  .vd-box-row label { font-size: 11px; }
+  .vd-isolate-btns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vd-isolate .vd-isolate-exit { grid-column: 1 / -1; }
+  .vd-xray-toggle { width: 100%; }
+  .vd-sub { display: none; }
+  .vd-search { padding: 8px; }
+  .vd-search-list { max-height: 220px; }
+  .vd-search-note { display: none; }
+  .vd-search-item { min-height: 44px; }
+  .vd-txt small { white-space: normal; }
+  .vd-compare-switch { grid-template-columns: 1fr; }
+  .vd-compare-btn { min-height: 48px; }
+  .vd-compare-legend { gap: 5px 12px; }
+  .view-context { min-height: 52px; padding: 5px 6px 5px 10px; gap: 8px; }
+  .vc-txt small { display: none; }
+  .vc-btn { padding: 0 8px; }
+  .vc-tools { gap: 5px; }
+  .vc-mini { padding: 0 7px; font-size: 11.5px; }
+  .vc-out { min-width: 48px; font-size: 11px; }
+  .compass-hud { padding: 6px 8px 7px; gap: 4px; border-radius: 8px; }
+  .cmp-title { font-size: 11px; }
+  .cmp-sub { font-size: 9px; }
+  .cmp-body { gap: 8px; min-height: 32px; }
+  .cmp-rose { width: 32px; height: 32px; }
+  .cmp-needle { height: 22px; }
+  .cmp-label { font-size: 9.5px; }
+}
+
+/* 手机/竖屏小平板：上方独立预览、下方独立调节，面板绝不覆盖画布。
+   --tools-bottom 同时驱动画布高度与 HUD 位置；软键盘抬升由 --tools-keyboard 承担。 */
+@media (max-width: 760px) and (min-height: 501px), (max-width: 520px) {
+  :root { --tool-bar: calc(66px + env(safe-area-inset-bottom)); }
+  body.dc-tools-visible { --tools-right: 0px; --tools-bottom: calc(var(--tool-bar) + var(--tools-keyboard)); }
+  body.dc-tools-visible.dc-tools-open {
+    --tools-right: 0px;
+    --tools-bottom: calc(var(--tool-bar) + var(--tool-sheet) + var(--tools-keyboard));
+    --tool-sheet: min(43dvh, 360px, calc((100dvh - var(--tools-keyboard) - var(--tool-bar)) / 2));
+  }
+  .action-dock.task-dock {
+    left: 0; right: 0; top: auto; bottom: var(--tools-keyboard);
+    width: 100%; height: var(--tool-bar);
+    padding: 4px max(4px, env(safe-area-inset-left)) calc(4px + env(safe-area-inset-bottom));
+    flex-direction: row; justify-content: center; gap: 1px;
+    border: 0; border-top: 1px solid #dbe3e8;
+  }
+  .tool-open {
+    flex: 1; max-width: 76px; width: auto; height: 56px; min-width: 44px;
+    padding: 3px 5px; gap: 4px; font-size: 11px;
+  }
+  .tool-open svg { width: 19px; height: 19px; }
+  .tool-open i { right: 7px; top: 6px; }
+  .view-drawer.task-drawer,
+  .view-drawer.task-drawer.is-searching {
+    width: 100%; left: 0; right: 0; top: auto;
+    bottom: calc(var(--tool-bar) + var(--tools-keyboard));
+    height: var(--tool-sheet); max-height: none;
+    padding: 0 11px 10px;
+    border: 0; border-top: 1px solid #dbe3e8; border-radius: 0; transform: none;
+  }
+  /* 搜索软键盘：--vd-kb 已由搜索面板写入抽屉，压缩抽屉高度让结果留在可视区 */
+  .view-drawer.task-drawer.is-searching {
+    max-height: calc(100dvh - var(--tools-keyboard) - var(--tool-bar) - var(--vd-kb, 0px));
+  }
+  .task-drawer .vd-head { padding-top: 9px; padding-bottom: 8px; margin-bottom: 9px; }
+  .task-drawer .vd-item { min-height: 48px; }
+  .task-drawer .vd-sub { font-size: 10.5px; }
+  .task-drawer .vd-range { padding: 8px; }
+  .view-context {
+    left: 50%; bottom: calc(var(--tools-bottom) + 12px);
+    width: calc(100vw - 16px);
+  }
+  .compass-hud { left: 10px; bottom: calc(var(--tools-bottom) + 84px); }
+  .task-drawer .vd-foot { margin-top: 12px; }
+}
+
+/* 极矮手机：抽屉再压到 38dvh，保证画布仍有可用高度 */
+@media (max-width: 520px) and (max-height: 600px) {
+  body.dc-tools-visible.dc-tools-open {
+    --tool-sheet: min(38dvh, calc((100dvh - var(--tools-keyboard) - var(--tool-bar)) / 2));
+  }
+}
+
+/* 触屏：HUD / 路线浮层按钮保持 44px 命中区（柜号标签命中区在 labels.css） */
+@media (pointer: coarse) {
+  .tour-hud .th-route,
+  .tour-hud .th-rbtn,
+  .tour-hud .th-btn,
+  .tour-hud .th-btn.th-speed,
+  .walk-hud .wh-btn { min-width: 44px; min-height: 44px; }
+}
+
+/* 减少动效：CSS 动效一律瞬时；JS 相机/HUD 过渡由 a11y 的 motionDuration 直接切终态 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .tour-hud .th-dot { animation: none; }
+  .tour-hud .th-bar i { transition: none; }
+  .walk-hud .wh-dot { animation: none; }
+  .wj-knob { transition: none; }
+  .row-label,
+  .cab-label { transition: none; }
+  .tool-open,
+  .section-mode,
+  .vd-item,
+  .vc-btn { transition: none; }
+}

@@ -1,0 +1,5684 @@
+{
+  "name": "机房-20260830-115412",
+  "objects": [
+    {
+      "id": "omtfd2b285nz",
+      "type": "wall",
+      "x1": 30120,
+      "y1": 5900,
+      "x2": 30120,
+      "y2": 25120,
+      "props": {
+        "thickness": 240,
+        "height": 3000,
+        "material": "轻钢龙骨",
+        "name": "墙-2"
+      }
+    },
+    {
+      "id": "omtfd2b286bi",
+      "type": "wall",
+      "x1": 30120,
+      "y1": 25120,
+      "x2": -120,
+      "y2": 25120,
+      "props": {
+        "thickness": 240,
+        "height": 3000,
+        "material": "轻钢龙骨",
+        "name": "墙-3"
+      }
+    },
+    {
+      "id": "omtfd2b287yz",
+      "type": "wall",
+      "x1": -120,
+      "y1": 25120,
+      "x2": -120,
+      "y2": 5900,
+      "props": {
+        "thickness": 240,
+        "height": 3000,
+        "material": "轻钢龙骨",
+        "name": "墙-4"
+      }
+    },
+    {
+      "id": "omtfd30oh8gh",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 8700,
+      "rotation": 90,
+      "props": {
+        "name": "A01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi9pk",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 9300,
+      "rotation": 90,
+      "props": {
+        "name": "A02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiaev",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 9900,
+      "rotation": 90,
+      "props": {
+        "name": "A03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oibrm",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 10500,
+      "rotation": 90,
+      "props": {
+        "name": "A04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oicc5",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 11100,
+      "rotation": 90,
+      "props": {
+        "name": "A05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oidku",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 11700,
+      "rotation": 90,
+      "props": {
+        "name": "A06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oie85",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 12300,
+      "rotation": 90,
+      "props": {
+        "name": "A07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oig8o",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 13500,
+      "rotation": 90,
+      "props": {
+        "name": "A08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oihcx",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 14100,
+      "rotation": 90,
+      "props": {
+        "name": "A09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiis",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 14700,
+      "rotation": 90,
+      "props": {
+        "name": "A10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oij6l",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 15300,
+      "rotation": 90,
+      "props": {
+        "name": "A11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiki7",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 15900,
+      "rotation": 90,
+      "props": {
+        "name": "A12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oil30",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 16500,
+      "rotation": 90,
+      "props": {
+        "name": "A13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiohi",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 18300,
+      "rotation": 90,
+      "props": {
+        "name": "A14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oip8a",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 18900,
+      "rotation": 90,
+      "props": {
+        "name": "A15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiqb6",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 19500,
+      "rotation": 90,
+      "props": {
+        "name": "A16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oisyg",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 20700,
+      "rotation": 90,
+      "props": {
+        "name": "A17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oitd1",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 21300,
+      "rotation": 90,
+      "props": {
+        "name": "A18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiug2",
+      "type": "cabinet",
+      "x": 3200,
+      "y": 21900,
+      "rotation": 90,
+      "props": {
+        "name": "A19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omvowkn4x0k4",
+      "x": 3200,
+      "y": 22500,
+      "rotation": 90,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-1"
+      }
+    },
+    {
+      "id": "omtfd30oiwcg",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 8700,
+      "rotation": 270,
+      "props": {
+        "name": "B01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oix6m",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 9300,
+      "rotation": 270,
+      "props": {
+        "name": "B02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oiyxz",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 9900,
+      "rotation": 270,
+      "props": {
+        "name": "B03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oizvc",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 10500,
+      "rotation": 270,
+      "props": {
+        "name": "B04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi10ax",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 11100,
+      "rotation": 270,
+      "props": {
+        "name": "B05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi11ar",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 11700,
+      "rotation": 270,
+      "props": {
+        "name": "B06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi12og",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 12300,
+      "rotation": 270,
+      "props": {
+        "name": "B07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi14sj",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 13500,
+      "rotation": 270,
+      "props": {
+        "name": "B08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi151g",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 14100,
+      "rotation": 270,
+      "props": {
+        "name": "B09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi166",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 14700,
+      "rotation": 270,
+      "props": {
+        "name": "B10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi17ca",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 15300,
+      "rotation": 270,
+      "props": {
+        "name": "B11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi18ai",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 15900,
+      "rotation": 270,
+      "props": {
+        "name": "B12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi192i",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 16500,
+      "rotation": 270,
+      "props": {
+        "name": "B13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1cc5",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 18300,
+      "rotation": 270,
+      "props": {
+        "name": "B14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1dye",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 18900,
+      "rotation": 270,
+      "props": {
+        "name": "B15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1ejv",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 19500,
+      "rotation": 270,
+      "props": {
+        "name": "B16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1gqo",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 20700,
+      "rotation": 270,
+      "props": {
+        "name": "B17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1ha",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 21300,
+      "rotation": 270,
+      "props": {
+        "name": "B18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1idk",
+      "type": "cabinet",
+      "x": 5600,
+      "y": 21900,
+      "rotation": 270,
+      "props": {
+        "name": "B19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omvowkn4y120",
+      "x": 5600,
+      "y": 22500,
+      "rotation": 270,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-2"
+      }
+    },
+    {
+      "id": "omtfd30oi1kz8",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 8700,
+      "rotation": 90,
+      "props": {
+        "name": "C01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1lny",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 9300,
+      "rotation": 90,
+      "props": {
+        "name": "C02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1mnw",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 9900,
+      "rotation": 90,
+      "props": {
+        "name": "C03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1nwt",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 10500,
+      "rotation": 90,
+      "props": {
+        "name": "C04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1ovs",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 11100,
+      "rotation": 90,
+      "props": {
+        "name": "C05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1pjs",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 11700,
+      "rotation": 90,
+      "props": {
+        "name": "C06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1qxj",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 12300,
+      "rotation": 90,
+      "props": {
+        "name": "C07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1sfi",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 13500,
+      "rotation": 90,
+      "props": {
+        "name": "C08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1tpo",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 14100,
+      "rotation": 90,
+      "props": {
+        "name": "C09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1uko",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 14700,
+      "rotation": 90,
+      "props": {
+        "name": "C10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1v4w",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 15300,
+      "rotation": 90,
+      "props": {
+        "name": "C11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1w33",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 15900,
+      "rotation": 90,
+      "props": {
+        "name": "C12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi1xj0",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 16500,
+      "rotation": 90,
+      "props": {
+        "name": "C13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi20gs",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 18300,
+      "rotation": 90,
+      "props": {
+        "name": "C14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi21q9",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 18900,
+      "rotation": 90,
+      "props": {
+        "name": "C15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi2269",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 19500,
+      "rotation": 90,
+      "props": {
+        "name": "C16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi24bg",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 20700,
+      "rotation": 90,
+      "props": {
+        "name": "C17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi25j1",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 21300,
+      "rotation": 90,
+      "props": {
+        "name": "C18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omtfd30oi26qq",
+      "type": "cabinet",
+      "x": 8000,
+      "y": 21900,
+      "rotation": 90,
+      "props": {
+        "name": "C19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#2e9e6e"
+      }
+    },
+    {
+      "id": "omvowkn4y2dm",
+      "x": 8000,
+      "y": 22500,
+      "rotation": 90,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-3"
+      }
+    },
+    {
+      "id": "omtfd30oi28zb",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 8700,
+      "rotation": 270,
+      "props": {
+        "name": "D01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi29qs",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 9300,
+      "rotation": 270,
+      "props": {
+        "name": "D02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2a2",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 9900,
+      "rotation": 270,
+      "props": {
+        "name": "D03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2by1",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 10500,
+      "rotation": 270,
+      "props": {
+        "name": "D04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2czd",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 11100,
+      "rotation": 270,
+      "props": {
+        "name": "D05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2d38",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 11700,
+      "rotation": 270,
+      "props": {
+        "name": "D06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2ejc",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 12300,
+      "rotation": 270,
+      "props": {
+        "name": "D07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2g4o",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 13500,
+      "rotation": 270,
+      "props": {
+        "name": "D08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2hwf",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 14100,
+      "rotation": 270,
+      "props": {
+        "name": "D09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2iuj",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 14700,
+      "rotation": 270,
+      "props": {
+        "name": "D10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2jgn",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 15300,
+      "rotation": 270,
+      "props": {
+        "name": "D11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2k5b",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 15900,
+      "rotation": 270,
+      "props": {
+        "name": "D12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2l2u",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 16500,
+      "rotation": 270,
+      "props": {
+        "name": "D13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2ona",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 18300,
+      "rotation": 270,
+      "props": {
+        "name": "D14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2pn3",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 18900,
+      "rotation": 270,
+      "props": {
+        "name": "D15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2qkd",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 19500,
+      "rotation": 270,
+      "props": {
+        "name": "D16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2s6s",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 20700,
+      "rotation": 270,
+      "props": {
+        "name": "D17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2t8k",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 21300,
+      "rotation": 270,
+      "props": {
+        "name": "D18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2ue1",
+      "type": "cabinet",
+      "x": 10400,
+      "y": 21900,
+      "rotation": 270,
+      "props": {
+        "name": "D19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omvowkn4y3gg",
+      "x": 10400,
+      "y": 22500,
+      "rotation": 270,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-4"
+      }
+    },
+    {
+      "id": "omtfd30oi2wtw",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 8700,
+      "rotation": 90,
+      "props": {
+        "name": "E01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2xrp",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 9300,
+      "rotation": 90,
+      "props": {
+        "name": "E02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2ypx",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 9900,
+      "rotation": 90,
+      "props": {
+        "name": "E03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi2z5s",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 10500,
+      "rotation": 90,
+      "props": {
+        "name": "E04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi307t",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 11100,
+      "rotation": 90,
+      "props": {
+        "name": "E05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi31e4",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 11700,
+      "rotation": 90,
+      "props": {
+        "name": "E06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi324a",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 12300,
+      "rotation": 90,
+      "props": {
+        "name": "E07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi34tc",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 13500,
+      "rotation": 90,
+      "props": {
+        "name": "E08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi35dr",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 14100,
+      "rotation": 90,
+      "props": {
+        "name": "E09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi36bc",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 14700,
+      "rotation": 90,
+      "props": {
+        "name": "E10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi378l",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 15300,
+      "rotation": 90,
+      "props": {
+        "name": "E11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi38e2",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 15900,
+      "rotation": 90,
+      "props": {
+        "name": "E12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi398b",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 16500,
+      "rotation": 90,
+      "props": {
+        "name": "E13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3cxz",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 18300,
+      "rotation": 90,
+      "props": {
+        "name": "E14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3dqg",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 18900,
+      "rotation": 90,
+      "props": {
+        "name": "E15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3e9j",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 19500,
+      "rotation": 90,
+      "props": {
+        "name": "E16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3ggn",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 20700,
+      "rotation": 90,
+      "props": {
+        "name": "E17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3hol",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 21300,
+      "rotation": 90,
+      "props": {
+        "name": "E18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omtfd30oi3ilh",
+      "type": "cabinet",
+      "x": 12800,
+      "y": 21900,
+      "rotation": 90,
+      "props": {
+        "name": "E19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#0931fb"
+      }
+    },
+    {
+      "id": "omvowkn4y4x3",
+      "x": 12800,
+      "y": 22500,
+      "rotation": 90,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-5"
+      }
+    },
+    {
+      "id": "omtfd30oi3kb3",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 8700,
+      "rotation": 270,
+      "props": {
+        "name": "F01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3l51",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 9300,
+      "rotation": 270,
+      "props": {
+        "name": "F02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3mrc",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 9900,
+      "rotation": 270,
+      "props": {
+        "name": "F03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3noe",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 10500,
+      "rotation": 270,
+      "props": {
+        "name": "F04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3o7l",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 11100,
+      "rotation": 270,
+      "props": {
+        "name": "F05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3px1",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 11700,
+      "rotation": 270,
+      "props": {
+        "name": "F06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3qin",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 12300,
+      "rotation": 270,
+      "props": {
+        "name": "F07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3sms",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 13500,
+      "rotation": 270,
+      "props": {
+        "name": "F08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3tzj",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 14100,
+      "rotation": 270,
+      "props": {
+        "name": "F09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3uga",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 14700,
+      "rotation": 270,
+      "props": {
+        "name": "F10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3v3h",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 15300,
+      "rotation": 270,
+      "props": {
+        "name": "F11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3wkf",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 15900,
+      "rotation": 270,
+      "props": {
+        "name": "F12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi3xyh",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 16500,
+      "rotation": 270,
+      "props": {
+        "name": "F13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi40tg",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 18300,
+      "rotation": 270,
+      "props": {
+        "name": "F14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi41pd",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 18900,
+      "rotation": 270,
+      "props": {
+        "name": "F15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi42sp",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 19500,
+      "rotation": 270,
+      "props": {
+        "name": "F16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi44v1",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 20700,
+      "rotation": 270,
+      "props": {
+        "name": "F17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi45hr",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 21300,
+      "rotation": 270,
+      "props": {
+        "name": "F18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi46p8",
+      "type": "cabinet",
+      "x": 15200,
+      "y": 21900,
+      "rotation": 270,
+      "props": {
+        "name": "F19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omvowkn4y5vy",
+      "x": 15200,
+      "y": 22500,
+      "rotation": 270,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-6"
+      }
+    },
+    {
+      "id": "omtfd30oi48ty",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 8700,
+      "rotation": 90,
+      "props": {
+        "name": "G01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi49kp",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 9300,
+      "rotation": 90,
+      "props": {
+        "name": "G02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4adi",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 9900,
+      "rotation": 90,
+      "props": {
+        "name": "G03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4bni",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 10500,
+      "rotation": 90,
+      "props": {
+        "name": "G04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4cpg",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 11100,
+      "rotation": 90,
+      "props": {
+        "name": "G05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4dkf",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 11700,
+      "rotation": 90,
+      "props": {
+        "name": "G06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4es5",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 12300,
+      "rotation": 90,
+      "props": {
+        "name": "G07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4g89",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 13500,
+      "rotation": 90,
+      "props": {
+        "name": "G08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4hka",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 14100,
+      "rotation": 90,
+      "props": {
+        "name": "G09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4iee",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 14700,
+      "rotation": 90,
+      "props": {
+        "name": "G10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4jsf",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 15300,
+      "rotation": 90,
+      "props": {
+        "name": "G11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4kdm",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 15900,
+      "rotation": 90,
+      "props": {
+        "name": "G12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4lm0",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 16500,
+      "rotation": 90,
+      "props": {
+        "name": "G13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4obs",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 18300,
+      "rotation": 90,
+      "props": {
+        "name": "G14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4pwb",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 18900,
+      "rotation": 90,
+      "props": {
+        "name": "G15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4qs2",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 19500,
+      "rotation": 90,
+      "props": {
+        "name": "G16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4smc",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 20700,
+      "rotation": 90,
+      "props": {
+        "name": "G17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4t6g",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 21300,
+      "rotation": 90,
+      "props": {
+        "name": "G18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omtfd30oi4u84",
+      "type": "cabinet",
+      "x": 17600,
+      "y": 21900,
+      "rotation": 90,
+      "props": {
+        "name": "G19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#c0392b"
+      }
+    },
+    {
+      "id": "omvowkn4y6hq",
+      "x": 17600,
+      "y": 22500,
+      "rotation": 90,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-7"
+      }
+    },
+    {
+      "id": "omtfd30oi4wb6",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 8700,
+      "rotation": 270,
+      "props": {
+        "name": "H01",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi4xq1",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 9300,
+      "rotation": 270,
+      "props": {
+        "name": "H02",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi4yig",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 9900,
+      "rotation": 270,
+      "props": {
+        "name": "H03",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi4z3o",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 10500,
+      "rotation": 270,
+      "props": {
+        "name": "H04",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi50mt",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 11100,
+      "rotation": 270,
+      "props": {
+        "name": "H05",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5198",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 11700,
+      "rotation": 270,
+      "props": {
+        "name": "H06",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi52es",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 12300,
+      "rotation": 270,
+      "props": {
+        "name": "H07",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi54y1",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 13500,
+      "rotation": 270,
+      "props": {
+        "name": "H08",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi55dt",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 14100,
+      "rotation": 270,
+      "props": {
+        "name": "H09",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi56jz",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 14700,
+      "rotation": 270,
+      "props": {
+        "name": "H10",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi57wg",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 15300,
+      "rotation": 270,
+      "props": {
+        "name": "H11",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi58rs",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 15900,
+      "rotation": 270,
+      "props": {
+        "name": "H12",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi59dj",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 16500,
+      "rotation": 270,
+      "props": {
+        "name": "H13",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5cpa",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 18300,
+      "rotation": 270,
+      "props": {
+        "name": "H14",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5dlf",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 18900,
+      "rotation": 270,
+      "props": {
+        "name": "H15",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5ewh",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 19500,
+      "rotation": 270,
+      "props": {
+        "name": "H16",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5gyt",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 20700,
+      "rotation": 270,
+      "props": {
+        "name": "H17",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5hs8",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 21300,
+      "rotation": 270,
+      "props": {
+        "name": "H18",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omtfd30oi5ia1",
+      "type": "cabinet",
+      "x": 20000,
+      "y": 21900,
+      "rotation": 270,
+      "props": {
+        "name": "H19",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "u": 42,
+        "power": 4,
+        "remark": "",
+        "rpdu": 2,
+        "voltage": 220,
+        "current": 32,
+        "sockets": [
+          {
+            "type": "IEC C13",
+            "count": 16
+          },
+          {
+            "type": "IEC C19",
+            "count": 6
+          }
+        ],
+        "color": "#e0a02c"
+      }
+    },
+    {
+      "id": "omvowkn4y7ru",
+      "x": 20000,
+      "y": 22500,
+      "rotation": 270,
+      "type": "pdu",
+      "props": {
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "voltage": 380,
+        "current": 250,
+        "remark": "",
+        "name": "列头柜-8"
+      }
+    },
+    {
+      "id": "omtfd30oi5kdh",
+      "type": "aisle",
+      "x": 4400,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5llz",
+      "type": "aisle",
+      "x": 6800,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5m29",
+      "type": "aisle",
+      "x": 9200,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5ncl",
+      "type": "aisle",
+      "x": 11600,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5ork",
+      "type": "aisle",
+      "x": 14000,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5p7n",
+      "type": "aisle",
+      "x": 16400,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd30oi5qyl",
+      "type": "aisle",
+      "x": 18800,
+      "y": 15600,
+      "rotation": 90,
+      "props": {
+        "name": "冷通道-1",
+        "kind": "cold",
+        "w": 14400,
+        "d": 1200
+      }
+    },
+    {
+      "id": "omtfd423a5rcl",
+      "x": 3200,
+      "y": 12900,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-1",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5s57",
+      "x": 3200,
+      "y": 20100,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-2",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5tfv",
+      "x": 5600,
+      "y": 12900,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-3",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5ux3",
+      "x": 5600,
+      "y": 20100,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-4",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5vd2",
+      "x": 8000,
+      "y": 12900,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-5",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5wan",
+      "x": 8000,
+      "y": 20100,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-6",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5xh1",
+      "x": 10400,
+      "y": 12900,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-7",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5y20",
+      "x": 10400,
+      "y": 20100,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-8",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b5zot",
+      "x": 12800,
+      "y": 12900,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-9",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b60kc",
+      "x": 12800,
+      "y": 20100,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-10",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b6192",
+      "x": 15200,
+      "y": 12900,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-11",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b62m1",
+      "x": 15200,
+      "y": 20100,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-12",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423b63gn",
+      "x": 17600,
+      "y": 12900,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-13",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423c64sm",
+      "x": 17600,
+      "y": 20100,
+      "rotation": 90,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-14",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423c65i2",
+      "x": 20000,
+      "y": 12900,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-15",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd423c66ne",
+      "x": 20000,
+      "y": 20100,
+      "rotation": 270,
+      "type": "ac",
+      "props": {
+        "name": "列间空调-16",
+        "kind": "row",
+        "w": 600,
+        "d": 1200,
+        "h": 2000,
+        "cool": 35,
+        "air": 6000,
+        "temp": 18,
+        "supply": "侧送风",
+        "remark": "列间空调，送风方向朝通道"
+      }
+    },
+    {
+      "id": "omtfd4w2g67pz",
+      "x": 3200,
+      "y": 17400,
+      "rotation": 90,
+      "type": "column",
+      "props": {
+        "name": "柱-1",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g68js",
+      "x": 5600,
+      "y": 17400,
+      "rotation": 270,
+      "type": "column",
+      "props": {
+        "name": "柱-2",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g69jh",
+      "x": 8000,
+      "y": 17400,
+      "rotation": 90,
+      "type": "column",
+      "props": {
+        "name": "柱-3",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g6ai6",
+      "x": 10400,
+      "y": 17400,
+      "rotation": 270,
+      "type": "column",
+      "props": {
+        "name": "柱-4",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g6b96",
+      "x": 12800,
+      "y": 17400,
+      "rotation": 90,
+      "type": "column",
+      "props": {
+        "name": "柱-5",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g6cab",
+      "x": 15200,
+      "y": 17400,
+      "rotation": 270,
+      "type": "column",
+      "props": {
+        "name": "柱-6",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g6deg",
+      "x": 17600,
+      "y": 17400,
+      "rotation": 90,
+      "type": "column",
+      "props": {
+        "name": "柱-7",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd4w2g6err",
+      "x": 20000,
+      "y": 17400,
+      "rotation": 270,
+      "type": "column",
+      "props": {
+        "name": "柱-8",
+        "w": 800,
+        "d": 800,
+        "h": 4500
+      }
+    },
+    {
+      "id": "omtfd599i6fe8",
+      "type": "wall",
+      "x1": 25878.65417334729,
+      "y1": 25080,
+      "x2": 25878.65417334729,
+      "y2": 5900,
+      "props": {
+        "name": "墙-5",
+        "thickness": 240,
+        "height": 3000,
+        "material": "砖墙"
+      }
+    },
+    {
+      "id": "omtfd66mh6gul",
+      "type": "grille",
+      "wallId": "omtfd599i6fe8",
+      "t": 0.42158703436578204,
+      "props": {
+        "name": "格栅-1",
+        "width": 2500,
+        "height": 2750,
+        "sill": 10,
+        "kind": "送风"
+      }
+    },
+    {
+      "id": "omtfd67ep6huu",
+      "type": "grille",
+      "wallId": "omtfd599i6fe8",
+      "t": 0.6614892694703651,
+      "props": {
+        "name": "格栅-2",
+        "width": 2500,
+        "height": 2750,
+        "sill": 10,
+        "kind": "送风"
+      }
+    },
+    {
+      "id": "omtfd68226inm",
+      "type": "grille",
+      "wallId": "omtfd599i6fe8",
+      "t": 0.8821993257665814,
+      "props": {
+        "name": "格栅-3",
+        "width": 2500,
+        "height": 2750,
+        "sill": 10,
+        "kind": "送风"
+      }
+    },
+    {
+      "id": "omtfd6dem6kaa",
+      "type": "ac",
+      "x": 26648.65417334729,
+      "y": 21779.33854494244,
+      "rotation": 270,
+      "props": {
+        "name": "空调-1",
+        "w": 2500,
+        "d": 1300,
+        "h": 2800,
+        "cool": 25,
+        "air": 2800,
+        "temp": 18,
+        "supply": "下送风",
+        "remark": ""
+      }
+    },
+    {
+      "id": "omtfd6ivi6ljo",
+      "type": "ac",
+      "x": 26648.65417334729,
+      "y": 16993.9606808643,
+      "rotation": 270,
+      "props": {
+        "name": "空调-2",
+        "w": 2500,
+        "d": 1300,
+        "h": 2800,
+        "cool": 25,
+        "air": 2800,
+        "temp": 18,
+        "supply": "下送风",
+        "remark": ""
+      }
+    },
+    {
+      "id": "omtfd6mrj6m6z",
+      "type": "ac",
+      "x": 26648.65417334729,
+      "y": 12392.635811558397,
+      "rotation": 270,
+      "props": {
+        "name": "空调-3",
+        "w": 2500,
+        "d": 1300,
+        "h": 2800,
+        "cool": 25,
+        "air": 2800,
+        "temp": 18,
+        "supply": "下送风",
+        "remark": ""
+      }
+    },
+    {
+      "id": "omtfd6mrk6n6p",
+      "type": "ac",
+      "x": 26648.65417334729,
+      "y": 8159.416931796968,
+      "rotation": 270,
+      "props": {
+        "name": "空调-4",
+        "w": 2500,
+        "d": 1300,
+        "h": 2800,
+        "cool": 25,
+        "air": 2800,
+        "temp": 18,
+        "supply": "下送风",
+        "remark": ""
+      }
+    },
+    {
+      "id": "omtfd7t906sjs",
+      "type": "grille",
+      "wallId": "omtfd599i6fe8",
+      "t": 0.17208870985701571,
+      "props": {
+        "name": "格栅-4",
+        "width": 2500,
+        "height": 2750,
+        "sill": 10,
+        "kind": "送风"
+      }
+    },
+    {
+      "id": "omtfd8eil6tyr",
+      "type": "tray",
+      "x1": 2700,
+      "y1": 23300,
+      "x2": 20900,
+      "y2": 23300,
+      "props": {
+        "name": "桥架-1",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd8nf06upl",
+      "type": "tray",
+      "x1": 4400,
+      "y1": 23400,
+      "x2": 4400,
+      "y2": 8300,
+      "props": {
+        "name": "桥架-2",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd8xbe6vmj",
+      "type": "tray",
+      "x1": 6800,
+      "y1": 23400,
+      "x2": 6800,
+      "y2": 8300,
+      "props": {
+        "name": "桥架-3",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd92l36wz1",
+      "type": "tray",
+      "x1": 9100,
+      "y1": 23500,
+      "x2": 9100,
+      "y2": 8200,
+      "props": {
+        "name": "桥架-4",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd98u56xs2",
+      "type": "tray",
+      "x1": 11600,
+      "y1": 23300,
+      "x2": 11600,
+      "y2": 8200,
+      "props": {
+        "name": "桥架-5",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd98u56ygd",
+      "type": "tray",
+      "x1": 14000,
+      "y1": 23300,
+      "x2": 14000,
+      "y2": 8200,
+      "props": {
+        "name": "桥架-6",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd98u56zco",
+      "type": "tray",
+      "x1": 16300,
+      "y1": 23400,
+      "x2": 16300,
+      "y2": 8100,
+      "props": {
+        "name": "桥架-7",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omtfd9dxt70ss",
+      "type": "tray",
+      "x1": 18800,
+      "y1": 23300,
+      "x2": 18800,
+      "y2": 8200,
+      "props": {
+        "name": "桥架-8",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omvok0ct206t",
+      "type": "door",
+      "wallId": "omtfd2b286bi",
+      "t": 0.9023530067797404,
+      "props": {
+        "name": "机房门-1",
+        "width": 1500,
+        "height": 2700,
+        "swing": "left",
+        "side": "out",
+        "leaf": "double"
+      }
+    },
+    {
+      "id": "omvol0q2a0ss",
+      "type": "tray",
+      "x1": 2600,
+      "y1": 8300,
+      "x2": 20800,
+      "y2": 8300,
+      "props": {
+        "name": "桥架-9",
+        "width": 600,
+        "height": 2900,
+        "bodyH": 200,
+        "kind": "弱电"
+      }
+    },
+    {
+      "id": "omvowljina2v",
+      "type": "extinguisher",
+      "x": 800,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-1",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowlkwkbbq",
+      "type": "extinguisher",
+      "x": 1200,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-2",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowlly4c1b",
+      "type": "extinguisher",
+      "x": 1600,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-3",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowln1qdg1",
+      "type": "extinguisher",
+      "x": 2000,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-4",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowlo1tevl",
+      "type": "extinguisher",
+      "x": 2400,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-5",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowlvpafgi",
+      "type": "extinguisher",
+      "x": 2800,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-6",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowlyd4g2k",
+      "type": "extinguisher",
+      "x": 3200,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-7",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvowm23eh5n",
+      "type": "extinguisher",
+      "x": 3600,
+      "y": 6700,
+      "rotation": 0,
+      "props": {
+        "name": "灭火器-8",
+        "extType": "手提式干粉",
+        "w": 400,
+        "d": 400,
+        "h": 1200,
+        "kg": 5,
+        "remark": ""
+      }
+    },
+    {
+      "id": "omvp2am1x0kc",
+      "type": "wall",
+      "x1": -212.07477675821357,
+      "y1": 5900,
+      "x2": 30238.873910822203,
+      "y2": 5900,
+      "props": {
+        "name": "墙-1",
+        "thickness": 240,
+        "height": 3000,
+        "material": "轻钢龙骨"
+      }
+    },
+    {
+      "id": "omvp2bbm113s",
+      "type": "door",
+      "wallId": "omvp2am1x0kc",
+      "t": 0.7823130437943889,
+      "props": {
+        "name": "机房门-2",
+        "width": 1500,
+        "height": 2700,
+        "swing": "left",
+        "side": "out",
+        "leaf": "double"
+      }
+    }
+  ],
+  "meta": {
+    "surveyor": "",
+    "date": "",
+    "ceilHeight": 0,
+    "floorHeight": 0,
+    "roomHeight": 0
+  }
+}

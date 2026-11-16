@@ -1,0 +1,17 @@
+/* 设计令牌：颜色/焦点环/布局宽度。其余样式只引用变量。 */
+:root {
+  --dc-focus-light: #0f8f77;
+  --dc-focus-dark: #1abc9c;
+  --dc-muted: #5d6d7e;
+  --dc-subtle: #64748b;
+  --dc-selected-bg: #007c92;
+  --dc-selected-fg: #ffffff;
+
+  --tool-rail: 76px;
+  --tool-panel: 356px;
+  --tool-bar: 72px;
+  --tool-sheet: min(43dvh, 360px);
+  --tools-right: 0px;
+  --tools-bottom: 0px;
+  --tools-keyboard: 0px;
+}

@@ -1,0 +1,55 @@
+/* 俯视/轴测标签层：排号（只读）+ 柜号（可点击）；DOM 投影，指针默认穿透。 */
+.row-labels {
+  position: fixed; inset: 0 auto auto 0; z-index: 7;
+  pointer-events: none; overflow: hidden;
+}
+.row-labels[hidden] { display: none; }
+
+.row-label {
+  position: absolute; left: 0; top: 0;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border: 1px solid rgba(26, 188, 156, .55); border-radius: 999px;
+  background: rgba(255, 255, 255, .92); color: #14544a;
+  font: 700 12px/1.45 "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  letter-spacing: .08em;
+  box-shadow: 0 2px 8px rgba(20, 40, 55, .2);
+  white-space: nowrap;
+  opacity: 0; visibility: hidden;
+  transition: opacity .12s ease;
+}
+.row-label.on { opacity: 1; visibility: visible; }
+
+.cab-label {
+  position: absolute; left: 0; top: 0;
+  transform: translate(-50%, -50%);
+  padding: 1px 5px;
+  border: 1px solid rgba(52, 73, 94, .30); border-radius: 6px;
+  background: rgba(255, 255, 255, .93); color: #2c3e50;
+  font: 700 10.5px/1.35 "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  letter-spacing: .02em;
+  box-shadow: 0 1px 5px rgba(20, 40, 55, .18);
+  white-space: nowrap;
+  opacity: 0; visibility: hidden;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity .10s ease, background .12s ease, color .12s ease, border-color .12s ease;
+}
+.cab-label.on { opacity: 1; visibility: visible; pointer-events: auto; }
+.cab-label:hover { border-color: #1abc9c; background: #fff; color: #14544a; z-index: 2; }
+.cab-label.is-hover { border-color: #f39c12; background: #fff8e6; color: #7a5200; z-index: 2; }
+.cab-label.is-selected {
+  border-color: var(--dc-selected-bg); background: var(--dc-selected-bg);
+  color: var(--dc-selected-fg); z-index: 3;
+  box-shadow: 0 2px 10px rgba(0, 124, 146, .45);
+}
+.cab-label:focus-visible { outline: 2px solid var(--dc-selected-bg); outline-offset: 1px; }
+
+/* 触屏：透明伪元素把柜号标签的点击区扩到 44×44，不改变视觉大小 */
+@media (pointer: coarse) {
+  .cab-label::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: 44px; height: 44px; transform: translate(-50%, -50%);
+    border-radius: 10px;
+  }
+}

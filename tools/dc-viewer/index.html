@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCDesigner 3D 查看器</title>
+</head>
+<body>
+<canvas id="cv3d" role="img" aria-label="机房三维视图"
+  aria-describedby="cv3d-desc"></canvas>
+<p id="cv3d-desc" class="sr-only">只读三维机房查看器。使用鼠标或触屏旋转、平移、缩放；
+  按 V 打开视角工具，/ 打开搜索定位，T 进入俯视，I 进入轴测，G 进入手动步行，Esc 退出当前模式。
+  右侧工具分为视角、显示、剖切、定位、漫游、拆解六类；展开面板时与三维画布分区，不遮挡预览；窄屏上下分区。
+  正交视图左下角会显示指北针与比例尺；透视轨道与第一视角不显示。</p>
+
+<div id="msg" hidden>
+  <div class="msg-box">
+    <span class="msg-spinner" aria-hidden="true"></span>
+    <span id="msg-text" role="status" aria-live="polite"></span>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

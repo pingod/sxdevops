@@ -1,0 +1,94 @@
+/* 工具抽屉：右侧独立参数区（rail 76px + panel 356px），画布同步让出空间；不做尺寸过渡。 */
+
+body.dc-tools-visible { --tools-right: var(--tool-rail); }
+body.dc-tools-visible.dc-tools-open { --tools-right: calc(var(--tool-rail) + var(--tool-panel)); }
+body.dc-ui-hidden { --tools-right: 0px; --tools-bottom: 0px; }
+
+#cv3d,
+.row-labels {
+  width: calc(100vw - var(--tools-right));
+  height: calc(100dvh - var(--tools-bottom));
+}
+
+/* ?ui=0：隐藏全部 chrome，键盘与 URL 参数仍然有效 */
+body.dc-ui-hidden .action-dock,
+body.dc-ui-hidden .view-drawer,
+body.dc-ui-hidden .view-context,
+body.dc-ui-hidden .tour-hud,
+body.dc-ui-hidden .walk-hud,
+body.dc-ui-hidden .walk-cross,
+body.dc-ui-hidden .walk-joystick,
+body.dc-ui-hidden .compass-hud { display: none !important; }
+
+/* 抽屉本体：贴右侧栏、全高、无圆角/阴影/动画，内容自行滚动 */
+.view-drawer.task-drawer {
+  position: fixed; left: auto; right: var(--tool-rail); top: 0; bottom: 0;
+  transform: none; width: var(--tool-panel); height: auto;
+  max-height: none; overflow-y: auto; overscroll-behavior: contain;
+  padding: 0 14px 14px; z-index: 9;
+  border: 0; border-left: 1px solid #dbe3e8; border-radius: 0;
+  background: #fcfdfe; color: #263544;
+  box-shadow: none; animation: none; backdrop-filter: none;
+  pointer-events: auto;
+  font: 13px/1.45 "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+  scrollbar-width: thin; scrollbar-color: #c8d5d9 transparent;
+}
+.view-drawer[hidden] { display: none; }
+
+/* sticky 头部：任务标题 + 副标题 + 关闭 */
+.vd-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 0 11px; margin-bottom: 12px;
+  background: #fcfdfe; border-bottom: 1px solid #e8edf0;
+}
+.vd-heading { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.vd-title { font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+.vd-sub { display: block; font-size: 11px; line-height: 1.5; color: var(--dc-muted); }
+.vd-close {
+  align-self: flex-start; margin-left: auto;
+  width: 44px; height: 44px; flex: none;
+  border: 0; border-radius: 10px; background: transparent; color: #5d6d7e;
+  font: 400 22px/1 "Microsoft YaHei", system-ui, sans-serif;
+  cursor: pointer;
+}
+.vd-close:hover { background: rgba(52, 73, 94, .08); color: #1a252f; }
+.vd-close:focus-visible { outline: 2px solid var(--dc-focus-light); outline-offset: 1px; }
+
+/* 面板切换：只显示当前任务面板 */
+.tool-panel[hidden],
+.section-pane[hidden],
+.task-drawer .vd-group[hidden] { display: none; }
+.tool-panel > .vd-group:first-child,
+.tool-panel > .vd-range:first-child,
+.tool-panel > .vd-search:first-child { margin-top: 0; }
+
+/* 抽屉内节奏：分组、卡片与网格更紧凑 */
+.task-drawer .vd-group + .vd-group { margin-top: 18px; }
+.task-drawer .vd-group-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+.task-drawer .vd-group-hint { font-size: 10.5px; line-height: 1.5; }
+.task-drawer .vd-item { padding: 9px; min-height: 52px; }
+.task-drawer .vd-txt small { white-space: normal; font-size: 10.5px; }
+.task-drawer .vd-items-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.task-drawer .vd-items-3 .vd-item:last-child { grid-column: auto; }
+.task-drawer [data-group="view"] .vd-item:first-child { grid-column: 1 / -1; }
+.task-drawer .vd-range { padding: 10px; background: #f5f8f9; border-color: #e0e7eb; }
+.task-drawer .vd-range + .vd-range { margin-top: 10px; }
+.task-drawer .vd-range-head { margin-bottom: 5px; flex-wrap: wrap; gap: 3px 8px; }
+.task-drawer .vd-range-head output { font-size: 12px; }
+.task-drawer .vd-range-note { line-height: 1.5; margin-top: 4px; }
+.task-drawer .vd-side-btns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.task-drawer .vd-side-btns .vd-flip,
+.task-drawer .vd-isolate-exit { grid-column: 1 / -1; }
+.task-drawer .vd-clip-btns [data-clip-axis="z"] { grid-column: auto; }
+.task-drawer .vd-box-row { grid-template-columns: 46px minmax(0, 1fr) 48px; gap: 5px; }
+.task-drawer .vd-box-presets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.task-drawer .vd-box-exit { grid-column: auto; }
+.task-drawer [data-group="route"] .vd-items { grid-template-columns: 1fr; }
+
+/* 脚注：所有任务共用一条 */
+.vd-foot {
+  margin-top: 16px; padding-top: 11px;
+  border-top: 1px solid #e8edf0;
+  text-align: center; font-size: 10.5px; line-height: 1.6; color: var(--dc-subtle);
+}
