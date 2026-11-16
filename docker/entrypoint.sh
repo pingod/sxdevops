@@ -25,9 +25,17 @@ raise SystemExit(f"Timed out waiting for {label} at {host}:{port}")
 PY
 }
 
-if [ "${SXDEVOPS_WAIT_FOR_DB:-1}" = "1" ]; then
-  wait_for_tcp "${MYSQL_HOST:-mysql}" "${MYSQL_PORT:-3306}" "MySQL"
-fi
+engine=$(printf '%s' "${DATABASE_ENGINE:-${DB_ENGINE:-sqlite}}" | tr '[:upper:]' '[:lower:]')
+case "$engine" in
+  mysql|mariadb|django.db.backends.mysql)
+    if [ "${SXDEVOPS_WAIT_FOR_DB:-1}" = "1" ]; then
+      wait_for_tcp "${MYSQL_HOST:-${DATABASE_HOST:-mysql}}" "${MYSQL_PORT:-3306}" "MySQL"
+    fi
+    ;;
+  *)
+    echo "Skipping MySQL wait (engine=$engine)"
+    ;;
+esac
 
 if [ "${SXDEVOPS_MIGRATE:-1}" = "1" ]; then
   python manage.py migrate --noinput

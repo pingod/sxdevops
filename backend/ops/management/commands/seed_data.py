@@ -1178,7 +1178,21 @@ def seed_host_schedule_demo(stdout, hosts):
 class Command(BaseCommand):
     help = '生成 Mock 演示数据'
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--reset',
+            action='store_true',
+            help='\u6e05\u7a7a\u6f14\u793a\u6570\u636e\u540e\u91cd\u5efa\uff08\u5371\u9669\uff1a\u4f1a\u5220\u9664\u771f\u5b9e\u8fd0\u7ef4\u6570\u636e\uff09',
+        )
+
     def handle(self, *args, **options):
+        if not options.get('reset') and Host.objects.exists():
+            self.stdout.write(
+                self.style.WARNING(
+                    '\u68c0\u6d4b\u5230\u5df2\u6709\u6570\u636e\uff0c\u8df3\u8fc7\u6f14\u793a\u6570\u636e\u521d\u59cb\u5316\uff1b\u5982\u9700\u91cd\u5efa\u8bf7\u4f7f\u7528 --reset'
+                )
+            )
+            return
 
         self.stdout.write('\u6b63\u5728\u6e05\u7406\u65e7\u6570\u636e...')
         ServiceDeployment.objects.all().delete()
