@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 import paramiko
 from rest_framework.authtoken.models import Token
 from channels.generic.websocket import WebsocketConsumer
-from rbac.services import user_has_permissions
+from rbac.services import user_has_console_access
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class SSHConsumer(WebsocketConsumer):
         if not token or not token.user.is_active:
             self.close(code=4401)
             return
-        if not user_has_permissions(token.user, ['ops.host.terminal']):
+        if not user_has_console_access(token.user, ['ops.host.terminal']):
             self.close(code=4403)
             return
 

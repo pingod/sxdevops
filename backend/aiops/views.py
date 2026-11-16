@@ -1006,6 +1006,7 @@ class AIOpsAuditSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         'list': ['aiops.audit.view'],
         'retrieve': ['aiops.audit.view'],
         'destroy': ['aiops.audit.manage'],
+        'bulk_delete': ['aiops.audit.manage'],
     }
 
     def get_queryset(self):
@@ -1101,6 +1102,7 @@ class AIOpsToolInvocationViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         'list': ['aiops.audit.view'],
         'retrieve': ['aiops.audit.view'],
         'destroy': ['aiops.audit.manage'],
+        'bulk_delete': ['aiops.audit.manage'],
     }
 
     def get_queryset(self):
@@ -1185,6 +1187,7 @@ class AIOpsPendingActionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         'list': ['aiops.audit.view'],
         'retrieve': ['aiops.audit.view'],
         'destroy': ['aiops.audit.manage'],
+        'bulk_delete': ['aiops.audit.manage'],
     }
 
     def get_queryset(self):

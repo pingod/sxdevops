@@ -248,6 +248,8 @@ Admin@123456
 
 这些账号仅用于本地演示和开发环境。公开部署前请修改默认密码或禁用演示账号。
 
+内置超级管理员 `admin` 只在 `SXDEVOPS_SEED_ADMIN=1` 时自动创建（`docker compose` 默认开启，裸机部署默认关闭）。生产部署请显式关闭该开关并通过 `python manage.py createsuperuser` 自建管理员。
+
 ## 配置说明
 
 后端支持通过环境变量或 `backend/config.json` 覆盖关键配置。需要本地 MySQL 或 Redis 时，可以参考 [backend/config.example.md](backend/config.example.md) 和 [backend/config.example.json](backend/config.example.json)。

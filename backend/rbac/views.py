@@ -23,7 +23,6 @@ from .serializers import (
 from .services import (
     DEMO_ACCOUNT_MUTATION_MESSAGE,
     ensure_builtin_rbac,
-    ensure_default_superuser,
     ensure_system_module_settings,
     get_system_module_settings,
     is_demo_account,
@@ -205,8 +204,6 @@ def system_module_settings_view(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login_view(request):
-    ensure_builtin_rbac()
-    ensure_default_superuser()
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     user = authenticate(
@@ -233,7 +230,6 @@ def logout_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_user_view(request):
-    ensure_builtin_rbac()
     return Response(UserSerializer(request.user).data)
 
 

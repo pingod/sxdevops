@@ -1,5 +1,7 @@
-﻿from django.contrib.auth import get_user_model
-from django.db import transaction
+﻿import os
+
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 
 from sxdevops.features import filter_feature_permissions, permission_feature_enabled
 
@@ -28,10 +30,11 @@ SYSTEM_MODULE_CATALOG = [
 @transaction.atomic
 def ensure_builtin_rbac():
     permission_by_code = {}
+    created_permission_codes = set()
     for index, (code, name, category, description) in enumerate(PERMISSION_DEFINITIONS, start=1):
         if not permission_feature_enabled(code):
             continue
-        permission, _ = PermissionDefinition.objects.update_or_create(
+        permission, created = PermissionDefinition.objects.update_or_create(
             code=code,
             defaults={
                 'name': name,
@@ -42,9 +45,11 @@ def ensure_builtin_rbac():
             },
         )
         permission_by_code[code] = permission
+        if created:
+            created_permission_codes.add(code)
 
     for role_data in BUILTIN_ROLES:
-        role, _ = Role.objects.update_or_create(
+        role, created = Role.objects.get_or_create(
             code=role_data['code'],
             defaults={
                 'name': role_data['name'],
@@ -54,21 +59,34 @@ def ensure_builtin_rbac():
         )
         codes = role_data['permissions']
         if '*' in codes:
-            role.permissions.set(PermissionDefinition.objects.filter(code__in=permission_by_code))
+            desired = list(permission_by_code)
         else:
-            role.permissions.set([permission_by_code[code] for code in filter_feature_permissions(codes) if code in permission_by_code])
+            desired = [code for code in filter_feature_permissions(codes) if code in permission_by_code]
+        if created:
+            role.permissions.set([permission_by_code[code] for code in desired])
+        else:
+            # 已存在的内置角色只补齐新增权限，不覆盖管理员调整过的权限与名称
+            additions = [permission_by_code[code] for code in desired if code in created_permission_codes]
+            if additions:
+                role.permissions.add(*additions)
 
 
 @transaction.atomic
 def ensure_default_superuser():
+    if os.getenv('SXDEVOPS_SEED_ADMIN', '0') != '1':
+        return
     if User.objects.filter(is_superuser=True).exists():
         return
 
-    user = User.objects.create_superuser(
-        username=DEFAULT_ADMIN_USERNAME,
-        email=DEFAULT_ADMIN_EMAIL,
-        password=DEFAULT_ADMIN_PASSWORD,
-    )
+    try:
+        user = User.objects.create_superuser(
+            username=DEFAULT_ADMIN_USERNAME,
+            email=DEFAULT_ADMIN_EMAIL,
+            password=DEFAULT_ADMIN_PASSWORD,
+        )
+    except IntegrityError:
+        # 并发首个请求：另一个进程已创建
+        return
     role = Role.objects.filter(code='platform-admin').first()
     if role:
         role.users.add(user)
@@ -122,6 +140,13 @@ def user_has_permissions(user, codes):
     return all(code in granted for code in codes)
 
 
+def user_has_console_access(user, codes):
+    """WebSocket 控制台（SSH/Pod exec）专用：演示账号一律拒绝。"""
+    if is_demo_account(user):
+        return False
+    return user_has_permissions(user, codes)
+
+
 def get_permission_catalog():
     disabled_codes = [
         code
@@ -137,11 +162,14 @@ def get_builtin_role_catalog():
 
 @transaction.atomic
 def ensure_system_module_settings():
-    existing = {item.code: item for item in SystemModuleSetting.objects.all()}
-    for module in SYSTEM_MODULE_CATALOG:
-        setting = existing.get(module['code'])
-        if setting is None:
-            SystemModuleSetting.objects.create(code=module['code'], enabled=True)
+    existing_codes = set(SystemModuleSetting.objects.values_list('code', flat=True))
+    missing = [
+        SystemModuleSetting(code=module['code'], enabled=True)
+        for module in SYSTEM_MODULE_CATALOG
+        if module['code'] not in existing_codes
+    ]
+    if missing:
+        SystemModuleSetting.objects.bulk_create(missing, ignore_conflicts=True)
 
 
 def get_system_module_settings():

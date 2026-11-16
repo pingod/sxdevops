@@ -2,7 +2,12 @@
 from django.test import TestCase
 
 from .models import PermissionDefinition, Role, UserGroup
-from .services import DEMO_ACCOUNT_MUTATION_MESSAGE, ensure_builtin_rbac, get_user_effective_permissions
+from .services import (
+    DEMO_ACCOUNT_MUTATION_MESSAGE,
+    ensure_builtin_rbac,
+    get_user_effective_permissions,
+    user_has_console_access,
+)
 
 
 User = get_user_model()

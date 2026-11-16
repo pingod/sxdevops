@@ -26,6 +26,13 @@ class RBACPermission(BasePermission):
         codes = getattr(self, 'required_permissions', ())
         if not codes and hasattr(view, 'get_required_permissions'):
             codes = view.get_required_permissions()
+        if codes is None:
+            # 方法本身不被 view 允许时，把 405 留给框架，否则没有映射的 action 一律拒绝
+            allowed_methods = {str(item).lower() for item in (getattr(view, 'http_method_names', None) or [])}
+            if allowed_methods and request.method.lower() not in allowed_methods:
+                return True
+            self.message = f'未配置权限映射: {getattr(view, "action", None)}'
+            return False
         if isinstance(codes, str):
             codes = [codes]
         if not codes:
@@ -43,7 +50,14 @@ class RBACPermissionMixin:
     def get_required_permissions(self):
         mapping = getattr(self, 'rbac_permissions', {}) or {}
         action = getattr(self, 'action', None)
-        codes = mapping.get(action, mapping.get('*', []))
+        if not mapping:
+            return []
+        if action in mapping:
+            codes = mapping[action]
+        elif '*' in mapping:
+            codes = mapping['*']
+        else:
+            return None
         if isinstance(codes, str):
             return [codes]
         return list(codes or [])

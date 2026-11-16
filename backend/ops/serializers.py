@@ -1325,6 +1325,10 @@ class DeploymentSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        release_name = (attrs.get('release_name') or getattr(self.instance, 'release_name', '') or '').strip()
+        if release_name and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,80}', release_name):
+            raise serializers.ValidationError({'release_name': '发布名称只能包含字母、数字、点、下划线和中划线'})
+        attrs['release_name'] = release_name
         business_line = (attrs.get('business_line') or getattr(self.instance, 'business_line', '') or '').strip()
         environment = attrs.get('environment') or getattr(self.instance, 'environment', '')
         deploy_mode = attrs.get('deploy_mode') or getattr(self.instance, 'deploy_mode', 'docker_compose')

@@ -11,7 +11,7 @@ from rest_framework.authtoken.models import Token
 
 from ops.models import K8sCluster
 from ops.k8s_views import _get_k8s_client, _is_demo
-from rbac.services import user_has_permissions
+from rbac.services import user_has_console_access
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class K8sExecConsumer(WebsocketConsumer):
         if not token or not token.user.is_active:
             self.close(code=4401)
             return
-        if not user_has_permissions(token.user, ['ops.k8s.exec']):
+        if not user_has_console_access(token.user, ['ops.k8s.exec']):
             self.close(code=4403)
             return
         if not self.pod_name:

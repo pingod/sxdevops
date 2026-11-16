@@ -1,3 +1,5 @@
+import shlex
+
 import paramiko
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -79,17 +81,18 @@ def _deploy_domain_conf(domain_obj):
 
     try:
         client = _get_ssh_client(env)
-        _ssh_exec(client, f'mkdir -p {conf_dir} {disabled_dir}')
+        _ssh_exec(client, f'mkdir -p {shlex.quote(conf_dir)} {shlex.quote(disabled_dir)}')
 
         sftp = client.open_sftp()
         if domain_obj.enabled:
             with sftp.file(f'{conf_dir}/{filename}', 'w') as file_obj:
                 file_obj.write(conf_content)
-            _ssh_exec(client, f'rm -f {disabled_dir}/{filename}')
+            stale_path = f'{disabled_dir}/{filename}'
         else:
             with sftp.file(f'{disabled_dir}/{filename}', 'w') as file_obj:
                 file_obj.write(conf_content)
-            _ssh_exec(client, f'rm -f {conf_dir}/{filename}')
+            stale_path = f'{conf_dir}/{filename}'
+        _ssh_exec(client, f'rm -f {shlex.quote(stale_path)}')
         sftp.close()
 
         _ssh_exec(client, 'nginx -t && nginx -s reload')
@@ -105,13 +108,14 @@ def _push_cert_to_env(cert, env):
 
     try:
         client = _get_ssh_client(env)
-        _ssh_exec(client, f'mkdir -p {ssl_dir}')
+        _ssh_exec(client, f'mkdir -p {shlex.quote(ssl_dir)}')
         sftp = client.open_sftp()
         with sftp.file(f'{ssl_dir}/{cert.cert_filename}', 'w') as file_obj:
             file_obj.write(cert.cert_content)
         with sftp.file(f'{ssl_dir}/{cert.key_filename}', 'w') as file_obj:
             file_obj.write(cert.key_content)
-        _ssh_exec(client, f'chmod 600 {ssl_dir}/{cert.key_filename}')
+        key_path = f'{ssl_dir}/{cert.key_filename}'
+        _ssh_exec(client, f'chmod 600 {shlex.quote(key_path)}')
         sftp.close()
         client.close()
         return True, f'证书已推送到 {env.name} ({ssl_dir}/)'
@@ -125,7 +129,9 @@ def _remove_cert_from_env(cert, env):
 
     try:
         client = _get_ssh_client(env)
-        _ssh_exec(client, f'rm -f {ssl_dir}/{cert.cert_filename} {ssl_dir}/{cert.key_filename}')
+        cert_path = f'{ssl_dir}/{cert.cert_filename}'
+        key_path = f'{ssl_dir}/{cert.key_filename}'
+        _ssh_exec(client, f'rm -f {shlex.quote(cert_path)} {shlex.quote(key_path)}')
         client.close()
         return True, f'证书已从 {env.name} 删除'
     except Exception as exc:
