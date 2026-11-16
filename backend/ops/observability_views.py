@@ -516,6 +516,12 @@ def _grafana_meta():
         })
     has_dashboard_url = any(item.get('url') for item in dashboards)
     configured = bool(config.get('enabled') and (base_url or has_dashboard_url))
+    panel_count = 0
+    for item in dashboards:
+        try:
+            panel_count += max(0, int(item.get('panel_count') or 0))
+        except (TypeError, ValueError):
+            continue
     return {
         'enabled': bool(config.get('enabled')),
         'configured': configured,
@@ -524,7 +530,7 @@ def _grafana_meta():
         'url': base_url,
         'embed_url': _join_external_url(base_url, default_path) if base_url and default_path else (dashboards[0]['url'] if dashboards else base_url),
         'dashboard_count': len(dashboards),
-        'panel_count': sum(item['panel_count'] for item in dashboards),
+        'panel_count': panel_count,
         'datasource_count': 4,
         'folders': configured_folders,
         'dashboards': dashboards,
@@ -2330,7 +2336,8 @@ def _parse_promql_datetime(value, default):
             except ValueError:
                 parsed = default
     if timezone.is_naive(parsed):
-        parsed = timezone.make_aware(parsed, datetime_timezone.utc)
+        # 与本项目其它时间参数保持一致：无时区的输入按项目时区（Asia/Shanghai）解释。
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
 
 
@@ -4726,6 +4733,7 @@ def metrics_promql_query(request):
             start_time=request.data.get('start') or request.data.get('start_time'),
             end_time=request.data.get('end') or request.data.get('end_time'),
             step=request.data.get('step') or 60,
+            grafana_url=grafana_url,
             metric_datasource_id=request.data.get('metric_datasource_id') or request.data.get('datasource_id') or '',
             environment=request.data.get('environment') or '',
             prefer_metric_datasource=True,
@@ -4782,6 +4790,10 @@ def grafana_promql_query(request):
     range_query = str(request.data.get('range') or request.data.get('query_type') or '').lower() in {'1', 'true', 'range', 'query_range'}
     if request.data.get('range_query') is not None:
         range_query = bool(request.data.get('range_query'))
+    grafana_url = request.data.get('grafana_url') or ''
+    # 请求级 grafana_url 可把出站请求指向内网任意主机；只允许 Grafana 管理员覆盖。
+    if grafana_url and not user_has_permissions(request.user, ['ops.grafana.manage']):
+        grafana_url = ''
     try:
         payload = execute_promql_query(
             query,

@@ -218,9 +218,9 @@ def _build_payload(state):
                 {'key': 'elasticsearch', 'label': 'Elasticsearch', 'status': _module_status(es_alerts), 'alert_count': len(es_alerts)},
             ]
         },
-        'redis': {'summary': {'cluster_count': len(state['redis']['clusters']), 'instance_count': len(state['redis']['instances']), 'warning_count': len(redis_alerts), 'peak_qps': max(item['qps'] for item in state['redis']['instances']), 'hot_key_count': len(state['redis']['hot_keys']), 'module_status': _module_status(redis_alerts)}, 'alerts': redis_alerts, 'clusters': state['redis']['clusters'], 'instances': state['redis']['instances'], 'hot_keys': state['redis']['hot_keys'], 'events': state['redis']['events']},
-        'rocketmq': {'summary': {'cluster_count': len(state['rocketmq']['clusters']), 'broker_count': len(state['rocketmq']['brokers']), 'warning_count': len(rocketmq_alerts), 'peak_tps': max(item['tps'] for item in state['rocketmq']['brokers']), 'topic_count': len(state['rocketmq']['topics']), 'module_status': _module_status(rocketmq_alerts)}, 'alerts': rocketmq_alerts, 'clusters': state['rocketmq']['clusters'], 'brokers': state['rocketmq']['brokers'], 'consumer_groups': state['rocketmq']['consumer_groups'], 'topics': state['rocketmq']['topics'], 'events': state['rocketmq']['events']},
-        'elasticsearch': {'summary': {'cluster_count': len(state['elasticsearch']['clusters']), 'node_count': len(state['elasticsearch']['nodes']), 'warning_count': len(es_alerts), 'peak_qps': max(item['qps'] for item in state['elasticsearch']['clusters']), 'index_count': len(state['elasticsearch']['indices']), 'module_status': _module_status(es_alerts)}, 'alerts': es_alerts, 'clusters': state['elasticsearch']['clusters'], 'nodes': state['elasticsearch']['nodes'], 'indices': state['elasticsearch']['indices'], 'tasks': state['elasticsearch']['tasks'], 'events': state['elasticsearch']['events']},
+        'redis': {'summary': {'cluster_count': len(state['redis']['clusters']), 'instance_count': len(state['redis']['instances']), 'warning_count': len(redis_alerts), 'peak_qps': max((item['qps'] for item in state['redis']['instances']), default=0), 'hot_key_count': len(state['redis']['hot_keys']), 'module_status': _module_status(redis_alerts)}, 'alerts': redis_alerts, 'clusters': state['redis']['clusters'], 'instances': state['redis']['instances'], 'hot_keys': state['redis']['hot_keys'], 'events': state['redis']['events']},
+        'rocketmq': {'summary': {'cluster_count': len(state['rocketmq']['clusters']), 'broker_count': len(state['rocketmq']['brokers']), 'warning_count': len(rocketmq_alerts), 'peak_tps': max((item['tps'] for item in state['rocketmq']['brokers']), default=0), 'topic_count': len(state['rocketmq']['topics']), 'module_status': _module_status(rocketmq_alerts)}, 'alerts': rocketmq_alerts, 'clusters': state['rocketmq']['clusters'], 'brokers': state['rocketmq']['brokers'], 'consumer_groups': state['rocketmq']['consumer_groups'], 'topics': state['rocketmq']['topics'], 'events': state['rocketmq']['events']},
+        'elasticsearch': {'summary': {'cluster_count': len(state['elasticsearch']['clusters']), 'node_count': len(state['elasticsearch']['nodes']), 'warning_count': len(es_alerts), 'peak_qps': max((item['qps'] for item in state['elasticsearch']['clusters']), default=0), 'index_count': len(state['elasticsearch']['indices']), 'module_status': _module_status(es_alerts)}, 'alerts': es_alerts, 'clusters': state['elasticsearch']['clusters'], 'nodes': state['elasticsearch']['nodes'], 'indices': state['elasticsearch']['indices'], 'tasks': state['elasticsearch']['tasks'], 'events': state['elasticsearch']['events']},
     }
 
 
@@ -832,18 +832,24 @@ def middleware_action(request):
     action_name = request.data.get('action')
     target_id = request.data.get('target_id')
     payload = request.data.get('payload') or {}
+    if not isinstance(payload, dict):
+        return Response({'detail': 'payload must be an object.'}, status=400)
     is_targetless_action = str(action_name or '').startswith('create_') or action_name == 'import_template'
     if not module_name or not action_name or (not is_targetless_action and not target_id):
         return Response({'detail': 'module and action are required, and target_id is required for update, delete and runtime actions.'}, status=400)
     state = _get_demo_state()
-    if module_name == 'redis':
-        state, message = _redis_action(state, target_id, action_name, payload)
-    elif module_name == 'rocketmq':
-        state, message = _rocketmq_action(state, target_id, action_name, payload)
-    elif module_name == 'elasticsearch':
-        state, message = _elasticsearch_action(state, target_id, action_name, payload)
-    else:
-        return Response({'detail': 'Unsupported middleware module.'}, status=400)
+    try:
+        if module_name == 'redis':
+            state, message = _redis_action(state, target_id, action_name, payload)
+        elif module_name == 'rocketmq':
+            state, message = _rocketmq_action(state, target_id, action_name, payload)
+        elif module_name == 'elasticsearch':
+            state, message = _elasticsearch_action(state, target_id, action_name, payload)
+        else:
+            return Response({'detail': 'Unsupported middleware module.'}, status=400)
+    except (TypeError, ValueError) as exc:
+        # 数字字段来自表单，非数字时应返回 400 而不是把整个接口打成 500。
+        return Response({'detail': f'参数格式不正确: {exc}'}, status=400)
     if state is None:
         return Response({'detail': message}, status=400)
     _set_demo_state(state)

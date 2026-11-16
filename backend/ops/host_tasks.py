@@ -983,6 +983,9 @@ def _kubectl_command_steps(command, payload=None):
         steps.extend({'args': _strip_kubectl_binary(shlex.split(line))} for line in lines[1:])
         return steps
 
+    # 多行命令逐行执行；合并成一个 argv 会让 kubectl 把后续命令当成参数。
+    if len(lines) > 1:
+        return [{'args': _strip_kubectl_binary(shlex.split(line))} for line in lines]
     return [{'args': _strip_kubectl_binary(shlex.split(command))}]
 
 
@@ -1031,7 +1034,8 @@ def _run_k8s_cluster_command(task, cluster):
                 raise RuntimeError(error_output or output or f'kubectl exited with code {process.returncode}')
             if output or error_output:
                 outputs.append(output or error_output)
-        return output or error_output or '命令执行完成'
+        # 多步执行时保留每一步输出，否则 apply 的结果会被最后一条 get 覆盖。
+        return '\n'.join(outputs) or '命令执行完成'
     finally:
         for path in temporary_paths:
             try:

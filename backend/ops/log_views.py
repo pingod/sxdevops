@@ -138,7 +138,9 @@ def _resolve_provider_and_config(payload, user=None):
 
     if datasource_id:
         try:
-            datasource = LogDataSource.objects.get(pk=datasource_id)
+            datasource = LogDataSource.objects.get(pk=int(datasource_id))
+        except (TypeError, ValueError):
+            raise ProviderError('日志数据源 ID 不合法', status.HTTP_400_BAD_REQUEST) from None
         except LogDataSource.DoesNotExist as exc:
             raise ProviderError('日志数据源不存在', status.HTTP_404_NOT_FOUND) from exc
         if not datasource.is_enabled:
@@ -332,10 +334,24 @@ def _detect_level(message, attributes=None):
     return 'unknown'
 
 
+
+def _path_segment(value, label):
+    """用户可控的路径段（索引/日志库/标签）必须拒绝路径分隔符与穿越片段。"""
+    text = str(value or '').strip()
+    if not text:
+        raise ProviderError(f'{label} is required')
+    if len(text) > 256 or any(char in text for char in '/\\?#'):
+        raise ProviderError(f'{label} 包含非法字符')
+    return text
+
+
 def _normalize_ms(value, default):
     if value in (None, ''):
         return default
-    value = int(value)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ProviderError('start_ms/end_ms 必须是毫秒或秒时间戳') from None
     if value > 1_000_000_000_000:
         return value
     return value * 1000
@@ -1159,6 +1175,7 @@ def _catalog_loki(config, payload):
         label = payload.get('label')
         if not label:
             raise ProviderError('label is required for Loki label values')
+        label = _path_segment(label, 'label')
         data = _loki_request(config['endpoint'], f'/loki/api/v1/label/{label}/values', params)
         return {'kind': 'label_values', 'items': data.get('data', [])}
     data = _loki_request(config['endpoint'], '/loki/api/v1/labels', params)
@@ -1175,7 +1192,7 @@ def _catalog_elk(config, payload):
 
     if not config.get('endpoint'):
         raise ProviderError('ELK endpoint is required')
-    pattern = payload.get('index_pattern') or config.get('index_pattern') or '*'
+    pattern = _path_segment(payload.get('index_pattern') or config.get('index_pattern') or '*', 'index_pattern')
     data = _elk_request('GET', config.get('endpoint', ''), f'/_cat/indices/{pattern}', config, params={'format': 'json'})
     items = []
     for row in data:
@@ -1264,7 +1281,10 @@ def _query_loki(config, payload):
 
 
 def _query_elk(config, payload):
-    index_pattern = payload.get('source') or payload.get('index_pattern') or config.get('index_pattern') or '*'
+    index_pattern = _path_segment(
+        payload.get('source') or payload.get('index_pattern') or config.get('index_pattern') or '*',
+        'index_pattern',
+    )
     time_field = payload.get('time_field') or config.get('time_field') or '@timestamp'
     message_fields = _split_fields(payload.get('message_fields') or config.get('message_fields'), ['message', 'log', 'msg'])
     query = (payload.get('query') or '').strip()
@@ -1345,7 +1365,7 @@ def _query_elk(config, payload):
 
 
 def _query_sls(config, payload):
-    logstore = payload.get('source') or payload.get('logstore') or config.get('logstore') or 'demo-logstore'
+    logstore = _path_segment(payload.get('source') or payload.get('logstore') or config.get('logstore') or 'demo-logstore', 'logstore')
     query = (payload.get('query') or '').strip() or '*'
     start_ms, end_ms = _time_bounds(payload)
 

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 import re
 import shlex
@@ -81,7 +81,7 @@ def _is_demo_docker(deployment):
         return False
     description = str(getattr(docker_target, 'description', '') or '')
     image = str(getattr(deployment, 'image', '') or '')
-    return '婕旂ず' in description or image.startswith('registry.demo.local/')
+    return '演示' in description or image.startswith('registry.demo.local/')
 
 
 def _cmdb_status_for_deployment(deployment, override=None):
@@ -260,7 +260,7 @@ def sync_deployment_to_cmdb(deployment, override_status=None):
             source=ci,
             target=target_ci,
             relation_type='runs_on',
-            defaults={'description': '搴旂敤鍙戝竷鑷姩鍏宠仈鍙戝竷鐩爣'},
+            defaults={'description': '应用发布自动关联发布目标'},
         )
     return ci
 
@@ -632,15 +632,26 @@ def stop_service(deployment):
         deployment.save(update_fields=['deploy_log'])
         return deployment
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    if not docker_target:
+        deployment.deploy_log += '\n[ERROR] 发布目标已删除，无法继续操作'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
+    client = None
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        client = _get_ssh_client(docker_target)
+        exit_code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose stop 2>&1 || docker compose stop 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose stop exited with {exit_code}').strip())
         deployment.status = 'stopped'
         deployment.deploy_log += f'\n[SUCCESS] 应用已停止\n{out}{err}'
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 停止失败: {str(exc)}'
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'deploy_log', 'finished_at'])
     try:
@@ -670,16 +681,31 @@ def start_service(deployment):
             logger.exception('sync_deployment_to_cmdb error after start')
         return deployment
 
+    if not deployment.deploy_dir:
+        deployment.deploy_log += '\n[ERROR] 无发布目录，无法启动'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    if not docker_target:
+        deployment.deploy_log += '\n[ERROR] 发布目标已删除，无法继续操作'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
+    client = None
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
+        client = _get_ssh_client(docker_target)
+        exit_code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose start 2>&1 || docker compose start 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose start exited with {exit_code}').strip())
         deployment.status = 'running'
         deployment.deploy_log += f'\n[SUCCESS] 应用已启动\n{out}{err}'
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 启动失败: {str(exc)}'
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'deploy_log', 'finished_at'])
     try:
@@ -728,10 +754,21 @@ def remove_service(deployment):
             logger.exception('sync_deployment_to_cmdb error after remove')
         return deployment
 
+    if not deployment.deploy_dir:
+        deployment.deploy_log += '\n[ERROR] 无发布目录，无法下线'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
     docker_target = _docker_target(deployment)
-    client = _get_ssh_client(docker_target)
+    if not docker_target:
+        deployment.deploy_log += '\n[ERROR] 发布目标已删除，无法继续操作'
+        deployment.save(update_fields=['deploy_log'])
+        return deployment
+    client = None
     try:
-        _, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        client = _get_ssh_client(docker_target)
+        exit_code, out, err = _ssh_exec(client, f'cd {shlex.quote(deployment.deploy_dir)} && docker-compose down -v 2>&1 || docker compose down -v 2>&1')
+        if exit_code != 0:
+            raise RuntimeError((err or out or f'docker compose down exited with {exit_code}').strip())
         _ssh_exec(client, f'rm -rf {shlex.quote(deployment.deploy_dir)}')
         deployment.deploy_log += f'\n[SUCCESS] 应用已下线\n{out}{err}'
         deployment.status = 'removed'
@@ -739,7 +776,11 @@ def remove_service(deployment):
     except Exception as exc:
         deployment.deploy_log += f'\n[ERROR] 下线失败: {str(exc)}'
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
     deployment.finished_at = timezone.now()
     deployment.save(update_fields=['status', 'is_current', 'deploy_log', 'finished_at'])
     try:

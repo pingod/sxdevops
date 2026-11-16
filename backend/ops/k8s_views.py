@@ -88,6 +88,30 @@ class _K8sClientProxy:
         return attr
 
 
+def _k8s_job_status(item):
+    """K8s Job 的失败状态在 conditions/status.failed 里，不能只看 succeeded。"""
+    succeeded = item.status.succeeded or 0
+    completions = item.spec.completions or 1
+    if succeeded >= completions:
+        return 'Complete'
+    for condition in item.status.conditions or []:
+        if condition.type == 'Failed' and str(condition.status) == 'True':
+            return 'Failed'
+    return 'Failed' if (item.status.failed or 0) > 0 else 'Running'
+
+
+def _k8s_job_summary(item):
+    return {
+        'name': item.metadata.name,
+        'namespace': item.metadata.namespace,
+        'completions': f'{item.status.succeeded or 0}/{item.spec.completions or 1}',
+        'duration': '',
+        'status': _k8s_job_status(item),
+        'images': ', '.join([container.image for container in item.spec.template.spec.containers]),
+        'created': item.metadata.creation_timestamp.isoformat() if item.metadata.creation_timestamp else '',
+    }
+
+
 def _is_demo(cluster):
     return cluster.kubeconfig.strip() == 'demo'
 
@@ -367,13 +391,18 @@ def _get_cluster_server_version(cluster, k8s=None):
     try:
         if owns_client:
             k8s = _get_k8s_client(cluster)
-        version = k8s.VersionApi().get_code().git_version or ''
+        raw_version = k8s.VersionApi().get_code()
+        version = str(getattr(raw_version, 'git_version', '') or '')
     except Exception:
         logger.debug('Could not read Kubernetes server version for cluster %s', cluster.pk, exc_info=True)
     finally:
         if owns_client and k8s is not None:
             k8s.ApiClient().close()
-    cache.set(cache_key, version, K8S_SERVER_VERSION_CACHE_TTL if version else K8S_SERVER_VERSION_FAILURE_CACHE_TTL)
+    try:
+        cache.set(cache_key, version, K8S_SERVER_VERSION_CACHE_TTL if version else K8S_SERVER_VERSION_FAILURE_CACHE_TTL)
+    except Exception:
+        # 缓存不可用或版本值不可序列化时，不能连带让整个概览接口降级。
+        logger.debug('Could not cache Kubernetes server version for cluster %s', cluster.pk, exc_info=True)
     return version
 
 
@@ -686,15 +715,7 @@ def get_k8s_resource_snapshot(cluster, resource_type, namespaces=None):
         'jobs': (
             DEMO_JOBS,
             lambda batch_v1, namespace: batch_v1.list_job_for_all_namespaces().items if namespace == '_all' else batch_v1.list_namespaced_job(namespace=namespace).items,
-            lambda item: {
-                'name': item.metadata.name,
-                'namespace': item.metadata.namespace,
-                'completions': f'{item.status.succeeded or 0}/{item.spec.completions or 1}',
-                'duration': '',
-                'status': 'Complete' if (item.status.succeeded or 0) >= (item.spec.completions or 1) else 'Running',
-                'images': ', '.join([container.image for container in item.spec.template.spec.containers]),
-                'created': item.metadata.creation_timestamp.isoformat() if item.metadata.creation_timestamp else '',
-            },
+            _k8s_job_summary,
             'batch',
         ),
         'cronjobs': (
@@ -888,6 +909,36 @@ def _count_ready_nodes(nodes):
     return ready
 
 
+_ABNORMAL_WAITING_REASONS = {
+    'CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'InvalidImageName',
+    'CreateContainerConfigError', 'CreateContainerError', 'RunContainerError',
+    'OOMKilled', 'Error', 'ContainerCannotRun',
+}
+
+
+def _pod_is_abnormal(phase, pod):
+    """Running 只代表容器进程已启动；崩溃循环、镜像拉取失败、就绪探针失败都仍是 Running。"""
+    if phase not in ('Running', 'Succeeded'):
+        return True
+    if phase != 'Running':
+        return False
+    if isinstance(pod, dict):
+        containers = pod.get('containers') or []
+        for container in containers:
+            if isinstance(container, dict) and container.get('ready') is False:
+                return True
+        return str(pod.get('waiting_reason') or '') in _ABNORMAL_WAITING_REASONS
+    container_statuses = getattr(getattr(pod, 'status', None), 'container_statuses', None) or []
+    for container_status in container_statuses:
+        if not getattr(container_status, 'ready', False):
+            return True
+        state = getattr(container_status, 'state', None)
+        waiting = getattr(state, 'waiting', None) if state else None
+        if waiting and getattr(waiting, 'reason', '') in _ABNORMAL_WAITING_REASONS:
+            return True
+    return False
+
+
 def _pod_status_summary(pods):
     abnormal = 0
     restarting = 0
@@ -900,7 +951,7 @@ def _pod_status_summary(pods):
             status = pod.status.phase
             pod_restarts = sum(cs.restart_count for cs in (pod.status.container_statuses or []))
 
-        if status not in ('Running', 'Succeeded'):
+        if _pod_is_abnormal(status, pod):
             abnormal += 1
         if pod_restarts > 0:
             restarting += 1
@@ -1246,6 +1297,14 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
         _invalidate_cluster_runtime_cache(instance)
 
     def perform_update(self, serializer):
+        from rbac.k8s_access import get_k8s_grants
+        from rest_framework.exceptions import PermissionDenied
+        # 集群级授权用户只能使用既有连接，不能通过更新 kubeconfig/api_server
+        # 把平台请求指向任意主机，从而越过授权边界。
+        if get_k8s_grants(self.request.user) is not None and (
+            {'kubeconfig', 'api_server'} & set(serializer.validated_data)
+        ):
+            raise PermissionDenied('指定集群授权的用户不能修改集群连接信息。')
         instance = serializer.save()
         cache.delete_many([_server_version_cache_key(instance.pk), _summary_stale_cache_key(instance.pk)])
         _invalidate_cluster_runtime_cache(instance)
@@ -1300,7 +1359,7 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
             return Response({
                 'status': cluster.status, 'scoped': True, 'nodes_total': 0, 'nodes_ready': 0,
                 'server_version': _get_cluster_server_version(cluster),
-                'pods_total': len(pods), 'pods_abnormal': sum(item.get('status') not in {'Running', 'Succeeded'} for item in pods),
+                'pods_total': len(pods), 'pods_abnormal': sum(_pod_is_abnormal(item.get('status'), item) for item in pods),
                 'total_restarts': sum(item.get('restarts', 0) for item in pods),
                 'workloads_total': len(workloads), 'pvcs_pending': sum(item.get('status') != 'Bound' for item in pvcs), 'alerts': [],
             })
@@ -1624,12 +1683,7 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
                 batch_v1 = k8s.BatchV1Api()
                 items = (batch_v1.list_job_for_all_namespaces() if namespace == '_all'
                          else batch_v1.list_namespaced_job(namespace=namespace)).items
-                return [{'name': i.metadata.name, 'namespace': i.metadata.namespace,
-                         'completions': f'{i.status.succeeded or 0}/{i.spec.completions or 1}',
-                         'duration': '', 'status': 'Complete' if (i.status.succeeded or 0) >= (i.spec.completions or 1) else 'Running',
-                         'images': ', '.join([c.image for c in i.spec.template.spec.containers]),
-                         'created': i.metadata.creation_timestamp.isoformat() if i.metadata.creation_timestamp else ''
-                         } for i in items]
+                return [_k8s_job_summary(i) for i in items]
 
             data = _get_or_set_resource_cache(cluster, 'jobs', namespace, loader)
             return Response(data)
@@ -1918,10 +1972,19 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
             v1.replace_namespaced_config_map(name, namespace, body)
         else:
             body = v1.read_namespaced_secret(name, namespace)
-            body.data = {
-                key: base64.b64encode(value.encode('utf-8')).decode('utf-8')
-                for key, value in data.items()
-            }
+            encoded = {}
+            for key, value in data.items():
+                original = (body.data or {}).get(key)
+                if value == '' and original:
+                    # 二进制内容无法按 UTF-8 解码时 UI 会收到空串；原样保留 base64，
+                    # 避免用户只改其他键就把 JKS/PKCS#12 等二进制值覆盖成空。
+                    try:
+                        base64.b64decode(original).decode('utf-8')
+                    except Exception:
+                        encoded[key] = original
+                        continue
+                encoded[key] = base64.b64encode(value.encode('utf-8')).decode('utf-8')
+            body.data = encoded
             v1.replace_namespaced_secret(name, namespace, body)
         refreshed = self._get_live_config_resource(cluster, resource_type, namespace, name)
         refreshed['updated_by'] = username
@@ -2001,7 +2064,13 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
             }
             if container:
                 kwargs['container'] = container
-            output = stream(v1.connect_get_namespaced_pod_exec, **kwargs)
+            # kubernetes.stream.stream() 在 _preload_content=False 时返回 WSClient，
+            # 必须自行读取输出并关闭，否则既不能序列化响应也会泄漏 exec 连接。
+            response_stream = stream(v1.connect_get_namespaced_pod_exec, **kwargs)
+            try:
+                output = response_stream.read_all()
+            finally:
+                response_stream.close()
             return Response({
                 'success': True,
                 'pod_name': pod_name,
@@ -2143,6 +2212,10 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
         revision_id = request.query_params.get('revision_id')
         if resource_type not in ('configmap', 'secret') or not name or not revision_id:
             return Response({'detail': 'Valid type, name and revision_id are required'}, status=400)
+        try:
+            revision_id = int(revision_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'revision_id must be an integer'}, status=400)
 
         revision = _config_revision_queryset(cluster, resource_type, namespace, name).filter(id=revision_id).first()
         if not revision:
@@ -2213,6 +2286,10 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
         revision_id = request.data.get('revision_id')
         if resource_type not in ('configmap', 'secret') or not name or not revision_id:
             return Response({'detail': 'Valid type, name and revision_id are required'}, status=400)
+        try:
+            revision_id = int(revision_id)
+        except (TypeError, ValueError):
+            return Response({'detail': 'revision_id must be an integer'}, status=400)
 
         revision = _config_revision_queryset(cluster, resource_type, namespace, name).filter(id=revision_id).first()
         if not revision:
@@ -2415,6 +2492,9 @@ class K8sClusterViewSet(K8sAccessMixin, K8sResourceMixin, RBACPermissionMixin, v
         workload_type = request.query_params.get('workload_type', '')
         workload_name = request.query_params.get('name', '')
         namespace = request.query_params.get('namespace', 'default')
+        if workload_type not in {'deployment', 'statefulset', 'daemonset', 'job', 'cronjob'}:
+            # 未知类型不能退回空 selector，否则会把整个命名空间的 Pod 当成该工作负载的副本。
+            return Response({'detail': '不支持的工作负载类型。'}, status=400)
 
         if _is_demo(cluster):
             # Demo: match pods whose name starts with the workload name

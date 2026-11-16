@@ -1,5 +1,6 @@
 import re
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -8,7 +9,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from cmdb.models import CIRelation, ConfigItem, ResourceNode
 
-from .host_task_schedules import CronExpressionError, compute_next_run, preview_next_runs, validate_cron_expression
+from .host_task_schedules import compute_next_run, preview_next_runs, validate_cron_expression
 from .grafana_urls import validate_grafana_url
 from .models import (
     Alert,
@@ -146,19 +147,29 @@ def validate_schedule_definition(attrs, instance=None):
     interval_seconds = attrs.get('interval_seconds') if 'interval_seconds' in attrs else getattr(instance, 'interval_seconds', None)
     run_at = attrs.get('run_at') if 'run_at' in attrs else getattr(instance, 'run_at', None)
 
+    try:
+        ZoneInfo(str(timezone_name or '').strip() or 'Asia/Shanghai')
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        raise serializers.ValidationError({'timezone': f'未知的时区: {timezone_name}'}) from None
+
     if schedule_type == HostTaskSchedule.SCHEDULE_TYPE_CRON:
         if not str(cron_expression).strip():
             raise serializers.ValidationError({'cron_expression': '请填写 Cron 表达式'})
         try:
             validate_cron_expression(cron_expression)
-        except CronExpressionError as exc:
+        except ValueError as exc:
             raise serializers.ValidationError({'cron_expression': str(exc)}) from exc
         attrs['interval_seconds'] = None
     elif schedule_type == HostTaskSchedule.SCHEDULE_TYPE_INTERVAL:
-        if not interval_seconds:
+        if interval_seconds in (None, ''):
             raise serializers.ValidationError({'interval_seconds': '请填写间隔秒数'})
-        if int(interval_seconds) < 60:
+        try:
+            interval_value = int(interval_seconds)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({'interval_seconds': '间隔秒数必须是整数'}) from None
+        if interval_value < 60:
             raise serializers.ValidationError({'interval_seconds': '间隔任务至少间隔 60 秒'})
+        attrs['interval_seconds'] = interval_value
         attrs['cron_expression'] = ''
     elif schedule_type == HostTaskSchedule.SCHEDULE_TYPE_ONCE:
         if not run_at:
@@ -263,6 +274,15 @@ class TaskResourceGroupSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'parent': '系统的上级节点必须是环境'})
         else:
             raise serializers.ValidationError({'group_type': '不支持的节点类型'})
+        duplicate = TaskResourceGroup.objects.filter(
+            group_type=group_type,
+            parent=attrs.get('parent'),
+            name=attrs['name'],
+        )
+        if self.instance is not None:
+            duplicate = duplicate.exclude(pk=self.instance.pk)
+        if duplicate.exists():
+            raise serializers.ValidationError({'name': '同一层级下已存在同名节点'})
         return attrs
 
 
@@ -1058,6 +1078,14 @@ class DeploymentApprovalFlowSerializer(serializers.ModelSerializer):
     def validate_nodes(self, value):
         if not value:
             raise serializers.ValidationError('至少需要配置一个审批节点')
+        # 顺序缺省时按提交顺序补齐，避免后续 sorted()/item['order'] 抛 KeyError 造成 500。
+        for index, item in enumerate(value, start=1):
+            if item.get('order') in (None, ''):
+                item['order'] = index
+            try:
+                item['order'] = int(item['order'])
+            except (TypeError, ValueError):
+                raise serializers.ValidationError('审批节点顺序必须是整数') from None
         orders = [item.get('order') for item in value]
         if len(set(orders)) != len(orders):
             raise serializers.ValidationError('审批节点顺序不能重复')
@@ -1079,7 +1107,7 @@ class DeploymentApprovalFlowSerializer(serializers.ModelSerializer):
             DeploymentApprovalNode(
                 flow=instance,
                 name=item['name'],
-                order=item['order'],
+                order=item.get('order'),
                 approver_type=item.get('approver_type') or 'user',
                 approver_value=item.get('approver_value', ''),
                 description=item.get('description', ''),
@@ -2171,7 +2199,13 @@ class GrafanaSettingSerializer(serializers.ModelSerializer):
         for item in value:
             if not isinstance(item, dict):
                 raise serializers.ValidationError('dashboards 中的每一项都必须为对象')
-            normalized.append(item)
+            entry = dict(item)
+            if 'panel_count' in entry:
+                try:
+                    entry['panel_count'] = max(0, int(entry.get('panel_count') or 0))
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError('dashboards 中的 panel_count 必须为非负整数') from None
+            normalized.append(entry)
         return normalized
 
     def validate_folders(self, value):
@@ -2243,6 +2277,9 @@ class NginxCertificateSerializer(serializers.ModelSerializer):
         return [{'id': item.id, 'name': item.name} for item in obj.environments.all()]
 
 
+NGINX_DOMAIN_PATTERN = re.compile(r'^(\*\.)?[A-Za-z0-9_]([A-Za-z0-9_.-]{0,251}[A-Za-z0-9_])?$')
+
+
 class NginxDomainSerializer(serializers.ModelSerializer):
     environment_name = serializers.CharField(source='environment.name', read_only=True)
     ssl_enabled = serializers.BooleanField(read_only=True)
@@ -2251,6 +2288,13 @@ class NginxDomainSerializer(serializers.ModelSerializer):
     class Meta:
         model = NginxDomain
         fields = '__all__'
+
+    def validate_domain(self, value):
+        domain = str(value or '').strip()
+        # 该字段会参与远端 shell 路径拼接（conf 文件名），只允许域名/IP 字符。
+        if not domain or len(domain) > 253 or not NGINX_DOMAIN_PATTERN.fullmatch(domain) or '..' in domain:
+            raise serializers.ValidationError('域名格式不正确，只允许字母、数字、点、下划线和连字符')
+        return domain
 
 
 class NginxRouteSerializer(serializers.ModelSerializer):

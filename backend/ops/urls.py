@@ -9,6 +9,7 @@ from . import k8s_views
 from . import observability_views
 from . import rum_views
 from . import webshell_views
+from . import middleware_views
 from sxdevops.features import is_system_posture_enabled
 
 router = DefaultRouter()
@@ -80,6 +81,8 @@ urlpatterns = [
     path('observability/tracing/catalog/', observability_views.observability_tracing_catalog, name='observability-tracing-catalog'),
     path('observability/tracing/search/', observability_views.observability_tracing_search, name='observability-tracing-search'),
     path('observability/tracing/traces/<str:trace_id>/', observability_views.observability_trace_detail, name='observability-trace-detail'),
+    path('middleware/overview/', middleware_views.middleware_overview, name='middleware-overview'),
+    path('middleware/action/', middleware_views.middleware_action, name='middleware-action'),
 
     path('', include(router.urls)),
 ]

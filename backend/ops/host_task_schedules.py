@@ -64,7 +64,10 @@ def _cron_value(value, aliases=None):
     value = str(value).strip().lower()
     if aliases and value in aliases:
         return aliases[value]
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise CronExpressionError(f'Cron 字段包含非法值: {value}') from None
 
 
 def _expand_cron_field(field, minimum, maximum, aliases=None):
@@ -78,7 +81,10 @@ def _expand_cron_field(field, minimum, maximum, aliases=None):
             continue
         if '/' in part:
             base, step_text = part.split('/', 1)
-            step = int(step_text)
+            try:
+                step = int(step_text)
+            except (TypeError, ValueError):
+                raise CronExpressionError(f'Cron 步长必须是整数: {step_text}') from None
             if step <= 0:
                 raise CronExpressionError('Cron 步长必须大于 0')
         else:

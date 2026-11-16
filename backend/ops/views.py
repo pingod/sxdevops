@@ -159,6 +159,29 @@ def _match_step_approver(user, step):
     return True
 
 
+def _is_production_environment(value):
+    text = str(value or '').strip().lower()
+    if not text:
+        return False
+    return text in {'prod', 'production', '生产', '生产环境'} or '生产' in text or text.startswith('prod')
+
+
+def _target_is_production(item):
+    environment = getattr(item, 'environment', '')
+    if isinstance(environment, str):
+        return _is_production_environment(environment)
+    # TaskResource.environment 是 TaskResourceGroup 外键，名称/编码或事件中心环境都可能表示生产。
+    if environment is None:
+        return False
+    candidates = [
+        getattr(environment, 'code', ''),
+        getattr(environment, 'name', ''),
+        getattr(getattr(environment, 'event_environment', None), 'code', ''),
+        getattr(getattr(environment, 'event_environment', None), 'name', ''),
+    ]
+    return any(_is_production_environment(value) for value in candidates)
+
+
 def _apply_system_alias_filter(request, queryset, *fields):
     system_name = (request.query_params.get('system_name') or request.query_params.get('system') or '').strip()
     if not system_name:
@@ -805,7 +828,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if any(keyword in command for keyword in destructive_keywords):
             return HostTask.RISK_CRITICAL
         if task_type in [HostTask.TASK_RUN_COMMAND, HostTask.TASK_RUN_PLAYBOOK]:
-            if len(hosts) > 20 or any(host.environment == 'prod' for host in hosts):
+            if len(hosts) > 20 or any(_target_is_production(host) for host in hosts):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
         if task_type == HostTask.TASK_K8S_SCALE_WORKLOAD:
@@ -816,7 +839,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             if any((target.get('namespace') or '') in ['prod', 'production'] for target in k8s_targets):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
-        if any(host.environment == 'prod' for host in hosts):
+        if any(_target_is_production(host) for host in hosts):
             return HostTask.RISK_MEDIUM
         return HostTask.RISK_LOW
 
@@ -1123,12 +1146,20 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if not tasks:
             return Response({'detail': '\u6ca1\u6709\u53ef\u7ec8\u6b62\u7684\u4efb\u52a1'}, status=status.HTTP_400_BAD_REQUEST)
         now = timezone.now()
+        pending_ids = [task.id for task in tasks if task.status == HostTask.STATUS_PENDING]
         queryset.update(
             cancel_requested=True,
             cancel_requested_by=request.user.username,
             cancel_requested_at=now,
             summary='\u5df2\u6279\u91cf\u63d0\u4ea4\u7ec8\u6b62\u8bf7\u6c42\uff0c\u7b49\u5f85\u6267\u884c\u5668\u505c\u6b62\u4efb\u52a1',
         )
+        if pending_ids:
+            # 待执行任务不会被执行器消费，必须立即落为已取消，否则永久卡在“待执行”。
+            HostTask.objects.filter(id__in=pending_ids).update(
+                status=HostTask.STATUS_CANCELED,
+                lifecycle_status=HostTask.LIFECYCLE_CANCELED,
+                updated_at=now,
+            )
         record_event(
             request=request,
             module='ops',
@@ -1563,7 +1594,8 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
         deployment.status = 'rejected'
         deployment.approver = request.user.username
         deployment.approval_comment = comment
-        deployment.approved_at = timezone.now()
+        # 驳回不是审批通过，不能留下 approved_at，否则报表会把被驳回的发布当成已批准。
+        deployment.approved_at = None
         deployment.save(update_fields=['approval_status', 'status', 'approver', 'approval_comment', 'approved_at'])
         record_event(
             request=request,
@@ -1959,9 +1991,11 @@ class AlertViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mod
     def mute(self, request, pk=None):
         try:
             mute_minutes = int(request.data.get('minutes') or 60)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             mute_minutes = 60
-        return self._action_response(request, AlertAction.ACTION_MUTE, note=request.data.get('note', ''), mute_minutes=max(mute_minutes, 1))
+        # timedelta 对超大分钟数会抛 OverflowError；屏蔽时长上限一年。
+        mute_minutes = min(max(mute_minutes, 1), 525600)
+        return self._action_response(request, AlertAction.ACTION_MUTE, note=request.data.get('note', ''), mute_minutes=mute_minutes)
 
     @action(detail=True, methods=['post'])
     def escalate(self, request, pk=None):
