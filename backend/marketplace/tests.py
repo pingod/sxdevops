@@ -279,3 +279,34 @@ class MarketplaceSeedTemplatesTests(TestCase):
 
         mock_table_description.assert_called_once()
         self.assertEqual(ServiceDeployment.objects.get().host_id, host.id)
+
+
+class TemplatePresetEscapingTests(TestCase):
+    def test_env_value_cannot_inject_extra_yaml_documents(self):
+        import yaml
+
+        from marketplace.template_presets import build_k8s_manifest
+
+        manifest = build_k8s_manifest(
+            name='demo',
+            image='nginx:1.25',
+            ports=[{'name': 'http', 'port': 80, 'target_port': 80}],
+            env={'DEMO_TOKEN': 'a"\n---\nkind: Secret\nmetadata:\n  name: injected'},
+        )
+
+        documents = list(yaml.safe_load_all(deployer._render_template(
+            manifest,
+            {'release_name': 'demo', 'replicas': 1, 'namespace': 'default'},
+        )))
+        self.assertEqual([doc['kind'] for doc in documents], ['Deployment', 'Service'])
+        self.assertNotIn('Secret', [doc['kind'] for doc in documents])
+        values = documents[0]['spec']['template']['spec']['containers'][0]['env']
+        self.assertEqual(values[0]['value'], 'a"\n---\nkind: Secret\nmetadata:\n  name: injected')
+
+    def test_render_template_strips_newlines_from_context(self):
+        rendered = deployer._render_template(
+            'value: {{DEMO_TOKEN}}\n',
+            {'DEMO_TOKEN': 'a\n---\nkind: Secret'},
+        )
+
+        self.assertEqual(rendered, 'value: a---kind: Secret\n')
