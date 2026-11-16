@@ -1,12 +1,16 @@
-﻿"""
+"""
 数据库执行器
-支持 MySQL、PolarDB 与 MongoDB。
+支持 MySQL、PostgreSQL 与 MongoDB。
 """
 import json
+import re
 import time
 
 import pymysql
-from pymysql.cursors import DictCursor
+import psycopg
+import sqlparse
+from psycopg.rows import dict_row
+from pymysql.cursors import DictCursor, SSDictCursor
 
 try:
     from pymongo import MongoClient
@@ -14,7 +18,7 @@ except ImportError:  # pragma: no cover
     MongoClient = None
 
 
-MYSQL_LIKE_TYPES = {'mysql', 'polardb'}
+MYSQL_LIKE_TYPES = {'mysql'}
 MONGODB_TYPE = 'mongodb'
 MYSQL_SYSTEM_DATABASES = {'information_schema', 'mysql', 'performance_schema', 'sys'}
 MONGODB_SYSTEM_DATABASES = {'admin', 'config', 'local'}
@@ -27,7 +31,7 @@ MONGODB_WRITE_ACTIONS = {
     'createindex', 'dropindex',
 }
 DEMO_DATASOURCE_PROFILES = {
-    'commerce-prod-polardb': {
+    'commerce-prod-postgresql': {
         'message': '演示数据源连接正常（模拟）',
         'databases': ['order_center', 'payment_center', 'member_center'],
     },
@@ -50,24 +54,77 @@ def _get_demo_profile(datasource):
     return DEMO_DATASOURCE_PROFILES.get(getattr(datasource, 'name', ''))
 
 
+MONGODB_FORBIDDEN_OPERATORS = {'$out', '$merge', '$function', '$accumulator', '$where'}
+
+
+def _find_mongodb_forbidden(node):
+    """递归查找只读查询里不应出现的写阶段/服务端脚本操作符。"""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in MONGODB_FORBIDDEN_OPERATORS:
+                return key
+            found = _find_mongodb_forbidden(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_mongodb_forbidden(item)
+            if found:
+                return found
+    return ''
+
+
 def validate_query_content(datasource, sql_content):
     db_type = _get_db_type(datasource)
     if db_type == MONGODB_TYPE:
         try:
-            action, _ = _parse_mongodb_command(sql_content)
+            action, payload = _parse_mongodb_command(sql_content)
         except ValueError as exc:
             return str(exc)
         if action not in MONGODB_READ_ACTIONS:
             return 'MongoDB 查询仅允许 find / aggregate / count / distinct 命令'
+        # $out/$merge 会写库，$function/$accumulator/$where 可执行服务端 JS，均不属于只读查询。
+        forbidden = _find_mongodb_forbidden(payload)
+        if forbidden:
+            return f'MongoDB 只读查询不允许使用 {forbidden}'
         return None
 
-    upper = sql_content.strip().upper()
+    if db_type == 'postgresql':
+        statements = sqlparse.parse(sql_content or '')
+        if len(statements) != 1:
+            return 'PostgreSQL 查询仅允许一条 SELECT / WITH / SHOW 只读语句'
+        statement = statements[0]
+        if statement.get_type() != 'SELECT' and not str(statement).lstrip().upper().startswith('SHOW '):
+            return 'PostgreSQL 查询仅允许 SELECT / WITH / SHOW 只读语句'
+        for token in statement.flatten():
+            if token.ttype in sqlparse.tokens.Keyword.DML and token.normalized != 'SELECT':
+                return 'PostgreSQL 查询不允许在 WITH 中执行写入操作'
+            if token.ttype in sqlparse.tokens.Keyword and token.normalized in {'INTO', 'FOR UPDATE', 'FOR SHARE'}:
+                return 'PostgreSQL 查询不允许写入或加行锁'
+        return None
+
+    # MySQL 会把 /* */ 当成 token 之间的空白，只压空白会漏掉 INTO/**/OUTFILE 这类写法。
+    try:
+        cleaned = sqlparse.format(sql_content, strip_comments=True)
+    except Exception:
+        cleaned = sql_content
+    upper = cleaned.strip().upper()
     if not upper.startswith('SELECT') and not upper.startswith('SHOW') and not upper.startswith('DESC'):
         return '查询工单只允许 SELECT / SHOW / DESC 语句'
+    # 与 PostgreSQL 对齐：拦截文件读写/加锁等“只读查询”不该具备的能力。
+    compact = re.sub(r'\s+', ' ', upper)
+    no_space = compact.replace(' ', '')
+    if (re.search(r'\bINTO\s+(OUTFILE|DUMPFILE)\b', compact)
+            or 'LOAD_FILE(' in no_space
+            or 'FORUPDATE' in no_space
+            or 'FORSHARE' in no_space):
+        return '查询工单不允许 INTO OUTFILE/DUMPFILE、LOAD_FILE 或加行锁等操作'
     return None
 
 
 def test_connection(datasource):
+    if not getattr(datasource, 'is_active', True):
+        return False, '数据源已停用'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return True, demo_profile['message']
@@ -75,6 +132,8 @@ def test_connection(datasource):
     db_type = _get_db_type(datasource)
     if db_type in MYSQL_LIKE_TYPES:
         return _test_mysql_connection(datasource)
+    if db_type == 'postgresql':
+        return _test_postgresql_connection(datasource)
     if db_type == MONGODB_TYPE:
         return _test_mongodb_connection(datasource)
     return False, f'暂不支持的数据源类型: {db_type}'
@@ -88,12 +147,16 @@ def get_databases(datasource):
     db_type = _get_db_type(datasource)
     if db_type in MYSQL_LIKE_TYPES:
         return _get_mysql_databases(datasource)
+    if db_type == 'postgresql':
+        return _get_postgresql_databases(datasource)
     if db_type == MONGODB_TYPE:
         return _get_mongodb_databases(datasource)
     return []
 
 
 def execute_sql(datasource, database, sql_content):
+    if not getattr(datasource, 'is_active', True):
+        return False, 0, 0, '数据源已停用，禁止执行 SQL'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return _execute_demo_sql(datasource, database, sql_content)
@@ -101,12 +164,16 @@ def execute_sql(datasource, database, sql_content):
     db_type = _get_db_type(datasource)
     if db_type in MYSQL_LIKE_TYPES:
         return _execute_mysql_sql(datasource, database, sql_content)
+    if db_type == 'postgresql':
+        return _execute_postgresql_sql(datasource, database, sql_content)
     if db_type == MONGODB_TYPE:
         return _execute_mongodb_write(datasource, database, sql_content)
     return False, 0, 0, f'暂不支持的数据源类型: {db_type}'
 
 
 def execute_query(datasource, database, sql_content, limit=200):
+    if not getattr(datasource, 'is_active', True):
+        return False, [], [], 0, 0, '数据源已停用，禁止执行查询'
     demo_profile = _get_demo_profile(datasource)
     if demo_profile:
         return _execute_demo_query(datasource, database, sql_content, limit)
@@ -114,12 +181,14 @@ def execute_query(datasource, database, sql_content, limit=200):
     db_type = _get_db_type(datasource)
     if db_type in MYSQL_LIKE_TYPES:
         return _execute_mysql_query(datasource, database, sql_content, limit)
+    if db_type == 'postgresql':
+        return _execute_postgresql_query(datasource, database, sql_content, limit)
     if db_type == MONGODB_TYPE:
         return _execute_mongodb_query(datasource, database, sql_content, limit)
     return False, [], [], 0, 0, f'暂不支持的数据源类型: {db_type}'
 
 
-def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, autocommit=None, timeout=5):
+def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, autocommit=None, timeout=5, read_timeout=None):
     kwargs = {
         'host': datasource.host,
         'port': datasource.port,
@@ -128,6 +197,8 @@ def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, aut
         'charset': datasource.charset,
         'connect_timeout': timeout,
     }
+    if read_timeout:
+        kwargs['read_timeout'] = read_timeout
     if database:
         kwargs['database'] = database
     if cursorclass:
@@ -168,7 +239,7 @@ def _execute_mysql_sql(datasource, database, sql_content):
         logs = []
         try:
             with conn.cursor() as cursor:
-                statements = [statement.strip() for statement in sql_content.split(';') if statement.strip()]
+                statements = [statement.strip() for statement in sqlparse.split(sql_content) if statement.strip()]
                 for index, statement in enumerate(statements, 1):
                     cursor.execute(statement)
                     affected = cursor.rowcount
@@ -193,26 +264,123 @@ def _execute_mysql_sql(datasource, database, sql_content):
 
 def _execute_mysql_query(datasource, database, sql_content, limit):
     start = time.time()
+    conn = None
     try:
+        # 流式游标：execute 不再把整个结果集读进内存，fetchmany(limit) 才真正限量；
+        # 同时加读超时与会话级最长执行时间，避免 SELECT SLEEP()/大表拖死 worker。
         conn = pymysql.connect(
             **_build_mysql_connect_kwargs(
                 datasource,
                 database=database,
-                cursorclass=DictCursor,
+                cursorclass=SSDictCursor,
                 timeout=10,
+                read_timeout=60,
             ),
         )
         with conn.cursor() as cursor:
+            try:
+                cursor.execute('SET SESSION max_execution_time=30000')
+            except pymysql.Error:
+                pass
             cursor.execute(sql_content)
             rows = cursor.fetchmany(limit)
-            count = cursor.rowcount
+            count = cursor.rowcount if cursor.rowcount is not None and cursor.rowcount >= 0 else len(rows)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-        conn.close()
         duration = int((time.time() - start) * 1000)
         return True, columns, rows, count, duration, None
     except Exception as exc:
         duration = int((time.time() - start) * 1000)
         return False, [], [], 0, duration, str(exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _postgresql_connect_kwargs(datasource, database=None):
+    return {
+        'host': datasource.host,
+        'port': datasource.port,
+        'user': datasource.user,
+        'password': datasource.password,
+        'dbname': database or getattr(datasource, 'database', '') or 'postgres',
+        'connect_timeout': 10,
+        'client_encoding': 'UTF8',
+    }
+
+
+def _test_postgresql_connection(datasource):
+    try:
+        with psycopg.connect(**_postgresql_connect_kwargs(datasource)) as conn:
+            conn.execute('SELECT 1').fetchone()
+        return True, '连接成功'
+    except Exception as exc:
+        return False, f'连接失败: {exc}'
+
+
+def _get_postgresql_databases(datasource):
+    try:
+        with psycopg.connect(**_postgresql_connect_kwargs(datasource)) as conn:
+            rows = conn.execute(
+                "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate "
+                "AND has_database_privilege(current_user, oid, 'CONNECT') ORDER BY datname"
+            ).fetchall()
+            return [row[0] for row in rows]
+    except Exception:
+        return []
+
+
+def _execute_postgresql_sql(datasource, database, sql_content):
+    start = time.monotonic()
+    try:
+        statements = sqlparse.split(sql_content or '')
+        if not statements:
+            raise ValueError('SQL 内容不能为空')
+        # The executor owns the transaction: user statements must not commit a partial order.
+        for statement in statements:
+            parsed = sqlparse.parse(statement)[0]
+            tokens = [token for token in parsed.flatten() if not token.is_whitespace
+                      and token.ttype not in sqlparse.tokens.Comment]
+            first = tokens[0].normalized if tokens else ''
+            if first in {'BEGIN', 'START', 'COMMIT', 'END', 'ROLLBACK', 'ABORT', 'PREPARE', 'SAVEPOINT', 'RELEASE'}:
+                raise ValueError('工单事务由平台管理，不允许自行提交、回滚或准备事务')
+        logs = []
+        affected_rows = 0
+        with psycopg.connect(**_postgresql_connect_kwargs(datasource, database)) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SET LOCAL statement_timeout = '60s'")
+                for index, statement in enumerate(statements, 1):
+                    cursor.execute(statement)
+                    affected = max(cursor.rowcount, 0)
+                    affected_rows += affected
+                    logs.append(f'语句 #{index}: 影响 {affected} 行')
+        return True, affected_rows, int((time.monotonic() - start) * 1000), '\n'.join(logs)
+    except Exception as exc:
+        return False, 0, int((time.monotonic() - start) * 1000), f'执行失败（事务已回滚）: {exc}'
+
+
+def _execute_postgresql_query(datasource, database, sql_content, limit):
+    start = time.monotonic()
+    error = validate_query_content(datasource, sql_content)
+    if error:
+        return False, [], [], 0, 0, error
+    try:
+        with psycopg.connect(**_postgresql_connect_kwargs(datasource, database), row_factory=dict_row) as conn:
+            with conn.cursor() as control:
+                # A server-enforced read-only transaction also blocks writes hidden in CTEs/functions.
+                control.execute('SET TRANSACTION READ ONLY')
+                control.execute("SET LOCAL statement_timeout = '30s'")
+            # A server cursor limits transferred rows instead of buffering a large SELECT in Python.
+            statement = sqlparse.parse(sql_content)[0]
+            with conn.cursor(name='sqlaudit_query' if statement.get_type() == 'SELECT' else '') as cursor:
+                cursor.execute(sql_content)
+                rows = cursor.fetchmany(max(1, min(int(limit), 2000)))
+                columns = [column.name for column in cursor.description] if cursor.description else []
+        return True, columns, rows, len(rows), int((time.monotonic() - start) * 1000), None
+    except Exception as exc:
+        return False, [], [], 0, int((time.monotonic() - start) * 1000), str(exc)
 
 
 def _execute_demo_sql(datasource, database, sql_content):

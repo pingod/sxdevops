@@ -17,6 +17,14 @@ class DataSourceSerializer(serializers.ModelSerializer):
     def get_status_label(self, obj):
         return '启用' if obj.is_active else '停用'
 
+    def validate(self, attrs):
+        db_type = attrs.get('db_type', getattr(self.instance, 'db_type', 'mysql'))
+        if db_type == 'postgresql':
+            attrs['charset'] = 'UTF8'
+            if self.instance is None:
+                attrs.setdefault('port', 5432)
+        return attrs
+
     def update(self, instance, validated_data):
         # 空串代表"不修改已存密码"
         if not validated_data.get('password'):

@@ -16,6 +16,10 @@ from eventwall.services import build_json_preview, build_resource, record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
 
 from . import deployer
+from .task_resources import (
+    cmdb_resource_defaults, cmdb_resource_group_names, cmdb_resource_kind, cmdb_resource_options,
+    filter_resource_business_scope, resource_business_tree, scope_task_resources, visible_cmdb_resources,
+)
 from .host_task_schedules import (
     build_schedule_snapshot,
     preview_next_runs,
@@ -156,9 +160,27 @@ def _match_step_approver(user, step):
     return True
 
 
-def _is_prod_environment(value):
-    text = str(getattr(value, 'name', value) or '').strip().lower()
-    return text in {'prod', 'production'} or '生产' in text
+def _is_production_environment(value):
+    text = str(value or '').strip().lower()
+    if not text:
+        return False
+    return text in {'prod', 'production', '生产', '生产环境'} or '生产' in text or text.startswith('prod')
+
+
+def _target_is_production(item):
+    environment = getattr(item, 'environment', '')
+    if isinstance(environment, str):
+        return _is_production_environment(environment)
+    # TaskResource.environment 是 TaskResourceGroup 外键，名称/编码或事件中心环境都可能表示生产。
+    if environment is None:
+        return False
+    candidates = [
+        getattr(environment, 'code', ''),
+        getattr(environment, 'name', ''),
+        getattr(getattr(environment, 'event_environment', None), 'code', ''),
+        getattr(getattr(environment, 'event_environment', None), 'name', ''),
+    ]
+    return any(_is_production_environment(value) for value in candidates)
 
 
 def _filter_by_environment(queryset, value):
@@ -218,6 +240,7 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
     @action(detail=True, methods=['post'])
     def test_connection(self, request, pk=None):
         host = self.get_object()
+        client = None
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -230,7 +253,6 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
             )
             stdin, stdout, stderr = client.exec_command('uname -a', timeout=5)
             uname = stdout.read().decode('utf-8', errors='replace').strip()
-            client.close()
             record_event(
                 request=request,
                 module='ops',
@@ -266,10 +288,14 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
                 metadata={'ip_address': host.ip_address, 'error': str(exc)},
             )
             return Response({'success': False, 'message': f'\u8fde\u63a5\u5931\u8d25: {str(exc)}'})
+        finally:
+            if client is not None:
+                client.close()
 
     @action(detail=True, methods=['post'])
     def refresh_info(self, request, pk=None):
         host = self.get_object()
+        client = None
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -300,7 +326,6 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
 
             host.status = 'online'
             host.save(update_fields=['cpu_usage', 'memory_usage', 'disk_usage', 'status'])
-            client.close()
             record_event(
                 request=request,
                 module='ops',
@@ -342,6 +367,9 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
                 metadata={'error': str(exc)},
             )
             return Response({'detail': f'\u83b7\u53d6\u4fe1\u606f\u5931\u8d25: {str(exc)}'}, status=400)
+        finally:
+            if client is not None:
+                client.close()
 
 
 class TaskResourceGroupViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):
@@ -389,7 +417,7 @@ class TaskResourceGroupViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=False, methods=['get'])
     def tree(self, request):
         groups = list(TaskResourceGroup.objects.select_related('parent', 'event_environment').order_by('group_type', 'sort_order', 'name', 'id'))
-        resources = TaskResource.objects.values('environment_id', 'system_id', 'resource_type').annotate(total=Count('id'))
+        resources = scope_task_resources(TaskResource.objects.all(), request.user).values('environment_id', 'system_id', 'resource_type').annotate(total=Count('id'))
         env_counts = {}
         system_counts = {}
         for item in resources:
@@ -411,6 +439,7 @@ class TaskResourceGroupViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
                     'code': system.code,
                     'group_type': system.group_type,
                     'parent': system.parent_id,
+                    'cmdb_node': system.cmdb_node_id,
                     'event_environment': system.event_environment_id,
                     'event_environment_code': system.event_environment.code if system.event_environment_id else '',
                     'event_environment_name': system.event_environment.name if system.event_environment_id else '',
@@ -427,6 +456,7 @@ class TaskResourceGroupViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
                 'code': group.code,
                 'group_type': group.group_type,
                 'parent': None,
+                'cmdb_node': group.cmdb_node_id,
                 'event_environment': group.event_environment_id,
                 'event_environment_code': group.event_environment.code if group.event_environment_id else '',
                 'event_environment_name': group.event_environment.name if group.event_environment_id else '',
@@ -454,10 +484,17 @@ class TaskResourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, views
         'partial_update': ['ops.task.resource.manage'],
         'destroy': ['ops.task.resource.manage'],
         'stats': ['ops.task.resource.view'],
+        'scope_tree': ['ops.task.resource.view'],
+        'cmdb_options': ['ops.task.resource.manage', 'cmdb.ci.view'],
+        'cmdb_tree': ['ops.task.resource.manage', 'cmdb.ci.view'],
     }
 
     def get_queryset(self):
-        queryset = TaskResource.objects.select_related('environment', 'system', 'cluster').all()
+        queryset = scope_task_resources(TaskResource.objects.select_related('environment', 'system', 'cluster', 'cmdb_ci__ci_type', 'cmdb_ci__environment_node', 'cmdb_ci__business_node'), self.request.user)
+        queryset = filter_resource_business_scope(queryset, self.request.query_params)
+        source_type = self.request.query_params.get('source_type')
+        if source_type:
+            queryset = queryset.filter(source_type=source_type)
         resource_type = self.request.query_params.get('resource_type')
         status_value = self.request.query_params.get('status')
         environment = self.request.query_params.get('environment')
@@ -488,7 +525,11 @@ class TaskResourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, views
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
-        queryset = TaskResource.objects.select_related('environment', 'system', 'cluster').all()
+        queryset = scope_task_resources(TaskResource.objects.all(), request.user)
+        queryset = filter_resource_business_scope(queryset, request.query_params)
+        source_type = request.query_params.get('source_type')
+        if source_type:
+            queryset = queryset.filter(source_type=source_type)
         environment = request.query_params.get('environment')
         system_value = request.query_params.get('system')
         status_value = request.query_params.get('status')
@@ -514,6 +555,54 @@ class TaskResourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, views
             'warning': queryset.filter(status=TaskResource.STATUS_WARNING).count(),
             'inactive': queryset.filter(status=TaskResource.STATUS_INACTIVE).count(),
         })
+
+
+    @action(detail=False, methods=['get'], url_path='scope-tree')
+    def scope_tree(self, request):
+        from rbac.services import user_has_permissions
+
+        queryset = scope_task_resources(TaskResource.objects.all(), request.user)
+        include_cmdb_nodes = user_has_permissions(request.user, ['cmdb.ci.view'])
+        return Response(resource_business_tree(
+            queryset, include_cmdb_nodes=include_cmdb_nodes,
+            cmdb_structure=visible_cmdb_resources(request.user) if include_cmdb_nodes else None,
+        ))
+
+    @action(detail=False, methods=['get'], url_path='cmdb-tree')
+    def cmdb_tree(self, request):
+        queryset = cmdb_resource_options(request.user, request.query_params.get('resource_type', ''))
+        return Response(resource_business_tree(queryset, cmdb=True))
+
+    @action(detail=False, methods=['get'], url_path='cmdb-options')
+    def cmdb_options(self, request):
+        queryset = cmdb_resource_options(request.user, request.query_params.get('resource_type', ''))
+        queryset = filter_resource_business_scope(queryset, request.query_params, cmdb=True)
+        search = request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(attributes__ip_address__icontains=search)
+                | Q(attributes__private_ip__icontains=search) | Q(attributes__public_ip__icontains=search)
+                | Q(business_line__icontains=search),
+            )
+        page = self.paginate_queryset(queryset)
+        rows = []
+        for config_item in page:
+            environment_name, system_name = cmdb_resource_group_names(config_item)
+            rows.append({
+                **cmdb_resource_defaults(config_item),
+                'id': config_item.pk,
+                'resource_type': cmdb_resource_kind(config_item),
+                'ci_type_name': config_item.ci_type.name,
+                'environment_name': environment_name,
+                'system_name': system_name,
+                'status': config_item.status,
+                'status_display': config_item.get_status_display(),
+                'connected': hasattr(config_item, 'task_resource'),
+                'cmdb_fields': list(cmdb_resource_defaults(config_item)) + (
+                    ['environment'] if environment_name else []
+                ) + (['system'] if system_name else []),
+            })
+        return self.get_paginated_response(rows)
 
 
 class HostTaskTemplateViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):
@@ -639,7 +728,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             if resource_ids:
                 resource_map = {
                     resource.id: resource
-                    for resource in TaskResource.objects.select_related('environment__event_environment', 'system').filter(
+                    for resource in scope_task_resources(TaskResource.objects.select_related('environment__event_environment', 'system', 'cmdb_ci'), request.user).filter(
                         id__in=resource_ids,
                         resource_type=TaskResource.RESOURCE_HOST,
                     )
@@ -647,6 +736,8 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 hosts = [resource_map[item] for item in resource_ids if item in resource_map]
                 if len(hosts) != len(resource_ids):
                     return Response({'detail': '存在无效的主机资源，请刷新后重试'}, status=status.HTTP_400_BAD_REQUEST)
+                if any(resource.execution_blocked_reason for resource in hosts):
+                    return Response({'detail': '存在已停机、下线或失去 CMDB 关联的资源，请检查接入状态'}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 host_ids = validated['host_ids']
                 host_map = {host.id: host for host in Host.objects.filter(id__in=host_ids)}
@@ -684,6 +775,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         )
         task.correlation_id = f'task-center:{task.id}'
         task.save(update_fields=['correlation_id'])
+        self._sync_aiops_pending_action_task(task, request.user)
         if target_type == HostTask.TARGET_K8S:
             start_k8s_task(task, k8s_targets)
         else:
@@ -695,7 +787,6 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             title='创建任务中心任务',
             summary=f'任务 {task.name} 已创建，目标 {target_label}',
         )
-        self._sync_aiops_pending_action_task(task, request.user)
         data = HostTaskDetailSerializer(self.get_queryset().get(pk=task.pk)).data
         return Response(data, status=status.HTTP_201_CREATED)
 
@@ -719,6 +810,9 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         ).first()
         if not action:
             return
+        from aiops.remediation import bind_verification_task
+
+        bind_verification_task(action, task, user)
         action.result_payload = {
             **(action.result_payload or {}),
             'draft_ready': True,
@@ -755,7 +849,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         if any(keyword in command for keyword in destructive_keywords):
             return HostTask.RISK_CRITICAL
         if task_type in [HostTask.TASK_RUN_COMMAND, HostTask.TASK_RUN_PLAYBOOK]:
-            if len(hosts) > 20 or any(_is_prod_environment(getattr(host, 'environment', '')) for host in hosts):
+            if len(hosts) > 20 or any(_target_is_production(host) for host in hosts):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
         if task_type == HostTask.TASK_K8S_SCALE_WORKLOAD:
@@ -766,7 +860,7 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             if any(str(target.get('namespace') or '').lower() in ['prod', 'production'] for target in k8s_targets):
                 return HostTask.RISK_HIGH
             return HostTask.RISK_MEDIUM
-        if any(_is_prod_environment(getattr(host, 'environment', '')) for host in hosts):
+        if any(_target_is_production(host) for host in hosts):
             return HostTask.RISK_MEDIUM
         return HostTask.RISK_LOW
 
@@ -819,6 +913,8 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             return Response({'detail': '仅待执行任务可以从任务中心发起执行'}, status=status.HTTP_400_BAD_REQUEST)
         if task.target_type == HostTask.TARGET_K8S:
             targets = self._k8s_targets_from_snapshot(task)
+            from rbac.k8s_access import validate_k8s_task_access
+            validate_k8s_task_access(request.user, task.task_type, targets, task.payload)
             if not targets:
                 return Response({'detail': '没有找到有效的 K8s 目标'}, status=status.HTTP_400_BAD_REQUEST)
             start_k8s_task(task, targets)
@@ -892,7 +988,11 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def resource_options(self, request):
-        queryset = TaskResource.objects.select_related('environment', 'system', 'cluster').all()
+        queryset = scope_task_resources(TaskResource.objects.select_related('environment', 'system', 'cluster', 'cmdb_ci__ci_type', 'cmdb_ci__environment_node', 'cmdb_ci__business_node'), request.user)
+        from rbac.k8s_access import get_k8s_grants
+        grants = get_k8s_grants(request.user)
+        if grants is not None:
+            queryset = queryset.filter(~Q(resource_type=TaskResource.RESOURCE_K8S) | Q(cluster_id__in=grants))
         resource_type = request.query_params.get('resource_type') or ''
         if resource_type:
             queryset = queryset.filter(resource_type=resource_type)
@@ -921,6 +1021,8 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 if item.get('cluster')
             }
             cluster_queryset = K8sCluster.objects.exclude(id__in=mapped_cluster_ids).order_by('name', 'id')
+            if grants is not None:
+                cluster_queryset = cluster_queryset.filter(pk__in=grants)
             if status_value:
                 cluster_status = {
                     TaskResource.STATUS_ACTIVE: 'connected',
@@ -987,6 +1089,8 @@ class HostTaskViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         k8s_targets = []
         if source.target_type == HostTask.TARGET_K8S:
             k8s_targets = self._k8s_targets_from_snapshot(source)
+            from rbac.k8s_access import validate_k8s_task_access
+            validate_k8s_task_access(request.user, source.task_type, k8s_targets, source.payload)
             if not k8s_targets:
                 return Response({'detail': '没有找到有效的 K8s 目标'}, status=status.HTTP_400_BAD_REQUEST)
         else:
@@ -1538,7 +1642,8 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
         deployment.status = 'rejected'
         deployment.approver = request.user.username
         deployment.approval_comment = comment
-        deployment.approved_at = timezone.now()
+        # 驳回不是审批通过，不能留下 approved_at，否则报表会把被驳回的发布当成已批准。
+        deployment.approved_at = None
         deployment.save(update_fields=['approval_status', 'status', 'approver', 'approval_comment', 'approved_at'])
         record_event(
             request=request,
@@ -1683,7 +1788,11 @@ class DeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
-        tail = int(request.query_params.get('tail', 100))
+        try:
+            tail = int(request.query_params.get('tail', 100))
+        except (TypeError, ValueError):
+            tail = 100
+        tail = max(1, min(tail, 5000))
         return Response({'logs': deployer.get_service_logs(deployment, tail=tail)})
 
     @action(detail=True, methods=['get'])
@@ -1930,9 +2039,11 @@ class AlertViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mod
     def mute(self, request, pk=None):
         try:
             mute_minutes = int(request.data.get('minutes') or 60)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             mute_minutes = 60
-        return self._action_response(request, AlertAction.ACTION_MUTE, note=request.data.get('note', ''), mute_minutes=max(mute_minutes, 1))
+        # timedelta 对超大分钟数会抛 OverflowError；屏蔽时长上限一年。
+        mute_minutes = min(max(mute_minutes, 1), 525600)
+        return self._action_response(request, AlertAction.ACTION_MUTE, note=request.data.get('note', ''), mute_minutes=mute_minutes)
 
     @action(detail=True, methods=['post'])
     def escalate(self, request, pk=None):
@@ -2175,7 +2286,7 @@ def alert_webhook(request, provider, token=''):
         or request.headers.get('X-Sxdevops-Token')
         or request.headers.get('X-SxDevOps-Token')
     )
-    if provider != Alert.SOURCE_GENERIC and not supplied_token:
+    if not supplied_token:
         return Response({'detail': '该告警接入源必须携带有效令牌。'}, status=status.HTTP_403_FORBIDDEN)
     integration = resolve_integration(provider, supplied_token)
     if supplied_token and not integration:

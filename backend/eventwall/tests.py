@@ -615,7 +615,7 @@ class EventSourceTests(TestCase):
         source.save(update_fields=['token_hash', 'token_preview', 'enabled', 'status', 'config', 'updated_at'])
         return source, token
 
-    def test_external_ingest_returns_202_when_event_is_rejected(self):
+    def test_external_ingest_records_rejected_result(self):
         EventEnvironment.objects.get_or_create(code='ecommerce-test', defaults={'name': '电商测试环境'})
         _, token = self._enable_source('custom')
 
@@ -632,10 +632,9 @@ class EventSourceTests(TestCase):
             HTTP_AUTHORIZATION=f'Bearer {token}',
         )
 
-        self.assertEqual(response.status_code, 202)
-        self.assertFalse(
-            EventRecord.objects.filter(metadata__external_event_id='rejected-001').exists()
-        )
+        self.assertEqual(response.status_code, 201)
+        event = EventRecord.objects.get(metadata__external_event_id='rejected-001')
+        self.assertEqual(event.result, EventRecord.RESULT_REJECTED)
 
     def test_jira_events_with_different_timestamps_are_not_deduplicated(self):
         EventEnvironment.objects.get_or_create(code='prod', defaults={'name': '生产环境'})

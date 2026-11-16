@@ -1,0 +1,146 @@
+# 部署与运维
+
+本文适用于从源码构建的 Docker Compose / Podman Compose 环境。Kubernetes 另见[集群部署指南](Kubernetes部署指南.md)，v2 的迁移差异见[升级说明](releases/v2.0.0-release-guide.md)。
+
+新部署默认推荐 PostgreSQL 16。MySQL 8 作为备选，使用 `docker-compose.mysql.yml`（启动脚本为 `sh start.sh --mysql` 或 Windows `.\start.cmd -Database mysql`）；已有 MySQL 部署继续沿用该清单及原密钥。下文覆盖示例基于 PostgreSQL；MySQL 环境应改用 `MYSQL_PASSWORD`、`MYSQL_ROOT_PASSWORD` 及 `AIOPS_LANGGRAPH_CHECKPOINT_BACKEND=mysql`，不要合入 PostgreSQL 配置。切换引擎不会自动转换业务数据库或 checkpoint，本地 SQLite 测试库保持原配置。
+
+## 服务与状态
+
+| 服务 | Compose 服务名 | 职责 |
+| --- | --- | --- |
+| Web / ASGI | `sxdevops` | 页面、API 和 WebSocket |
+| CMDB 调度器 | `cmdb-sync-scheduler` | 每 60 秒扫描到期采集任务，每轮最多 10 个；保持单实例 |
+| AIOps worker | `aiops-chat-worker` | 异步聊天、租约恢复和处置效果验证 |
+| PostgreSQL / Redis | `postgres` / `redis` | 业务数据、共享 checkpoint、缓存与实时通信 |
+
+应用、调度器和 worker 必须使用同一份发行镜像及兼容配置。只更新 Web 会造成 worker 沿用旧图或旧权限逻辑。
+
+持久状态包括数据库、Redis 数据和 `aiops_runtime` 卷；已有凭据还依赖稳定的 `CMDB_PASSWORD_ENCRYPTION_KEY`。容器运行正常不代表后台任务正在消费，需分别检查三项应用服务。
+
+## 首次部署配置
+
+从固定提交或标签构建，并记录 SHA。私有配置保存在已忽略的 `.env` 和 `compose.production.local` 中，限制文件读取权限；不要提交真实域名、服务器地址或凭据。
+
+`.env` 示例，所有占位值均须替换：
+
+```dotenv
+SECRET_KEY=<独立长随机值>
+POSTGRES_PASSWORD=<独立数据库密码>
+CMDB_PASSWORD_ENCRYPTION_KEY=<首次生成或保留的原Fernet密钥>
+SXDEVOPS_HOSTS=<实际访问域名,必要的本机地址>
+SXDEVOPS_TRUSTED_PROXIES=<实际可信入口代理IP或CIDR，多个用逗号分隔>
+```
+
+`compose.production.local` 覆盖示例：
+
+```yaml
+x-app-env: &app-env
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+  CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set CMDB_PASSWORD_ENCRYPTION_KEY}
+  DEBUG: "0"
+  ALLOWED_HOSTS: ${SXDEVOPS_HOSTS:?Set SXDEVOPS_HOSTS}
+  CORS_ALLOW_ALL_ORIGINS: "0"
+  SXDEVOPS_SEED_DATA: "0"
+  SXDEVOPS_SEED_TEMPLATES: "0"
+  AIOPS_LANGGRAPH_CHECKPOINT_BACKEND: postgresql
+  CACHE_BACKEND: redis
+  CACHE_IGNORE_EXCEPTIONS: "0"
+  SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+
+services:
+  sxdevops:
+    environment: *app-env
+  cmdb-sync-scheduler:
+    environment: *app-env
+  aiops-chat-worker:
+    environment: *app-env
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+```
+
+该示例只覆盖配置，保留基础编排的命令、依赖及卷。不要在已有 PostgreSQL / MySQL 数据卷上仅修改初始化密码变量来“轮换密码”：已有账号密码须在数据库内另行变更，并同步应用配置。
+
+基础编排已移除历史默认 Fernet 密钥，缺少外部密钥时 Compose 会拒绝启动。首次部署生成独立密钥；已有环境先备份并核对实际生效的旧密钥及凭据解密情况。若曾使用公开默认值，应在维护窗口内使用旧密钥解密并用新密钥重新加密全部相关凭据，再同步三个服务，验证后恢复流量。仅更改环境变量会使旧数据无法解密；不能把源码移除默认值视为已经完成线上轮换。
+
+启动时始终带上同一份覆盖文件：
+
+```bash
+docker compose -f docker-compose.yml -f compose.production.local up -d --build
+docker compose -f docker-compose.yml -f compose.production.local exec sxdevops python manage.py createsuperuser
+```
+
+模板同步按需显式执行 `python manage.py seed_templates`；先检查模板变更，不导入业务演示数据或角色测试账号。使用 Podman 时将命令入口替换为本机支持的 `podman-compose`，并先确认覆盖文件合并结果。
+
+基础编排把 8000 端口发布到所有接口。正式环境应在私有部署配置中改为本机或内网监听，并由 HTTPS 反向代理统一入口；注意 Compose 的 `ports` 合并可能保留旧映射，应检查最终映射。代理需支持 WebSocket Upgrade，限制实际域名访问。不要把 PostgreSQL、MySQL、Redis 和管理终端直接暴露到公网。
+
+配置检查可使用 Compose 的 `config --quiet`；不要把包含解析后密码的完整 `config` 输出粘贴到 Issue 或日志中。完整变量含义与优先级见[配置参考](configuration.md)。
+
+登录限流使用同一 Redis 缓存库的原子计数，缓存不可用时拒绝登录。代理信任列表默认空；仅列入实际受控代理地址，由入口覆盖或正确追加 `X-Forwarded-For`。错误地信任任意网段会允许伪造来源，未配可信代理则可能将同一入口后的用户合并到一个 IP 限额，详见[账号与权限](user-permission-security.md)。
+
+调度器和 worker 启动时通过 `wait_for_schema` 等待迁移完成（最长 600 秒），自身不运行迁移。这避免新安装的启动竞态；已有环境仍需按下述维护窗口排空和停止旧进程。
+
+## 备份与升级
+
+以下命令以基础编排为例；实际操作须继续带上部署时的全部 `-f` 覆盖文件。
+
+1. 进入维护窗口，停止接收新的聊天和执行任务，处理 queued/running 聊天、实际任务、待确认动作及未完成验证。
+2. 备份业务数据库、共享 checkpoint 表或 SQLite checkpoint 文件、运行卷、私有配置与加密密钥；记录旧镜像摘要并验证备份可读取。SQLite 文件应在写入进程停止后备份，或使用 SQLite 一致性备份方式。
+3. 需要跨数据库表一致性的备份时，停止所有写入方后执行。PostgreSQL 可使用 `pg_dump` / `pg_restore`；MySQL 可使用受控备份工具或 `mysqldump --single-transaction`（适用于事务表），凭据通过受限配置提供；不要在共享命令行或日志中明文传递密码。
+4. 停止三项应用服务，保留数据库和卷，构建候选镜像并执行一次完整迁移。
+
+```bash
+docker compose stop sxdevops aiops-chat-worker cmdb-sync-scheduler
+docker compose build sxdevops
+docker compose run --rm -e SXDEVOPS_MIGRATE=0 -e SXDEVOPS_SEED_DATA=0 -e SXDEVOPS_SEED_TEMPLATES=0 sxdevops python manage.py migrate --noinput
+docker compose up -d --force-recreate sxdevops cmdb-sync-scheduler aiops-chat-worker
+```
+
+重建镜像后显式重建三个应用容器，避免仅镜像更新而旧容器继续运行。不要运行 `down -v` 清理升级环境，它会删除持久卷。首次迁移后保持已有加密密钥；图版本变化前处理旧的未完成 checkpoint，不假设能够跨版本恢复。
+
+## 上线检查
+
+```bash
+docker compose ps
+docker compose logs --tail=100 sxdevops aiops-chat-worker cmdb-sync-scheduler
+docker compose exec sxdevops python manage.py check
+docker compose exec sxdevops python manage.py showmigrations
+```
+
+确认三项应用服务为当前镜像，首页和 API 可访问，迁移已应用。再用最小权限账号验证菜单、只读接口及越权拒绝，确认 CMDB 采集能调度、异步聊天能完成，查看执行审计。任务写入仅在明确的测试资源上验收。
+
+生产排查不要运行演示造数或全量测试命令。发行验证应在隔离环境完成，并记录与部署镜像相同的源码提交。
+
+## 回退
+
+先停止接收新任务并暂停 worker，保留失败现场，切回记录过的旧镜像及兼容配置。数据库迁移、能力目录或 checkpoint 不兼容时，应按备份方案恢复状态；只回退代码不能保证旧版可读新数据。
+
+恢复数据库会丢失备份之后的变更，必须确认恢复点，并核对外部任务是否已经执行，防止重复提交。旧版 `demo` 账号清理迁移删除的数据不能靠反向迁移恢复。
+
+## 常见问题
+
+### 产品页 GitHub Star 数
+
+公开接口 `/api/site-settings/repository/` 优先读取 Redis 最近一次成功的快照；缓存缺失或不可用时读取数据库中的 `RepositorySnapshot`，缓存恢复后回填历史值。GitHub 查询成功会同时更新数据库与 Redis，超时、限流或无效响应保留原有数量和成功时间。
+
+刷新间隔为 15 分钟，失败后 5 分钟重试；Redis 不可用时只读取数据库历史，避免公开访问绕过刷新锁持续请求 GitHub。首次部署且从未成功获取过数据时仍显示未知值。升级需要应用 `rbac.0014_repository_snapshot`；备份时一并保留数据库及 Redis 持久卷。
+
+### 小内存服务器卡顿
+
+使用 `MemAvailable` 判断可用内存，同时检查 `vmstat` 的磁盘等待、`/proc/pressure/memory` 和容器 cgroup 的 `memory.events`、`memory.stat`。即使主机没有 OOM，过低的容器上限也会触发反复回收和读盘。先确认具体容器的匿名内存、文件缓存和重复缺页，再调整应用内存参数与运行限额。
+
+Go 服务应为堆之外的文件缓存和运行时留出余量；若透明大页处于 `always` 且匿名大页占用偏高，可评估改用 `madvise`，并检查当前 Go 版本对 `GODEBUG=disablethp=1` 的支持。调整后验证实际业务查询和内存压力，保留配置备份并持久化需要跨重启生效的设置。
+
+| 现象 | 检查方向 |
+| --- | --- |
+| 无法登录或没有管理员 | 查看迁移结果；首次运行 `createsuperuser`，不使用旧演示账号 |
+| 聊天一直排队 | worker 是否运行、数据库与 checkpoint 是否一致、是否存在旧图版本或过期租约 |
+| 定时采集不执行 | 调度器日志、任务启用状态与到期时间；不要并行启动多个调度器 |
+| CMDB 密码无法解密 | 是否沿用原 Fernet 密钥，JSON 配置是否覆盖环境变量 |
+| 权限变化后仍有终端连接 | 确认 ASGI 已重启；四类终端每次输入及空闲每 5 秒复核权限，检查数据库可用性和进程调度 |
+| 返回 403 | 分别检查能力权限、资源范围、账号状态和功能开关，不只检查菜单 |
+| WebSocket 连接失败 | 代理 Upgrade / 超时、当前 Token、用户状态及对应终端权限 |
+| Chrome 安全警告仍存在 | 权限修复与浏览器信誉复审分别处理；见[站点安全说明](user-permission-security.md#站点安全告警处理) |
+
+[文档目录](README.md)

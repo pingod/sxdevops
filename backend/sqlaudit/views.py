@@ -1,4 +1,4 @@
-﻿from rest_framework import viewsets, status
+from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -140,6 +140,23 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         order.review_comment = request.data.get('comment', '')
         order.reviewed_at = timezone.now()
         order.save()
+        record_event(
+            request=request,
+            module='sqlaudit',
+            category='workflow',
+            action='approve',
+            title='审核通过 SQL 工单',
+            summary=f'SQL 工单 {order.title} 已审核通过',
+            result=EventRecord.RESULT_SUCCESS,
+            severity=EventRecord.SEVERITY_INFO,
+            resource_type='sql_order',
+            resource_id=order.id,
+            resource_name=order.title,
+            application=order.database,
+            correlation_id=f'sql-order:{order.id}',
+            related_resources=[build_resource('sqlaudit', 'sql_datasource', order.datasource_id, order.datasource.name)],
+            metadata={'database': order.database},
+        )
         return Response(SqlOrderSerializer(order).data)
 
     @action(detail=True, methods=['post'])
@@ -186,6 +203,24 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         order.status = 'executing'
         order.save()
 
+        # 工单提交时生成的检查结果可能已过期；执行前重新检查，error 级规则必须阻断，
+        # 否则“审计通过”只是展示，DROP/无 WHERE 更新等风险仍会真正落库。
+        check_results = sql_checker.check_sql(
+            order.sql_content,
+            order.sql_type,
+            getattr(order.datasource, 'db_type', 'mysql'),
+        )
+        blocking_errors = [item for item in check_results if item.level == 'error']
+        if blocking_errors:
+            order.status = 'failed'
+            order.execute_log = '\n'.join(item.message for item in blocking_errors)
+            order.executed_at = timezone.now()
+            order.save(update_fields=['status', 'execute_log', 'executed_at'])
+            return Response(
+                {'error': 'SQL 检查未通过，禁止执行', 'checks': [item.to_dict() for item in blocking_errors]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         success, affected, duration, log = db_executor.execute_sql(
             order.datasource, order.database, order.sql_content,
         )
@@ -227,7 +262,6 @@ class QueryOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     serializer_class = QueryOrderSerializer
     search_fields = ['submitter', 'sql_content']
     http_method_names = ['get', 'post', 'head', 'options']
-    demo_account_allowed_actions = {'create'}
     rbac_permissions = {
         'list': ['sqlaudit.query.view'],
         'retrieve': ['sqlaudit.query.view'],
@@ -282,13 +316,13 @@ class QueryOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, build_rbac_permission('sqlaudit.order.submit', allow_demo_write=True)])
+@permission_classes([IsAuthenticated, build_rbac_permission('sqlaudit.order.submit')])
 def sql_check_api(request):
     sql_content = request.data.get('sql_content', '')
     sql_type = request.data.get('sql_type', 'DML')
     db_type = request.data.get('db_type', 'mysql')
 
-    if not sql_content.strip():
+    if not isinstance(sql_content, str) or not sql_content.strip():
         return Response(
             {'error': 'SQL 内容不能为空'},
             status=status.HTTP_400_BAD_REQUEST,

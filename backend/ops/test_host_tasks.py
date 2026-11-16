@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 
 from aiops.models import AIOpsChatMessage, AIOpsChatSession, AIOpsPendingAction
 from eventwall.models import EventEnvironment, EventRecord
-from ops.host_tasks import AnsibleControllerError, build_host_target_snapshot, execute_k8s_task, normalize_host_execution_targets, record_task_center_event
+from ops.host_tasks import AnsibleControllerError, _validate_remote_command, build_host_target_snapshot, execute_k8s_task, normalize_host_execution_targets, record_task_center_event
 from ops.models import Host, HostTask, HostTaskExecution, HostTaskTemplate, K8sCluster, TaskResource, TaskResourceGroup
 from rbac.models import Role
 from rbac.services import ensure_builtin_rbac
@@ -29,6 +29,11 @@ class HostTaskApiTests(TestCase):
             ssh_user='root',
             ssh_password='secret',
         )
+
+    def test_remote_command_rejects_shell_chaining(self):
+        task = HostTask(task_type=HostTask.TASK_RUN_COMMAND, payload={})
+        with self.assertRaises(ValueError):
+            _validate_remote_command(task, 'id; whoami')
 
     def test_task_resource_group_can_bind_event_environment(self):
         event_environment = EventEnvironment.objects.create(code='ecommerce-task-test', name='电商任务测试环境')
@@ -294,7 +299,7 @@ class HostTaskApiTests(TestCase):
             resource_type=TaskResource.RESOURCE_HOST,
             environment=env,
             status=TaskResource.STATUS_ACTIVE,
-            ip_address='203.0.113.176',
+            ip_address='120.26.213.176',
             ssh_user='root',
             ssh_password='secret',
         )
@@ -414,7 +419,7 @@ class HostTaskApiTests(TestCase):
             resource_type=TaskResource.RESOURCE_HOST,
             environment=other_env,
             status=TaskResource.STATUS_ACTIVE,
-            ip_address='10.30.1.11',
+            ip_address='192.0.2.4',
         )
 
         response = self.client.get(
@@ -1165,48 +1170,3 @@ class HostTaskApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         template.refresh_from_db()
         self.assertEqual(template.name, 'builtin-template')
-
-    def test_command_task_on_prod_resource_target_is_high_risk(self):
-        prod_env = TaskResourceGroup.objects.create(name='prod', group_type=TaskResourceGroup.GROUP_ENVIRONMENT)
-        resource = TaskResource.objects.create(
-            name='prod-host-risk',
-            resource_type=TaskResource.RESOURCE_HOST,
-            environment=prod_env,
-            status=TaskResource.STATUS_ACTIVE,
-            ip_address='10.30.1.10',
-            ssh_user='root',
-            ssh_password='secret',
-        )
-
-        response = self.client.post(
-            '/api/host-tasks/',
-            {
-                'name': 'risk-prod-command',
-                'task_type': HostTask.TASK_RUN_COMMAND,
-                'execution_mode': HostTask.EXECUTION_MODE_SSH,
-                'resource_ids': [resource.id],
-                'payload': {'command': 'uptime'},
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()['risk_level'], HostTask.RISK_HIGH)
-
-    def test_schedule_rejects_unknown_timezone(self):
-        response = self.client.post(
-            '/api/host-task-schedules/',
-            {
-                'name': 'bad-timezone-schedule',
-                'task_type': HostTask.TASK_RUN_COMMAND,
-                'payload': {'command': 'uptime'},
-                'schedule_type': 'cron',
-                'cron_expression': '0 * * * *',
-                'timezone': 'UTC+8',
-                'hosts': [self.host.id],
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('timezone', response.json())

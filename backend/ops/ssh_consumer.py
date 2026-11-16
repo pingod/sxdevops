@@ -12,6 +12,9 @@ from rest_framework.authtoken.models import Token
 from channels.generic.websocket import WebsocketConsumer
 from rbac.services import user_has_console_access
 
+from eventwall.services import record_event
+from .webshell_guard import WebShellGuard, handle_guard_events, load_rules
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +35,7 @@ class SSHConsumer(WebsocketConsumer):
             return
 
         self.user = token.user
+        self.guard = WebShellGuard(load_rules())
         self.accept()
 
         # 获取 Host 信息
@@ -42,6 +46,14 @@ class SSHConsumer(WebsocketConsumer):
             self.send(text_data=json.dumps({'type': 'error', 'message': '主机不存在'}))
             self.close()
             return
+        self.host_name = host.hostname
+        record_event(
+            module='ops', category='security', action='webshell_connect',
+            title=f'打开 WebShell：{host.hostname}',
+            summary=f'用户 {self.user.username} 打开主机 {host.hostname} ({host.ip_address}) 终端',
+            actor_username=self.user.username, resource_type='host',
+            resource_id=host.pk, resource_name=host.hostname,
+        )
 
         # 建立 SSH 连接
         try:
@@ -81,6 +93,13 @@ class SSHConsumer(WebsocketConsumer):
 
     def disconnect(self, close_code):
         self._reading = False
+        if getattr(self, 'user', None) and getattr(self, 'host_name', ''):
+            record_event(
+                module='ops', category='security', action='webshell_disconnect',
+                title=f'关闭 WebShell：{self.host_name}',
+                actor_username=self.user.username, resource_type='host',
+                resource_id=self.host_id, resource_name=self.host_name,
+            )
         if self.ssh_channel:
             try:
                 self.ssh_channel.close()
@@ -98,7 +117,15 @@ class SSHConsumer(WebsocketConsumer):
             try:
                 data = json.loads(text_data)
                 if data.get('type') == 'input':
-                    self.ssh_channel.send(data['data'])
+                    forward, events = self.guard.process(data['data'])
+                    if forward:
+                        self.ssh_channel.send(forward)
+                    if events:
+                        handle_guard_events(
+                            events, user=self.user, resource_type='host',
+                            resource_id=self.host_id, resource_name=getattr(self, 'host_name', ''),
+                            send_text=lambda text: self.send(text_data=json.dumps({'type': 'output', 'data': text})),
+                        )
                 elif data.get('type') == 'resize':
                     cols = data.get('cols', 120)
                     rows = data.get('rows', 40)

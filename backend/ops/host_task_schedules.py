@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import math
@@ -72,7 +72,10 @@ def _cron_value(value, aliases=None):
     value = str(value).strip().lower()
     if aliases and value in aliases:
         return aliases[value]
-    return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise CronExpressionError(f'Cron 字段包含非法值: {value}') from None
 
 
 def _expand_cron_field(field, minimum, maximum, aliases=None):
@@ -86,7 +89,10 @@ def _expand_cron_field(field, minimum, maximum, aliases=None):
             continue
         if '/' in part:
             base, step_text = part.split('/', 1)
-            step = int(step_text)
+            try:
+                step = int(step_text)
+            except (TypeError, ValueError):
+                raise CronExpressionError(f'Cron 步长必须是整数: {step_text}') from None
             if step <= 0:
                 raise CronExpressionError('Cron 步长必须大于 0')
         else:
@@ -100,9 +106,12 @@ def _expand_cron_field(field, minimum, maximum, aliases=None):
             start = _cron_value(start_text, aliases)
             end = _cron_value(end_text, aliases)
         else:
-            start = end = _cron_value(base, aliases)
+            start = _cron_value(base, aliases)
+            # 单值 + 步长（如 0/15）表示从该值起每 step 一次直到字段上限，而不是只取单值。
+            end = maximum if '/' in part else start
 
-        if aliases is CRON_WEEKDAY_ALIASES:
+        # 仅对单值归一 7→0（周日）；区间（如 0-7）需保留到后面统一归一，否则退化为只含周日。
+        if aliases is CRON_WEEKDAY_ALIASES and '-' not in base and '/' not in part:
             if start == 7:
                 start = 0
             if end == 7:

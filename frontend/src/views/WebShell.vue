@@ -121,6 +121,7 @@ function connectWebSocket() {
   }
 
   ws.onmessage = (event) => {
+    if (!term) return
     try {
       const msg = JSON.parse(event.data)
       if (msg.type === 'output') {
@@ -141,11 +142,25 @@ function connectWebSocket() {
     }
   }
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     wsStatus.value = 'disconnected'
-    statusText.value = '连接已断开'
+    const code = Number(event?.code || 0)
+    let message = '连接已断开，刷新页面可重新连接'
+    if (code === 4401) {
+      statusText.value = '登录状态已失效'
+      message = '登录状态已失效或令牌无效，请重新登录后重试'
+    } else if (code === 4403) {
+      statusText.value = '无权访问该主机'
+      message = '当前账号没有该主机的终端权限，请联系管理员授权'
+    } else if (code === 4404) {
+      statusText.value = '主机不存在'
+      message = '目标主机不存在或已被删除'
+    } else {
+      statusText.value = '连接已断开'
+    }
+    if (!term) return
     term.writeln('')
-    term.writeln('\x1b[1;33m⚠ 连接已断开，刷新页面可重新连接\x1b[0m')
+    term.writeln(`\x1b[1;33m⚠ ${message}\x1b[0m`)
   }
 
   ws.onerror = () => {
@@ -167,6 +182,11 @@ onBeforeUnmount(() => {
     resizeObserver = null
   }
   if (ws) {
+    // 先解绑回调，避免 close 的异步事件在 term 销毁后仍写终端。
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onclose = null
+    ws.onerror = null
     ws.close()
     ws = null
   }

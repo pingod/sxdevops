@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 from django.core.cache import cache
 from django.db.models import Count, Max, Q
 from django.utils import timezone
+from sxdevops.features import is_system_posture_enabled
+
 from eventwall.models import EventRecord, EventSource
 from ops.models import (
     Alert,
@@ -20,6 +22,8 @@ from ops.models import (
     LogEntry,
     MetricDataSource,
     ObservabilityDataSourceLink,
+    SystemPostureEnvironment,
+    SystemPostureSystem,
     TaskResource,
     TaskResourceGroup,
     TracingDataSource,
@@ -52,6 +56,7 @@ CAPABILITY_DEFS = [
     ('tracing', '链路', 'tracing', '/observability/tracing'),
     ('dashboards', '看板', 'dashboard', '/observability/grafana'),
     ('alerts', '告警', 'alert', '/alerts'),
+    ('posture', '系统态势', 'posture', '/observability/system-posture'),
     ('internal_events', '内部事件', 'internal_event', '/events/wall'),
     ('external_events', '外部事件', 'external_event', '/events/wall'),
 ]
@@ -321,7 +326,7 @@ def _cached_external_batch(items, ttl=EXTERNAL_DISCOVERY_CACHE_TTL, timeout=FAST
     return results
 
 
-def _graph_cache_key(params):
+def _graph_cache_key(params, user=None):
     query_items = []
     if params:
         try:
@@ -332,6 +337,9 @@ def _graph_cache_key(params):
             ]
         except AttributeError:
             query_items = sorted((params or {}).items())
+    if user is not None:
+        # 知识图谱含集群/主机 IP，缓存必须按用户隔离，避免把越权视角的结果复用给他人。
+        query_items = list(query_items) + [('__user', str(getattr(user, 'pk', '')) )]
     latest_config = (
         AIOpsKnowledgeEnvironment.objects
         .order_by('-updated_at')
@@ -447,6 +455,7 @@ def resolve_knowledge_environment(name):
         'tracing_datasource_ids': _int_list(config.tracing_datasource_ids),
         'observability_link_ids': _int_list(getattr(config, 'observability_link_ids', []) or []),
         'alert_environments': _clean_list(config.alert_environments),
+        'posture_environments': _clean_list(getattr(config, 'posture_environments', []) or []) if is_system_posture_enabled() else [],
         'k8s_cluster_ids': _int_list(config.k8s_cluster_ids),
         'k8s_namespaces': config.k8s_namespaces if isinstance(config.k8s_namespaces, dict) else {},
         'docker_host_ids': _int_list(config.docker_host_ids),
@@ -1502,8 +1511,8 @@ def _persist_environment_snapshots(configs, nodes, edges):
     )
 
 
-def build_knowledge_graph(params=None):
-    cache_key = _graph_cache_key(params)
+def build_knowledge_graph(params=None, user=None):
+    cache_key = _graph_cache_key(params, user=user)
     cached_graph = _cache_get(cache_key)
     if cached_graph is not None:
         return cached_graph
@@ -1523,6 +1532,7 @@ def build_knowledge_graph(params=None):
     source_env_to_graph = {}
     selected_event_environments = set()
     selected_alert_environments = set()
+    selected_posture_environments = set()
     selected_grafana_folders = set()
     selected_metric_datasource_ids = set()
     selected_log_datasource_ids = set()
@@ -1543,6 +1553,10 @@ def build_knowledge_graph(params=None):
                 selected_alert_environments.add(environment)
                 alert_env_to_graph[environment] = config.name
                 source_env_to_graph.setdefault(environment, config.name)
+            if is_system_posture_enabled():
+                for environment in _clean_list(getattr(config, 'posture_environments', []) or []):
+                    selected_posture_environments.add(environment)
+                    source_env_to_graph.setdefault(environment, config.name)
             selected_grafana_folders.update(_clean_list(config.grafana_folder_keys))
             selected_metric_datasource_ids.update(_int_list(getattr(config, 'metric_datasource_ids', []) or []))
             selected_log_datasource_ids.update(_int_list(config.log_datasource_ids))
@@ -1740,15 +1754,33 @@ def build_knowledge_graph(params=None):
         .exclude(source_type=EventRecord.SOURCE_SEED)
         .order_by('-occurred_at')
     )
+    posture_queryset = SystemPostureSystem.objects.filter(is_enabled=True).order_by('sort_order', 'name') if is_system_posture_enabled() else SystemPostureSystem.objects.none()
     if use_knowledge_env:
         alert_queryset = alert_queryset.filter(environment__in=selected_alert_environments) if selected_alert_environments else Alert.objects.none()
         event_queryset = event_queryset.filter(environment__in=selected_event_environments) if selected_event_environments else EventRecord.objects.none()
+        source_environments = selected_posture_environments if is_system_posture_enabled() else set()
+        posture_queryset = posture_queryset.filter(environment__in=source_environments) if source_environments else SystemPostureSystem.objects.none()
     alert_records = list(alert_queryset[:200])
     event_records = list(event_queryset[:240])
+    posture_systems = list(posture_queryset)
 
     k8s_clusters = list(K8sCluster.objects.filter(id__in=selected_k8s_cluster_ids).order_by('name', 'id')) if use_knowledge_env and selected_k8s_cluster_ids else []
     docker_hosts = list(DockerHost.objects.filter(id__in=selected_docker_host_ids).order_by('name', 'id')) if use_knowledge_env and selected_docker_host_ids else []
     task_resource_env_groups = list(TaskResourceGroup.objects.filter(id__in=selected_task_resource_environment_ids, group_type=TaskResourceGroup.GROUP_ENVIRONMENT).order_by('sort_order', 'name', 'id')) if use_knowledge_env and selected_task_resource_environment_ids else []
+    if user is not None:
+        # 与 catalog 一致：平台权限是上限，K8sUserAccess 只能再收窄；
+        # 无 docker / 任务资源查看权限时不下发对应清单（含 IP）。
+        from rbac.k8s_access import get_k8s_grants
+        from rbac.services import user_has_permissions as _user_has_permissions
+
+        grants = get_k8s_grants(user)
+        if grants is not None:
+            allowed_cluster_ids = set(grants.keys())
+            k8s_clusters = [cluster for cluster in k8s_clusters if cluster.id in allowed_cluster_ids]
+        if not _user_has_permissions(user, ['ops.docker.view']):
+            docker_hosts = []
+        if not _user_has_permissions(user, ['ops.task.resource.view']):
+            task_resource_env_groups = []
     infrastructure_inventory = _cached_external_batch([
         (
             ('k8s_pods', cluster.id),
@@ -1943,6 +1975,13 @@ def build_knowledge_graph(params=None):
             runtime_services.add(service_name)
             if _clean(event.business_line):
                 runtime_service_systems[service_name] = _clean(event.business_line)
+    for system in posture_systems:
+        service_specs = system.service_specs if isinstance(system.service_specs, list) else []
+        for service in service_specs:
+            service_name = _clean(service.get('name') or service.get('id'))
+            if _is_microservice_name(service_name) and (not use_knowledge_env or not runtime_services):
+                runtime_services.add(service_name)
+                runtime_service_systems.setdefault(service_name, _clean(system.name))
 
     def matching_runtime_service_name(service):
         service = _clean(service)
@@ -1979,6 +2018,39 @@ def build_knowledge_graph(params=None):
         matched_service_name = matching_runtime_service_name(service_name or event.resource_name or event.resource_type or event.module)
         if not use_knowledge_env or matched_service_name in runtime_services:
             remember_service_context(matched_service_name, event.business_line, graph_environment(event.environment, 'event'), 3)
+    for system in posture_systems:
+        system_environment = graph_environment(system.environment, 'posture')
+        remember_service_context(system.name, system.name, system_environment, 2)
+        service_specs = system.service_specs if isinstance(system.service_specs, list) else []
+        for service in service_specs:
+            service_name = _clean(service.get('name') or service.get('id'))
+            matched_service_name = matching_runtime_service_name(service_name)
+            if not use_knowledge_env or matched_service_name in runtime_services:
+                remember_service_context(matched_service_name, system.name, system_environment)
+        dependencies = system.dependencies if isinstance(system.dependencies, list) else []
+        for dependency in dependencies:
+            classification = _classify_runtime_component(
+                dependency.get('kind'),
+                dependency.get('name'),
+                dependency.get('id'),
+                dependency.get('role'),
+            )
+            if not classification:
+                continue
+            _append_runtime_component(
+                runtime_components,
+                name=_clean(dependency.get('name') or dependency.get('id')) or classification['name'],
+                technology=classification['technology'],
+                component_type=classification['component_type'],
+                source='posture',
+                environment=system_environment,
+                status=_clean(dependency.get('base_status') or dependency.get('status')),
+                details=[
+                    {'label': '来源', 'value': '系统态势依赖'},
+                    {'label': '系统', 'value': _clean(system.name) or '-'},
+                    {'label': '类型', 'value': _clean(dependency.get('kind')) or classification['component_type']},
+                ],
+            )
 
     if use_knowledge_env:
         for cluster in k8s_clusters:
@@ -2078,6 +2150,29 @@ def build_knowledge_graph(params=None):
         concrete_infra_ips = set()
         concrete_cluster_ids = set()
 
+        posture_keys = _clean_list(getattr(config, 'posture_environments', []) or []) if is_system_posture_enabled() else []
+        posture_environment_map = {
+            item.key: item
+            for item in SystemPostureEnvironment.objects.filter(key__in=posture_keys).order_by('sort_order', 'id')
+        } if posture_keys else {}
+        for posture_key in posture_keys:
+            posture_env = posture_environment_map.get(posture_key)
+            label = posture_env.name if posture_env else posture_key
+            node_id = _node_key('posture_env', posture_key)
+            system_count = sum(1 for system in posture_systems if _clean(system.environment) == posture_key)
+            add_node(
+                node_id,
+                label,
+                'posture',
+                '系统态势',
+                route='/observability/system-posture',
+                status='enabled' if (not posture_env or posture_env.is_enabled) else 'disabled',
+                metric=system_count,
+                description=f'系统态势环境：{label}，关联 {system_count} 个系统',
+                environment=environment,
+                source_environment=posture_key,
+            )
+            add_edge(env_id, node_id, '关联系统态势', 'environment_observability', max(system_count, 1))
 
         for cluster in k8s_clusters:
             node_id = _node_key('infrastructure', 'k8s', cluster.id)
@@ -2154,11 +2249,15 @@ def build_knowledge_graph(params=None):
             add_edge(env_id, node_id, '运行于', 'environment_infrastructure', 2)
             infrastructure_node_ids.append(node_id)
 
+        from ops.task_resources import scope_task_resources
+
         for resource_env in task_resource_env_groups:
+            task_resource_queryset = TaskResource.objects.select_related('system', 'cluster').filter(environment=resource_env)
+            if user is not None:
+                # 知识图谱与 /tasks/resources 使用同一套 CMDB 授权范围，避免泄露 IP/集群信息。
+                task_resource_queryset = scope_task_resources(task_resource_queryset, user)
             resources = list(
-                TaskResource.objects
-                .select_related('system', 'cluster')
-                .filter(environment=resource_env)
+                task_resource_queryset
                 .only(
                     'id',
                     'name',
@@ -2239,6 +2338,7 @@ def build_knowledge_graph(params=None):
             'tracing': 'Tracing',
             'k8s': 'K8s',
             'docker': 'Docker',
+            'posture': '系统态势',
             'marketplace': '平台部署',
         }
         sources = [
@@ -2453,9 +2553,8 @@ def build_knowledge_graph(params=None):
             system_counter[_clean(event.business_line)] += 1
         for alert in alert_records:
             system_counter[_clean(alert.business_line)] += 1
-
-        system_counter.pop('', None)
-
+        for system in posture_systems:
+            system_counter[_clean(system.name)] += 1
         system_counter.pop('', None)
         system_counter.pop(UNKNOWN_SYSTEM, None)
         if system_counter:
@@ -2723,6 +2822,44 @@ def build_knowledge_graph(params=None):
             f'告警：{alert.title}',
         )
 
+    for system in posture_systems:
+        system_name = system.name
+        system_environment = graph_environment(system.environment, 'posture')
+        if not use_knowledge_env:
+            add_capability_context('posture', system_name, system_environment, system.name, 2, f'系统态势：{system.name}')
+        service_specs = system.service_specs if isinstance(system.service_specs, list) else []
+        for service in service_specs:
+            service_name = service.get('name') or service.get('id')
+            matched_service_name = matching_runtime_service_name(service_name)
+            if use_knowledge_env and matched_service_name not in runtime_services:
+                continue
+            add_capability_context('posture', system_name, system_environment, matched_service_name, 1, f'系统态势服务：{service_name}')
+            system_service_id = _node_key('service', system_environment or UNKNOWN_ENV, system_name, system.name)
+            service_id = _node_key('service', system_environment or UNKNOWN_ENV, system_name, matched_service_name or UNKNOWN_SERVICE)
+            add_edge(system_service_id, service_id, '系统服务拆解', 'system_service')
+        dependencies = system.dependencies if isinstance(system.dependencies, list) else []
+        for dependency in dependencies:
+            dep_name = dependency.get('name') or dependency.get('id')
+            if use_knowledge_env:
+                classification = _classify_runtime_component(
+                    dependency.get('kind'),
+                    dep_name,
+                    dependency.get('role'),
+                )
+                if not classification:
+                    continue
+                component_id = _node_key(
+                    'runtime_component',
+                    _normalized_runtime_text(_clean(dep_name)) or _clean(dep_name) or classification['name'],
+                )
+                if component_id in nodes:
+                    system_id = _node_key('system', system_environment or UNKNOWN_ENV, system_name)
+                    add_edge(system_id, component_id, dependency.get('role') or '依赖组件', 'system_runtime', 1)
+                continue
+            add_capability_context('posture', system_name, system_environment, dep_name, 1, f'依赖：{dep_name}')
+            system_service_id = _node_key('service', system_environment or UNKNOWN_ENV, system_name, system.name)
+            dep_id = _node_key('service', system_environment or UNKNOWN_ENV, system_name, dep_name or UNKNOWN_SERVICE)
+            add_edge(system_service_id, dep_id, dependency.get('role') or '依赖', 'system_dependency')
 
     for event in event_records:
         if _is_demoish_text(event.title, event.application, event.resource_name):

@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import json
 import os
+import secrets
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -139,9 +140,9 @@ SYSTEM_POSTURE_ENABLED = _bool_value(
         FEATURE_CONFIG,
         ('system_posture_enabled', 'systemPostureEnabled', 'system_posture', 'systemPosture'),
         ('SXDEVOPS_SYSTEM_POSTURE_ENABLED', 'SYSTEM_POSTURE_ENABLED'),
-        False,
+        True,
     ),
-    False,
+    True,
 )
 
 
@@ -250,15 +251,49 @@ def _mysql_database_config(section):
     return config
 
 
+def _postgresql_database_config(section):
+    options = section.get('options', {})
+    if not isinstance(options, dict):
+        raise RuntimeError('database.options must be a JSON object.')
+    options = dict(options)
+    options.setdefault('connect_timeout', 10)
+    sslmode = _setting_value(section, 'sslmode', ('POSTGRES_SSLMODE', 'PGSSLMODE'), '')
+    if sslmode:
+        options['sslmode'] = sslmode
+    config = {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': _setting_value(section, ('database_name', 'database', 'name'),
+                               ('POSTGRES_DB', 'DATABASE_NAME', 'DB_NAME'), 'sxdevops'),
+        'USER': _setting_value(section, 'user', ('POSTGRES_USER', 'DATABASE_USER', 'DB_USER'), 'sxdevops'),
+        'PASSWORD': _setting_value(section, 'password', ('POSTGRES_PASSWORD', 'DATABASE_PASSWORD', 'DB_PASSWORD'),
+                                   '', allow_blank=True),
+        'HOST': _setting_value(section, 'host', ('POSTGRES_HOST', 'DATABASE_HOST', 'DB_HOST'), '127.0.0.1'),
+        'PORT': str(_setting_value(section, 'port', ('POSTGRES_PORT', 'DATABASE_PORT', 'DB_PORT'), '5432')),
+        'OPTIONS': options,
+        'CONN_MAX_AGE': _int_value(_setting_value(section, ('conn_max_age', 'connMaxAge'),
+                                                ('DATABASE_CONN_MAX_AGE', 'DB_CONN_MAX_AGE'), 60),
+                                   'database.conn_max_age'),
+        'CONN_HEALTH_CHECKS': True,
+    }
+    test_config = section.get('test')
+    if test_config is not None:
+        if not isinstance(test_config, dict):
+            raise RuntimeError('database.test must be a JSON object.')
+        config['TEST'] = test_config
+    return config
+
+
 def _build_database_config():
     section = _app_config_section('database', 'db')
     engine = str(_setting_value(
         section,
         ('type', 'engine'),
         ('DATABASE_ENGINE', 'DB_ENGINE'),
-        'sqlite',
-    ) or 'sqlite').strip().lower()
+        'postgresql',
+    ) or 'postgresql').strip().lower()
 
+    if engine in {'postgresql', 'postgres', 'pg', 'django.db.backends.postgresql'}:
+        return {'default': _postgresql_database_config(section)}
     if engine in {'', 'sqlite', 'sqlite3', 'django.db.backends.sqlite3'}:
         return {'default': _sqlite_database_config(section)}
     if engine in {'mysql', 'mariadb', 'django.db.backends.mysql'}:
@@ -338,15 +373,26 @@ def _build_cache_config():
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = _bool_value(os.getenv('DEBUG'), True)
+DEBUG = _bool_value(os.getenv('DEBUG'), False)
 
 # SECURITY WARNING: keep the secret key used in production secret!
-# 生产模式必须显式提供 SECRET_KEY，仓库中的兜底值只允许在 DEBUG 下使用
+# 生产模式必须显式提供 SECRET_KEY；仅在 DEBUG 下允许生成临时密钥，避免多实例不一致
 SECRET_KEY = os.getenv('SECRET_KEY', '')
 if not SECRET_KEY:
     if not DEBUG:
         raise RuntimeError('生产模式（DEBUG=0）必须显式配置 SECRET_KEY 环境变量。')
-    SECRET_KEY = 'django-insecure-ag#xxnjm^46$=ye()w$yma8r8oy3&wfq!8_=bm!kwe0e((&y3-'
+    SECRET_KEY = secrets.token_urlsafe(50)
+
+SECURITY_CONFIG = _app_config_section('security')
+CMDB_PASSWORD_ENCRYPTION_KEY = _setting_value(
+    SECURITY_CONFIG,
+    ('cmdb_password_encryption_key', 'cmdbPasswordEncryptionKey'),
+    ('CMDB_PASSWORD_ENCRYPTION_KEY',),
+    '',
+)
+
+# 网络监控指标样本保留天数（接口/设备样本共用）
+NETWORK_METRIC_RETENTION_DAYS = int(os.getenv('NETWORK_METRIC_RETENTION_DAYS', '30'))
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -355,6 +401,18 @@ ALLOWED_HOSTS = [
 ]
 
 X_FRAME_OPTIONS = os.getenv('X_FRAME_OPTIONS', 'SAMEORIGIN')
+SECURE_PROXY_SSL_HEADER = (
+    ('HTTP_X_FORWARDED_PROTO', 'https')
+    if _bool_value(os.getenv('TRUST_X_FORWARDED_PROTO'), False)
+    else None
+)
+SESSION_COOKIE_SECURE = _bool_value(os.getenv('SESSION_COOKIE_SECURE'), False)
+CSRF_COOKIE_SECURE = _bool_value(os.getenv('CSRF_COOKIE_SECURE'), False)
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
+]
 
 
 # Application definition
@@ -380,9 +438,12 @@ INSTALLED_APPS = [
     'cmdb',
     'iac',
     'multicloud',
+    'cloudsecurity',
     'aiops.apps.AiopsConfig',
     'rbac',
     'eventwall',
+    'planning',
+    'network',
 ]
 
 MIDDLEWARE = [
@@ -465,27 +526,28 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = _bool_value(os.getenv('CORS_ALLOW_ALL_ORIGINS'), DEBUG)
 
 # DRF
+PUBLIC_PREVIEW_USERNAMES = tuple(
+    value.strip() for value in os.getenv('PUBLIC_PREVIEW_USERNAMES', '').split(',') if value.strip()
+)
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        'rbac.preview.PreviewTokenAuthentication',
+        'rbac.preview.PreviewSessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'sxdevops.pagination.StandardPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'login': os.getenv('LOGIN_THROTTLE_RATE', '10/min'),
-    },
 }
 
 # Loki
-LOKI_URL = ''
+LOKI_URL = 'http://47.95.15.209:33100'
 
 LOG_PROVIDER_CONFIGS = {
     'loki': {
@@ -566,6 +628,11 @@ OBSERVABILITY_CONFIG = {
 }
 
 CACHES = _build_cache_config()
+
+# Only these reverse proxies may supply client IP forwarding headers.
+LOGIN_TRUSTED_PROXIES = [value.strip() for value in os.getenv('SXDEVOPS_TRUSTED_PROXIES', '').split(',') if value.strip()]
+WEBSOCKET_AUTH_RECHECK_SECONDS = 5
+
 
 def _build_channel_layers():
     redis_url = os.getenv('CHANNEL_REDIS_URL') or os.getenv('REDIS_URL', '')

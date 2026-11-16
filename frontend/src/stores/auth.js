@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getCurrentUser, login as loginApi, logout as logoutApi } from '@/api/modules/rbac'
+import { getCurrentUser, getModuleSettings, login as loginApi, logout as logoutApi } from '@/api/modules/rbac'
 
 const TOKEN_KEY = 'sxdevops_token'
 const USER_KEY = 'sxdevops_user'
@@ -19,9 +19,12 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem(TOKEN_KEY) || '')
   const currentUser = ref(loadStoredUser())
   const initialized = ref(false)
+  const moduleSettings = ref([])
+  const moduleSettingsLoaded = ref(false)
 
   const isAuthenticated = computed(() => !!token.value && !!currentUser.value)
   const permissions = computed(() => currentUser.value?.effective_permissions || [])
+  const isPreview = computed(() => Boolean(currentUser.value?.is_preview))
   const displayName = computed(() => {
     if (!currentUser.value) return ''
     return currentUser.value.display_name || currentUser.value.username || ''
@@ -49,9 +52,16 @@ export const useAuthStore = defineStore('auth', () => {
     persistUser(user)
   }
 
+  function setModuleSettings(settings) {
+    moduleSettings.value = Array.isArray(settings) ? settings : []
+    moduleSettingsLoaded.value = true
+  }
+
   function clearSession() {
     persistToken('')
     persistUser(null)
+    moduleSettings.value = []
+    moduleSettingsLoaded.value = false
   }
 
   async function bootstrap() {
@@ -63,7 +73,11 @@ export const useAuthStore = defineStore('auth', () => {
       return null
     }
 
-    return reloadProfile({ silent: true, clearOnUnauthorized: true })
+    const [user] = await Promise.all([
+      reloadProfile({ silent: true, clearOnUnauthorized: true }),
+      reloadModuleSettings({ silent: true }),
+    ])
+    return user
   }
 
   async function reloadProfile(options = {}) {
@@ -87,8 +101,30 @@ export const useAuthStore = defineStore('auth', () => {
     const response = await loginApi(payload)
     persistToken(response.token)
     setUser(response.user)
+    if (Array.isArray(response.module_settings)) {
+      setModuleSettings(response.module_settings)
+    } else {
+      await reloadModuleSettings({ silent: true })
+    }
     initialized.value = true
-    return response.user
+    return response
+  }
+
+  async function reloadModuleSettings(options = {}) {
+    const { silent = false } = options
+    if (!token.value) {
+      setModuleSettings([])
+      return []
+    }
+    try {
+      const settings = await getModuleSettings({ skipErrorMessage: silent })
+      setModuleSettings(settings)
+      return moduleSettings.value
+    } catch (error) {
+      moduleSettingsLoaded.value = true
+      if (silent) return moduleSettings.value
+      throw error
+    }
   }
 
   async function logout() {
@@ -105,18 +141,19 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function hasPermission(code) {
+    if (!isAuthenticated.value || !currentUser.value?.is_active) return false
     if (!code) return true
-    if (currentUser.value?.is_superuser) return true
+    if (isPreview.value) return (currentUser.value?.preview_permissions || []).includes(code)
     return permissions.value.includes(code)
   }
 
   function hasAnyPermission(codes = []) {
-    if (!codes.length) return true
+    if (!codes.length) return isAuthenticated.value && Boolean(currentUser.value?.is_active)
     return codes.some(code => hasPermission(code))
   }
 
   function hasAllPermissions(codes = []) {
-    if (!codes.length) return true
+    if (!codes.length) return isAuthenticated.value && Boolean(currentUser.value?.is_active)
     return codes.every(code => hasPermission(code))
   }
 
@@ -124,16 +161,21 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     currentUser,
     initialized,
+    moduleSettings,
+    moduleSettingsLoaded,
     isAuthenticated,
+    isPreview,
     permissions,
     displayName,
     bootstrap,
     login,
     logout,
     clearSession,
+    setModuleSettings,
     hasPermission,
     hasAnyPermission,
     hasAllPermissions,
     reloadProfile,
+    reloadModuleSettings,
   }
 })

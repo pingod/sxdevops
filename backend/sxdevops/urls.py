@@ -17,14 +17,22 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include, re_path
 from . import frontend_views
+from planning import views as planning_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('rbac.urls')),
     path('api/', include('ops.urls')),
+    path('api/cmdb/', include('cmdb.urls')),
+    path('api/multicloud/', include('multicloud.urls')),
+    path('api/cloud-security/', include('cloudsecurity.urls')),
+    path('api/marketplace/', include('marketplace.urls')),
     path('api/sqlaudit/', include('sqlaudit.urls')),
     path('api/aiops/', include('aiops.urls')),
     path('api/', include('eventwall.urls')),
+    path('api/', include('planning.urls')),
+    path('api/network/', include('network.urls')),
+    re_path(r'^planning-app(?:/(?P<path>.*))?$', planning_views.planning_app),
     re_path(r'^(assets/.*|promo/.*|favicon\.svg)$', frontend_views.frontend_asset),
     path('', frontend_views.frontend_index),
     re_path(r'^(?!api/|admin/|ws/).*$' , frontend_views.frontend_index),

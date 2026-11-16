@@ -478,6 +478,16 @@ def normalize_alert_payload(provider, payload, integration=None):
     for alert in alerts:
         alert['source_type'] = provider
         alert['labels'] = {**default_labels, **_dict(alert.get('labels'))}
+        labels = alert['labels']
+        for field, aliases in {
+            'environment': ('env', 'environment'), 'cluster': ('cluster',),
+            'namespace': ('namespace',), 'region': ('region', 'az'),
+            'business_line': ('business_line', 'team', 'busi_group'),
+        }.items():
+            if not alert.get(field):
+                alert[field] = _text(_first(*(labels.get(key) for key in aliases)))
+        if not alert.get('service'):
+            alert['service'] = _service_from_labels(labels)
         alert['fingerprint'] = _fingerprint(provider, alert)
         if not alert.get('starts_at'):
             alert['starts_at'] = timezone.now()
@@ -539,7 +549,8 @@ def upsert_alert(normalized, integration=None, actor='webhook'):
         alert = existing
         was_resolved = alert.status == Alert.STATUS_RESOLVED
         for field, value in defaults.items():
-            if field == 'starts_at' and alert.starts_at:
+            # 同一轮故障期间保留首次 starts_at；恢复后再次触发属于新的一轮，需接受新的开始时间。
+            if field == 'starts_at' and alert.starts_at and not was_resolved:
                 continue
             setattr(alert, field, value)
         alert.occurrence_count = alert.occurrence_count + 1
@@ -548,6 +559,17 @@ def upsert_alert(normalized, integration=None, actor='webhook'):
             alert.acknowledged_by = ''
             alert.acknowledged_at = None
             alert.ends_at = None
+            # 新一轮故障必须从 0 级重新升级，否则恢复后的告警会“天生满级”而永远不再通知。
+            alert.escalation_level = 0
+            alert.escalated_at = None
+            alert.is_suppressed = False
+            alert.suppressed_by = ''
+            alert.suppressed_until = None
+        elif status_value == Alert.STATUS_RESOLVED:
+            # 恢复后仍带着抑制标记会让 dispatch 直接丢掉恢复通知。
+            alert.is_suppressed = False
+            alert.suppressed_by = ''
+            alert.suppressed_until = None
         alert.save()
 
     if not alert.group_key:
@@ -589,6 +611,13 @@ def _alert_value_map(alert):
     return {key: _text(value) for key, value in values.items()}
 
 
+def _safe_regex_search(pattern, value):
+    try:
+        return re.search(_text(pattern), value)
+    except re.error:
+        return None
+
+
 def match_matchers(alert, matchers):
     if not matchers:
         return True
@@ -606,10 +635,18 @@ def match_matchers(alert, matchers):
             return False
         if op == '!=' and actual == _text(expected):
             return False
-        if op in {'=~', 'regex'} and not re.search(_text(expected), actual):
-            return False
-        if op == '!~' and re.search(_text(expected), actual):
-            return False
+        if op in {'=~', 'regex', '!~'}:
+            hit = _safe_regex_search(expected, actual)
+            if hit is None:
+                # 规则里的正则写错（管理界面可保存任意字符串）时不能让整批告警 500：
+                # 正向匹配视为不命中，反向匹配视为该条件不成立。
+                if op in {'=~', 'regex'}:
+                    return False
+                continue
+            if op in {'=~', 'regex'} and not hit:
+                return False
+            if op == '!~' and hit:
+                return False
         if op == 'contains' and _text(expected) not in actual:
             return False
         if op in {'in', 'not in'}:
@@ -623,15 +660,11 @@ def match_matchers(alert, matchers):
 
 
 def apply_alert_suppression(alert):
-    if getattr(alert, 'status', '') == Alert.STATUS_RESOLVED:
-        # 已恢复的告警不能再被抑制，否则恢复事件与恢复通知会丢失
+    # 已恢复/已关闭的告警不再参与屏蔽/抑制：否则恢复通知会被改写为 fire，且告警永久停在 muted。
+    if alert.status in {Alert.STATUS_RESOLVED, Alert.STATUS_CLOSED}:
         return alert
     now = timezone.now()
     changed = False
-    mute = AlertMuteRule.objects.filter(is_enabled=True).filter(
-        Q(starts_at__isnull=True) | Q(starts_at__lte=now),
-        Q(ends_at__isnull=True) | Q(ends_at__gte=now),
-    ).order_by('-created_at').first()
     matched_mute = None
     for rule in AlertMuteRule.objects.filter(is_enabled=True).filter(
         Q(starts_at__isnull=True) | Q(starts_at__lte=now),
@@ -674,6 +707,9 @@ def apply_alert_suppression(alert):
         alert.is_suppressed = bool(inhibited_by)
         alert.suppressed_by = f'inhibit:{inhibited_by.name}' if inhibited_by else ''
         alert.suppressed_until = inhibit_until
+        if alert.status == Alert.STATUS_MUTED and not inhibited_by:
+            # 屏蔽规则被删除/停用或手动屏蔽已到期时，恢复为活动告警，避免永久停留在“已屏蔽”。
+            alert.status = Alert.STATUS_ACTIVE
         changed = True
     if changed:
         alert.save(update_fields=['status', 'is_suppressed', 'suppressed_by', 'suppressed_until', 'mute_until', 'muted_reason', 'updated_at'])
@@ -797,11 +833,27 @@ def _recipient_contacts(rule):
     return {key: sorted(value) for key, value in result.items()}
 
 
-def _post_json(url, payload, timeout=8, headers=None):
+def _post_json(url, payload, timeout=8, headers=None, provider=''):
     response = requests.post(url, json=payload, timeout=timeout, headers=headers or {})
     text = response.text[:1000]
     if response.status_code >= 400:
         raise RuntimeError(f'HTTP {response.status_code}: {text}')
+    # 钉钉/企微/飞书在业务失败时仍返回 HTTP 200，错误码放在响应体里；只看状态码会把
+    # “token 失效/触发关键词过滤/限流”记录成发送成功，并让聚合规则不再重试。
+    if provider:
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        if isinstance(body, dict):
+            if provider in {'dingtalk', 'wecom'}:
+                errcode = body.get('errcode')
+                if errcode not in (None, 0, '0'):
+                    raise RuntimeError(f"errcode={errcode}: {body.get('errmsg') or text}")
+            elif provider == 'feishu':
+                code = body.get('code')
+                if code not in (None, 0, '0'):
+                    raise RuntimeError(f"code={code}: {body.get('msg') or text}")
     return text
 
 
@@ -881,7 +933,7 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
                 if not buttons:
                     payload = {'msgtype': 'markdown', 'markdown': {'title': title, 'text': body}}
                 request_summary['buttons'] = [item['action'] for item in buttons]
-                response_body = _post_json(url, payload, timeout=channel.timeout_seconds)
+                response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='dingtalk')
         elif channel.channel_type == AlertNotificationChannel.CHANNEL_FEISHU:
             url = _channel_url(channel)
             if not url:
@@ -904,7 +956,7 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
                     },
                 }
                 request_summary['buttons'] = [item['action'] for item in buttons]
-                response_body = _post_json(url, payload, timeout=channel.timeout_seconds)
+                response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='feishu')
         elif channel.channel_type == AlertNotificationChannel.CHANNEL_WECOM:
             url = _channel_url(channel)
             if not url:
@@ -913,7 +965,7 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
             else:
                 button_text = '\n'.join([f'[{item["title"]}]({item["url"]})' for item in _card_buttons(alert, 'wecom', request=request)])
                 payload = {'msgtype': 'markdown', 'markdown': {'content': f'**{title}**\n\n{body}\n\n{button_text}'}}
-                response_body = _post_json(url, payload, timeout=channel.timeout_seconds)
+                response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='wecom')
         else:
             status = AlertNotificationLog.STATUS_SKIPPED
             response_body = '未知通知渠道'
@@ -983,6 +1035,9 @@ def dispatch_alert_notifications(alert, action='fire', request=None, force=False
 def apply_escalation_policy(alert, request=None):
     if alert.status not in {Alert.STATUS_ACTIVE, Alert.STATUS_MUTED}:
         return False
+    # 屏蔽/静默中的告警不应升级，也不应绕过 suppression 强制发通知。
+    if alert.is_suppressed or alert.status == Alert.STATUS_MUTED:
+        return False
     policy = matching_escalation_policy(alert)
     if not policy or not policy.levels:
         return False
@@ -992,6 +1047,8 @@ def apply_escalation_policy(alert, request=None):
     target_level = alert.escalation_level
     matched_level = None
     for index, item in enumerate(policy.levels):
+        if not isinstance(item, dict):
+            continue
         try:
             after_minutes = int(item.get('after_minutes') or item.get('minutes') or 0)
         except (TypeError, ValueError):
@@ -1011,7 +1068,7 @@ def apply_escalation_policy(alert, request=None):
         note=f'命中升级策略 {policy.name}',
         metadata={'policy_id': policy.id, 'level': matched_level or {}, 'duration_minutes': duration_minutes},
     )
-    dispatch_alert_notifications(alert, action='escalation', request=request, force=True)
+    dispatch_alert_notifications(alert, action='escalation', request=request)
     return True
 
 
@@ -1065,6 +1122,10 @@ def apply_alert_action(alert, action, actor='', note='', metadata=None, request=
         alert.claimed_at = claim_records[0].claimed_at if claim_records else None
         update_fields = ['claimed_by', 'claimed_at', 'updated_at']
     elif action == AlertAction.ACTION_MUTE:
+        try:
+            mute_minutes = min(max(int(mute_minutes), 1), 525600)
+        except (TypeError, ValueError, OverflowError):
+            mute_minutes = 60
         alert.status = Alert.STATUS_MUTED
         alert.is_suppressed = True
         alert.suppressed_by = 'manual_mute'
@@ -1080,24 +1141,38 @@ def apply_alert_action(alert, action, actor='', note='', metadata=None, request=
     elif action == AlertAction.ACTION_RESOLVE:
         alert.status = Alert.STATUS_RESOLVED
         alert.ends_at = now
-        update_fields = ['status', 'ends_at', 'updated_at']
+        # 恢复后不再处于抑制态，否则恢复通知会被 dispatch 直接丢弃，UI 也会一直显示“已抑制”。
+        alert.is_suppressed = False
+        alert.suppressed_by = ''
+        alert.suppressed_until = None
+        update_fields = ['status', 'ends_at', 'is_suppressed', 'suppressed_by', 'suppressed_until', 'updated_at']
     elif action == AlertAction.ACTION_CLOSE:
         alert.status = Alert.STATUS_CLOSED
         alert.closed_at = now
-        update_fields = ['status', 'closed_at', 'updated_at']
+        alert.is_suppressed = False
+        alert.suppressed_by = ''
+        alert.suppressed_until = None
+        update_fields = ['status', 'closed_at', 'is_suppressed', 'suppressed_by', 'suppressed_until', 'updated_at']
     elif action == AlertAction.ACTION_REOPEN:
         alert.status = Alert.STATUS_ACTIVE
         alert.closed_at = None
         alert.ends_at = None
         alert.is_acknowledged = False
         alert.is_suppressed = False
-        update_fields = ['status', 'closed_at', 'ends_at', 'is_acknowledged', 'is_suppressed', 'updated_at']
+        alert.suppressed_by = ''
+        alert.suppressed_until = None
+        alert.escalation_level = 0
+        alert.escalated_at = None
+        update_fields = [
+            'status', 'closed_at', 'ends_at', 'is_acknowledged', 'is_suppressed',
+            'suppressed_by', 'suppressed_until', 'escalation_level', 'escalated_at', 'updated_at',
+        ]
     else:
         update_fields = ['updated_at']
     alert.save(update_fields=update_fields)
     action_record = _save_action(alert, action, actor=actor, note=note, metadata=metadata)
     if action == AlertAction.ACTION_ESCALATE:
-        dispatch_alert_notifications(alert, action='escalation', request=request, force=True)
+        dispatch_alert_notifications(alert, action='escalation', request=request)
     return action_record
 
 

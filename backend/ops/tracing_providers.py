@@ -1,13 +1,31 @@
-﻿from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
+
+import json
 
 import requests as http_requests
 from django.conf import settings
+from django.utils import timezone
 from rest_framework import status
 
 
 REQUEST_TIMEOUT = 20
 DEFAULT_TRACE_LIMIT = 20
 TRACING_SENSITIVE_KEYS = {'authorization', 'token', 'api_key', 'password', 'client_secret'}
+
+
+def _text(value):
+    """请求字段可能是数字/布尔值，统一转字符串后再做 strip，避免 AttributeError。"""
+    return str(value).strip() if value not in (None, '') else ''
+
+
+def _trace_limit(value, default=DEFAULT_TRACE_LIMIT, maximum=50):
+    """limit 来自请求体，非数字时回退默认值，不能让整次查询 500。"""
+    try:
+        limit = int(value or default)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(limit, maximum))
+
 
 PROVIDER_LABELS = {
     'demo': '演示数据',
@@ -436,26 +454,49 @@ def _parse_requested_datetime(value):
         return None
 
 
+def _as_aware_datetime(value):
+    """把请求里的时间统一成带时区的 datetime；无时区按项目当前时区解释。"""
+    if value in (None, ''):
+        return None
+    parsed = value if isinstance(value, datetime) else _parse_requested_datetime(value)
+    if parsed is None:
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _duration_minutes(value, default=30):
+    try:
+        return max(5, int(value or default))
+    except (TypeError, ValueError):
+        return max(5, int(default))
+
+
 def _duration_window(payload_or_minutes=30):
     if isinstance(payload_or_minutes, dict):
-        start = _parse_requested_datetime(payload_or_minutes.get('start_time') or payload_or_minutes.get('startTime'))
-        end = _parse_requested_datetime(payload_or_minutes.get('end_time') or payload_or_minutes.get('endTime'))
+        start = _as_aware_datetime(payload_or_minutes.get('start_time') or payload_or_minutes.get('startTime'))
+        end = _as_aware_datetime(payload_or_minutes.get('end_time') or payload_or_minutes.get('endTime'))
         if start and end:
+            # 两个时间可能一个带时区一个不带，统一后再比较，避免 TypeError。
             if end < start:
                 start, end = end, start
             if end == start:
                 end = start + timedelta(minutes=5)
             return start, end
-        minutes = payload_or_minutes.get('duration_minutes') or 30
+        minutes = payload_or_minutes.get('duration_minutes')
     else:
         minutes = payload_or_minutes
-    end = datetime.now()
-    start = end - timedelta(minutes=max(5, int(minutes or 30)))
+    end = timezone.now()
+    start = end - timedelta(minutes=_duration_minutes(minutes))
     return start, end
 
 
 def _duration_strings(payload_or_minutes=30):
     start, end = _duration_window(payload_or_minutes)
+    # SkyWalking 的 duration 使用 UTC（yyyy-MM-dd HHmm），本地时区直接格式化会整体偏移。
+    start = start.astimezone(dt_timezone.utc)
+    end = end.astimezone(dt_timezone.utc)
     return {
         'start': start.strftime('%Y-%m-%d %H%M'),
         'end': end.strftime('%Y-%m-%d %H%M'),
@@ -482,7 +523,7 @@ def _to_iso_from_ms(value):
     if value in (None, ''):
         return ''
     try:
-        return datetime.fromtimestamp(float(value) / 1000).isoformat()
+        return datetime.fromtimestamp(float(value) / 1000, tz=dt_timezone.utc).isoformat()
     except (TypeError, ValueError, OSError):
         return str(value)
 
@@ -491,7 +532,7 @@ def _to_iso_from_micros(value):
     if value in (None, ''):
         return ''
     try:
-        return datetime.fromtimestamp(float(value) / 1000000).isoformat()
+        return datetime.fromtimestamp(float(value) / 1000000, tz=dt_timezone.utc).isoformat()
     except (TypeError, ValueError, OSError):
         return str(value)
 
@@ -500,7 +541,7 @@ def _to_iso_from_nanos(value):
     if value in (None, ''):
         return ''
     try:
-        return datetime.fromtimestamp(float(value) / 1000000000).isoformat()
+        return datetime.fromtimestamp(float(value) / 1000000000, tz=dt_timezone.utc).isoformat()
     except (TypeError, ValueError, OSError):
         return str(value)
 
@@ -511,12 +552,15 @@ def _parse_time_ms(value):
     if isinstance(value, (int, float)):
         return int(value)
     try:
-        return int(datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp() * 1000)
+        parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
     except ValueError:
         try:
-            return int(datetime.strptime(str(value), '%Y-%m-%d %H:%M').timestamp() * 1000)
+            parsed = datetime.strptime(str(value), '%Y-%m-%d %H:%M')
         except ValueError:
             return 0
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return int(parsed.timestamp() * 1000)
 
 
 def _normalize_tags(items):
@@ -725,12 +769,12 @@ def _demo_topology():
 
 
 def _demo_search_traces(payload):
-    keyword = (payload.get('keyword') or '').strip().lower()
-    trace_id = (payload.get('trace_id') or '').strip().lower()
-    service_id = (payload.get('service_id') or '').strip()
-    instance_name = (payload.get('instance_name') or '').strip().lower()
+    keyword = _text(payload.get('keyword')).lower()
+    trace_id = _text(payload.get('trace_id')).lower()
+    service_id = _text(payload.get('service_id'))
+    instance_name = _text(payload.get('instance_name')).lower()
     trace_state = payload.get('trace_state') or 'ALL'
-    limit = max(1, min(int(payload.get('limit') or DEFAULT_TRACE_LIMIT), 50))
+    limit = _trace_limit(payload.get('limit'))
     traces = []
     for item in DEMO_TRACES:
         if service_id and item['service_id'] != service_id:
@@ -990,13 +1034,14 @@ def _load_skywalking_instances(config, service_id, service_name=''):
 
 
 def _search_skywalking_traces(config, payload, services):
-    limit = max(1, min(int(payload.get('limit') or DEFAULT_TRACE_LIMIT), 50))
-    default_service_id = payload.get('service_id') or (services[0]['id'] if services else '')
-    if not default_service_id and not (payload.get('trace_id') or '').strip():
+    limit = _trace_limit(payload.get('limit'))
+    trace_id = _text(payload.get('trace_id'))
+    requested_service_id = _text(payload.get('service_id'))
+    default_service_id = requested_service_id or (services[0]['id'] if services and not trace_id else '')
+    if not default_service_id and not trace_id:
         return []
     condition = {
-        'serviceId': default_service_id,
-        'traceId': payload.get('trace_id') or '',
+        'traceId': trace_id,
         'queryDuration': _duration_strings(payload),
         'minTraceDuration': payload.get('min_duration_ms') or 0,
         'maxTraceDuration': payload.get('max_duration_ms') or 0,
@@ -1004,6 +1049,8 @@ def _search_skywalking_traces(config, payload, services):
         'queryOrder': 'BY_START_TIME',
         'paging': {'pageNum': 1, 'pageSize': limit},
     }
+    if default_service_id:
+        condition['serviceId'] = default_service_id
     query = """
     query SearchTraces($condition: TraceQueryCondition) {
       queryBasicTraces(condition: $condition) {
@@ -1019,14 +1066,14 @@ def _search_skywalking_traces(config, payload, services):
     }
     """
     traces_payload = _skywalking_query(query, {'condition': condition}, config).get('queryBasicTraces') or {}
-    service_name = next((item['name'] for item in services if item['id'] == condition['serviceId']), '')
+    service_name = next((item['name'] for item in services if item['id'] == condition.get('serviceId')), '')
     traces = []
     for item in traces_payload.get('traces') or []:
         trace_ids = item.get('traceIds') or []
         traces.append({
             'trace_id': trace_ids[0] if trace_ids else item.get('segmentId') or '',
             'segment_id': item.get('segmentId') or '',
-            'service_id': condition['serviceId'],
+            'service_id': condition.get('serviceId', ''),
             'service_name': service_name,
             'instance_name': '',
             'endpoint_names': item.get('endpointNames') or [],
@@ -1158,7 +1205,7 @@ def _load_jaeger_services(config):
 
 
 def _search_jaeger_traces(config, payload, services):
-    trace_id = (payload.get('trace_id') or '').strip()
+    trace_id = _text(payload.get('trace_id'))
     if trace_id:
         detail = _load_jaeger_trace_detail(config, trace_id)
         matched = next((item for item in services if item['name'] == detail.get('service_name')), None)
@@ -1182,12 +1229,19 @@ def _search_jaeger_traces(config, payload, services):
         'service': payload.get('service_id') or '',
         'start': start,
         'end': end,
-        'limit': max(1, min(int(payload.get('limit') or DEFAULT_TRACE_LIMIT), 50)),
+        'limit': _trace_limit(payload.get('limit')),
     }
     if payload.get('min_duration_ms'):
-        params['minDuration'] = f"{int(payload['min_duration_ms'])}ms"
+        try:
+            min_duration = int(float(payload['min_duration_ms']))
+        except (TypeError, ValueError):
+            min_duration = 0
+        if min_duration > 0:
+            params['minDuration'] = f'{min_duration}ms'
     if payload.get('keyword'):
         params['operation'] = payload['keyword']
+    if payload.get('trace_state') == 'ERROR':
+        params['tags'] = json.dumps({'error': 'true'})
     raw = _http_get(_jaeger_base(config, '/api/traces'), params=params, config=config)
     traces = raw.get('data') or []
     items = [_jaeger_trace_summary(item, preferred_service=params['service']) for item in traces]
@@ -1304,7 +1358,7 @@ def _zipkin_trace_summary(trace):
 
 
 def _search_zipkin_traces(config, payload, services):
-    trace_id = (payload.get('trace_id') or '').strip()
+    trace_id = _text(payload.get('trace_id'))
     if trace_id:
         detail = _load_zipkin_trace_detail(config, trace_id)
         return [{
@@ -1328,7 +1382,7 @@ def _search_zipkin_traces(config, payload, services):
         'serviceName': payload.get('service_id') or '',
         'lookback': lookback,
         'endTs': end_ms,
-        'limit': max(1, min(int(payload.get('limit') or DEFAULT_TRACE_LIMIT), 50)),
+        'limit': _trace_limit(payload.get('limit')),
     }
     if payload.get('keyword'):
         params['spanName'] = payload['keyword']
@@ -1604,7 +1658,7 @@ def _load_tempo_services(config):
 
 
 def _search_tempo_traces(config, payload, services):
-    trace_id = (payload.get('trace_id') or '').strip()
+    trace_id = _text(payload.get('trace_id'))
     if trace_id:
         detail = _load_tempo_trace_detail(config, trace_id)
         return [{
@@ -1631,12 +1685,12 @@ def _search_tempo_traces(config, payload, services):
             'q': query,
             'start': start,
             'end': end,
-            'limit': max(1, min(int(payload.get('limit') or DEFAULT_TRACE_LIMIT), 50)),
+            'limit': _trace_limit(payload.get('limit')),
         },
         config=config,
     )
     items = [_tempo_trace_summary(item) for item in _tempo_parse_search_traces(raw)]
-    keyword = (payload.get('keyword') or '').strip().lower()
+    keyword = _text(payload.get('keyword')).lower()
     if keyword:
         items = [
             item for item in items
@@ -1853,7 +1907,7 @@ def search_tracing(payload):
                     detail_cache[trace_id] = None
             return detail_cache[trace_id]
 
-    requested_instance_name = str(payload.get('instance_name') or '').strip()
+    requested_instance_name = _text(payload.get('instance_name'))
     if requested_instance_name:
         normalized_instance_name = requested_instance_name.lower()
         filtered = []

@@ -7,50 +7,192 @@ services:
     container_name: sxdevops-app
     restart: unless-stopped
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      DATABASE_ENGINE: mysql
-      MYSQL_HOST: mysql
-      MYSQL_PORT: "3306"
-      MYSQL_DATABASE: sxdevops
-      MYSQL_USER: sxdevops
-      MYSQL_PASSWORD: sxdevops_password
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
       REDIS_URL: redis://redis:6379/0
       CHANNEL_REDIS_URL: redis://redis:6379/1
-      SECRET_KEY: sxdevops-change-me-in-production
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      # Keep this Fernet key unchanged after CMDB credentials have been saved.
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
       DEBUG: "0"
-      ALLOWED_HOSTS: "*"
-      # 下面两项仅为本地演示放宽，生产部署必须替换 SECRET_KEY 并收紧 ALLOWED_HOSTS / CORS
       CORS_ALLOW_ALL_ORIGINS: "1"
       SXDEVOPS_WAIT_FOR_DB: "1"
       SXDEVOPS_MIGRATE: "1"
-      SXDEVOPS_SEED_DATA: "1"
+      SXDEVOPS_SEED_DATA: "0"
       SXDEVOPS_SEED_TEMPLATES: "1"
-      SXDEVOPS_SEED_ADMIN: "1"
+      AIOPS_LANGGRAPH_CHECKPOINT_BACKEND: postgresql
+      PLANNING_ENGINE_URL: http://planning-engine:18001
+    volumes:
+      - aiops_runtime:/app/backend/runtime
     ports:
       - "8000:8000"
 
-  mysql:
-    image: mysql:8.0
-    container_name: sxdevops-mysql
+  cmdb-sync-scheduler:
+    image: sxdevops:latest
+    container_name: sxdevops-cmdb-sync-scheduler
     restart: unless-stopped
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --default-authentication-plugin=mysql_native_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
-      MYSQL_DATABASE: sxdevops
-      MYSQL_USER: sxdevops
-      MYSQL_PASSWORD: sxdevops_password
-      MYSQL_ROOT_PASSWORD: sxdevops_root_password
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+    command: ["python", "manage.py", "run_cmdb_sync_scheduler", "--interval", "60", "--limit", "10"]
+
+  aiops-chat-worker:
+    image: sxdevops:latest
+    container_name: sxdevops-aiops-chat-worker
+    restart: unless-stopped
+    depends_on:
+      sxdevops:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      AIOPS_LANGGRAPH_CHECKPOINT_BACKEND: postgresql
+    volumes:
+      - aiops_runtime:/app/backend/runtime
+    command: ["python", "manage.py", "run_aiops_chat_worker", "--interval", "2"]
+
+  planning-engine:
+    image: sxdevops:latest
+    container_name: sxdevops-planning-engine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      # 引擎绑定容器接口供平台反代访问；不发布端口到宿主机，
+      # 对外唯一入口是 sxdevops 的 /api/planning/（RBAC + 审计）。
+      PLANNING_BIND: 0.0.0.0
+    volumes:
+      - aiops_runtime:/app/backend/runtime
+      - planning_projects:/app/planning/projects
+    command: ["python", "manage.py", "planning_engine"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18001/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  network-poller:
+    image: sxdevops:latest
+    container_name: sxdevops-network-poller
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      NETWORK_METRIC_RETENTION_DAYS: ${NETWORK_METRIC_RETENTION_DAYS:-30}
+    command: ["python", "manage.py", "run_network_poller", "--tick", "5", "--concurrency", "8"]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: sxdevops-postgres
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
       TZ: Asia/Shanghai
     volumes:
-      - mysql_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -69,5 +211,7 @@ services:
       retries: 20
 
 volumes:
-  mysql_data:
+  postgres_data:
   redis_data:
+  aiops_runtime:
+  planning_projects:

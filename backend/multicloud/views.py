@@ -8,7 +8,7 @@ from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
 from eventwall.services import build_resource, record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
-from rbac.services import DEMO_ACCOUNT_MUTATION_MESSAGE, is_demo_account, user_has_permissions
+from rbac.services import user_has_permissions
 
 from .models import CloudAsset, CloudCredential, CloudEnvironment, CloudSyncTask
 from .serializers import CloudAssetSerializer, CloudCredentialSerializer, CloudEnvironmentSerializer, CloudSyncTaskSerializer
@@ -273,13 +273,42 @@ def topology_view(request):
     return Response(build_topology(environment_id=environment_id, provider=provider))
 
 
+def _parse_optional_int(value):
+    if value in (None, ''):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_id_list(value):
+    if not isinstance(value, list):
+        return []
+    parsed = []
+    for item in value:
+        try:
+            parsed.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.multicloud.view')])
 def cost_trend_view(request):
+    environment = request.query_params.get('environment')
+    if environment not in (None, ''):
+        try:
+            environment = int(environment)
+        except (TypeError, ValueError):
+            return Response({'detail': '环境 ID 不合法。'}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        environment = None
     return Response(
         build_cost_trend(
             provider=request.query_params.get('provider', ''),
-            environment_id=request.query_params.get('environment') or None,
+            environment_id=environment,
             resource_type=request.query_params.get('resource_type', ''),
             group_by=request.query_params.get('group_by', 'provider') or 'provider',
         )
@@ -291,7 +320,13 @@ def cost_trend_view(request):
 def batch_sync_view(request):
     environment_ids = request.data.get('environment_ids') or []
     credential_ids = request.data.get('credential_ids') or []
+    if not isinstance(environment_ids, list) or not isinstance(credential_ids, list):
+        return Response({'detail': 'environment_ids 与 credential_ids 必须是数组。'}, status=status.HTTP_400_BAD_REQUEST)
+    environment_ids = _parse_id_list(environment_ids)
+    credential_ids = _parse_id_list(credential_ids)
     sync_cmdb = bool(request.data.get('sync_cmdb'))
+    if sync_cmdb and not user_has_permissions(request.user, ['cmdb.ci.manage']):
+        return Response({'detail': '同步到 CMDB 需要 CMDB 资源管理权限。'}, status=status.HTTP_403_FORBIDDEN)
     results = batch_sync_targets(
         environment_ids=environment_ids,
         credential_ids=credential_ids,
@@ -331,8 +366,6 @@ def batch_sync_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def batch_action_view(request):
-    if is_demo_account(request.user):
-        return Response({'detail': DEMO_ACCOUNT_MUTATION_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
     scope = request.data.get('scope')
     action = request.data.get('action')
     ids = request.data.get('ids') or []
@@ -343,6 +376,8 @@ def batch_action_view(request):
         'environments': ['ops.multicloud.sync'] if action in {'sync_inventory', 'sync_cmdb'} else ['ops.multicloud.manage'],
         'assets': ['ops.multicloud.manage'],
     }.get(scope, [])
+    if not permission_codes:
+        return Response({'detail': '请选择有效的批量操作范围。'}, status=status.HTTP_400_BAD_REQUEST)
     if action == 'sync_cmdb':
         permission_codes = ['ops.multicloud.sync', 'cmdb.ci.manage']
 

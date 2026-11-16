@@ -18,6 +18,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { SYSTEM_POSTURE_ENABLED } from '@/config/features'
 
 const props = defineProps({
   group: {
@@ -31,8 +32,13 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const tabGroups = {
-  boards: [
-    { key: 'grafana', title: '仪表盘', icon: 'Histogram', path: '/observability/grafana', permission: 'ops.grafana.view' },
+  posture: [
+    ...(SYSTEM_POSTURE_ENABLED
+      ? [
+          { key: 'system-posture', title: '系统SLO', icon: 'Aim', path: '/observability/system-posture', permission: 'ops.observability.system_posture.view' },
+          { key: 'posture-history', title: '态势历史', icon: 'TrendCharts', path: '/observability/posture-history', permission: 'ops.observability.system_posture.view' },
+        ]
+      : []),
   ],
   query: [
     { key: 'metrics-query', title: '指标查询', icon: 'DataAnalysis', path: '/observability/metrics', permission: 'ops.metric.query' },

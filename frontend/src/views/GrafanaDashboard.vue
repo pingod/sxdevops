@@ -1,5 +1,5 @@
 <template>
-  <div class="observability-page" :class="{ 'is-immersive': fullscreenVisible }">
+  <div class="observability-page workbench-page-shell" :class="{ 'is-immersive': fullscreenVisible }">
     <section v-if="fullscreenVisible && selectedDashboardUrl" class="immersive-shell panel">
       <div class="immersive-toolbar">
         <div class="immersive-toolbar__meta">
@@ -11,7 +11,7 @@
           </div>
           <span>{{ immersiveFolderLabel }}</span>
         </div>
-        <span class="immersive-toolbar__hint">注意：看板首次加载会比较慢</span>
+        <span class="immersive-toolbar__hint" :title="selectedDashboardOrigin">Grafana 看板 · {{ selectedDashboardOrigin }}</span>
         <div class="immersive-toolbar__actions">
           <el-button size="small" v-if="canViewTracing" type="success" plain @click="openTraceFromDashboard(selectedDashboard)">查链路</el-button>
           <el-button size="small" v-if="canQueryLogs" type="warning" plain @click="openLogsFromDashboard(selectedDashboard)">查日志</el-button>
@@ -21,12 +21,11 @@
       </div>
       <div class="immersive-stage">
         <iframe
-          ref="immersiveFrameRef"
           class="immersive-frame"
           :src="selectedDashboardUrl"
-          :style="{ height: `${immersiveFrameHeight}px` }"
           :title="`${selectedDashboard.title}-immersive`"
-          @load="handleGrafanaFrameLoad"
+          sandbox="allow-scripts allow-same-origin"
+          referrerpolicy="no-referrer"
         />
       </div>
     </section>
@@ -42,17 +41,9 @@
             <p class="page-inline-desc">{{ pageDescription }}</p>
           </div>
         </div>
-        <div class="hero-actions">
-          <el-button size="small" @click="loadOverview" :loading="loading">
-            <el-icon><RefreshRight /></el-icon>
-            刷新
-          </el-button>
-        </div>
       </section>
 
-      <ObservabilityRouteTabs group="boards" />
-
-      <section class="panel">
+      <section class="panel dashboard-list-panel workbench-fill-panel">
         <div class="section-head section-head--list">
           <div class="section-title-block">
             <div class="section-title-main">
@@ -60,7 +51,12 @@
             </div>
           </div>
           <div class="list-head-actions">
+            <el-button size="small" @click="loadOverview" :loading="loading"><el-icon><RefreshRight /></el-icon>刷新</el-button>
             <el-button size="small" plain @click="collapseAllFolders">全部折叠</el-button>
+            <el-button v-if="canManageGrafana" size="small" type="primary" plain @click="openBatchDialog">
+              <el-icon><Plus /></el-icon>
+              批量导入看板
+            </el-button>
             <el-button v-if="canManageGrafana" size="small" type="primary" plain @click="openFolderDialog()">新增目录</el-button>
             <el-button size="small" plain @click="embedHelpVisible = true">
               <el-icon><QuestionFilled /></el-icon>
@@ -162,7 +158,8 @@
                         <i></i>
                       </span>
                     </span>
-                    <strong>{{ node.title }}</strong>
+                    <button v-if="node.url" type="button" class="dashboard-title-link" @click.stop="openFullscreen(node)">{{ node.title }}</button>
+                    <strong v-else>{{ node.title }}</strong>
                     <div class="dashboard-tags dashboard-tags--inline">
                       <span v-for="tag in node.tags" :key="`${node.key}-${tag}`" class="dashboard-chip">{{ tag }}</span>
                     </div>
@@ -213,7 +210,23 @@
       </section>
     </template>
 
-    <el-dialog v-model="folderDialog.visible" :title="folderDialogTitle" width="420px" destroy-on-close>
+    <el-dialog top="5vh" :close-on-click-modal="false" append-to-body class="workbench-edit-dialog" v-model="batchDialog.visible" title="批量导入 Grafana 看板" width="680px" destroy-on-close>
+      <div class="batch-import-form">
+        <el-alert title="一行一个看板，格式：看板名称 | Grafana URL | 目录；也支持直接粘贴 URL。保存时会一次性写入全部看板。" type="info" :closable="false" />
+        <el-input v-model="batchDialog.text" type="textarea" :rows="9" resize="vertical" placeholder="订单总览 | https://grafana.example.com/d/orders | 业务/订单&#10;节点资源 | https://grafana.example.com/d/nodes | 基础设施/节点" />
+        <div class="batch-import-options">
+          <el-input v-model.trim="batchDialog.defaultFolder" size="small" placeholder="未填写目录时使用（可选）" style="width: 240px" />
+          <el-switch v-model="batchDialog.appendKioskParams" :active-text="`自动追加 kiosk=true 和 theme=${colorScheme}`" />
+          <span class="batch-import-count">{{ batchImportRows.length }} 条有效记录</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="batchDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="configSaving" :disabled="!batchImportRows.length" @click="submitBatchDialog">批量保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog top="5vh" :close-on-click-modal="false" append-to-body class="workbench-edit-dialog" v-model="folderDialog.visible" :title="folderDialogTitle" width="420px" destroy-on-close>
       <div class="dialog-form">
         <div v-if="folderDialog.parentPath" class="dialog-field">
           <label>{{ folderDialog.mode === 'edit' ? '上级路径' : '上级目录' }}</label>
@@ -305,7 +318,7 @@ org_role = Viewer</pre>
       </template>
     </el-dialog>
 
-    <el-drawer v-model="dashboardDrawer.visible" :title="dashboardDrawer.mode === 'edit' ? '编辑看板' : '新建看板'" size="560px" destroy-on-close>
+    <el-dialog v-model="dashboardDrawer.visible" :title="dashboardDrawer.mode === 'edit' ? '编辑看板' : '新建看板'" class="workbench-edit-dialog" width="min(720px, 94vw)" top="5vh" append-to-body destroy-on-close :close-on-click-modal="false">
       <div class="drawer-form">
         <div class="drawer-field">
           <label>看板名称</label>
@@ -364,8 +377,8 @@ org_role = Viewer</pre>
         <div class="drawer-field drawer-field--inline">
           <label>展示参数</label>
           <div class="drawer-inline-control">
-            <el-switch v-model="dashboardDrawer.appendKioskParams" active-text="自动追加 kiosk=true&theme=light" inactive-text="不追加" />
-            <span class="config-url-hint">用于嵌入展示时隐藏 Grafana 菜单并使用浅色主题。</span>
+            <el-switch v-model="dashboardDrawer.appendKioskParams" :active-text="`自动追加 kiosk=true 和 theme=${colorScheme}`" inactive-text="不追加" />
+            <span class="config-url-hint">用于嵌入展示时隐藏 Grafana 菜单和跟随平台颜色主题。</span>
           </div>
         </div>
         <div class="drawer-field__hint">
@@ -378,19 +391,20 @@ org_role = Viewer</pre>
           <el-button type="primary" :loading="configSaving" @click="submitDashboardDrawer">保存看板</el-button>
         </div>
       </template>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { safeGrafanaUrl, safeHttpUrl } from '@/utils/safe-url'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight, Delete, EditPen, Folder, FolderAdd, FolderOpened, Histogram, Link, MoreFilled, Plus, QuestionFilled, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getGrafanaConfig, getObservabilityOverview, resolveGrafanaToLogs, resolveGrafanaToTrace, updateGrafanaConfig } from '@/api/modules/ops'
 import { useAuthStore } from '@/stores/auth'
+import { colorScheme } from '@/theme'
 import { openRouteInNewTab } from '@/utils/router'
-import ObservabilityRouteTabs from '@/components/observability/ObservabilityRouteTabs.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -401,8 +415,6 @@ const configSaving = ref(false)
 const overviewLoaded = ref(false)
 const fullscreenVisible = ref(false)
 const embedHelpVisible = ref(false)
-const immersiveFrameRef = ref(null)
-const immersiveFrameHeight = ref(fallbackGrafanaFrameHeight())
 const overview = ref({ modules: {}, summary: {}, tips: [] })
 const selectedKey = ref('')
 const selectedFolderPath = ref('')
@@ -426,6 +438,12 @@ const folderDialog = reactive({
   description: '',
   folder_collapsed: false,
 })
+const batchDialog = reactive({
+  visible: false,
+  text: '',
+  defaultFolder: '',
+  appendKioskParams: true,
+})
 const dashboardDrawer = reactive({
   visible: false,
   mode: 'create',
@@ -433,9 +451,6 @@ const dashboardDrawer = reactive({
   appendKioskParams: true,
 })
 const dashboardDraft = reactive(createEmptyDashboard())
-let grafanaFrameMeasureTimer = null
-let grafanaFrameMeasureInterval = null
-let grafanaFrameResizeObserver = null
 
 const grafana = computed(() => overview.value.modules?.grafana || {})
 const dashboards = computed(() => grafana.value.dashboards || [])
@@ -724,6 +739,7 @@ const knownFolderOptions = computed(() => {
 
 const selectedDashboard = computed(() => findDashboardByIdentity(selectedKey.value) || filteredDashboards.value[0] || null)
 const selectedDashboardUrl = computed(() => appendGrafanaContext(selectedDashboard.value?.url || ''))
+const selectedDashboardOrigin = computed(() => selectedDashboardUrl.value ? new URL(selectedDashboardUrl.value).host : '')
 const immersiveFolderLabel = computed(() => {
   const folderPath = normalizeFolderPath(selectedDashboard.value?.folder || '')
   return folderPath ? `目录：${folderPath}` : '目录：未分类'
@@ -747,6 +763,7 @@ const canViewTracing = computed(() => authStore.hasPermission('ops.trace.view'))
 const canQueryLogs = computed(() => authStore.hasPermission('ops.log.query'))
 const canViewAlerts = computed(() => authStore.hasPermission('ops.alert.view'))
 const canManageGrafana = computed(() => authStore.hasPermission('ops.grafana.manage'))
+const batchImportRows = computed(() => parseBatchImport(batchDialog.text))
 
 function normalizeDashboard(item = {}, index = null) {
   const fallbackKey = index === null ? '' : `dashboard-${index + 1}`
@@ -795,39 +812,13 @@ function getDashboardUrlError(url = '') {
   if (!value) {
     return ''
   }
-  try {
-    const parsed = new URL(value)
-    if (!/^https?:$/.test(parsed.protocol)) {
-      return 'URL 需以 http:// 或 https:// 开头'
-    }
-    return ''
-  } catch {
-    return '请输入可直接访问的完整 URL'
-  }
+  return safeHttpUrl(value, window.location.origin)
+    ? ''
+    : '请输入 HTTP、HTTPS 或站内绝对路径，地址不能包含账号密码'
 }
 
 function normalizeGrafanaUrl(url = '') {
-  const value = String(url || '').trim()
-  if (!value) return ''
-  try {
-    const parsed = new URL(value, window.location.origin)
-    const current = new URL(window.location.origin)
-    const path = parsed.pathname || '/'
-    const looksLikeGrafanaPath = path === '/' || ['/d/', '/dashboard/', '/explore', '/public/', '/api/'].some((prefix) => path.startsWith(prefix))
-    const alreadyProxied = parsed.origin === current.origin && path.startsWith('/grafana/')
-    const shouldProxy = current.protocol === 'https:' && looksLikeGrafanaPath && !alreadyProxied
-      && (parsed.protocol === 'http:' || parsed.origin !== current.origin || value.startsWith('/'))
-    if (!shouldProxy) {
-      return parsed.toString()
-    }
-    const proxiedPath = path.startsWith('/grafana/') ? path : `/grafana${path.startsWith('/') ? path : `/${path}`}`
-    const proxied = new URL(proxiedPath, current.origin)
-    proxied.search = parsed.search
-    proxied.hash = parsed.hash
-    return proxied.toString()
-  } catch {
-    return value
-  }
+  return safeGrafanaUrl(url, window.location.origin)
 }
 
 function appendGrafanaDisplayParams(url = '') {
@@ -836,12 +827,10 @@ function appendGrafanaDisplayParams(url = '') {
   try {
     const parsed = new URL(value)
     parsed.searchParams.set('kiosk', 'true')
-    parsed.searchParams.set('theme', 'light')
+    parsed.searchParams.set('theme', colorScheme.value)
     return parsed.toString()
   } catch {
-    const base = value.replace(/[?&](?:kiosk|theme)=[^&#]*/g, '').replace(/[?&]$/, '')
-    const separator = base.includes('?') ? '&' : '?'
-    return `${base}${separator}kiosk=true&theme=light`
+    return ''
   }
 }
 
@@ -852,6 +841,34 @@ function queryFolderSuggestions(queryString, callback) {
     .slice(0, 12)
     .map((item) => ({ value: item }))
   callback(matches)
+}
+
+function parseBatchImport(text = '') {
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split('|').map((part) => part.trim())
+      if (parts.length === 1) {
+        const url = parts[0]
+        let title = url
+        try {
+          const parsed = new URL(url)
+          const segments = parsed.pathname.split('/').filter(Boolean)
+          title = segments[segments.length - 1] || parsed.hostname
+        } catch {
+          title = url
+        }
+        return { title, full_url: url, folder: batchDialog.defaultFolder }
+      }
+      return {
+        title: parts[0],
+        full_url: parts[1],
+        folder: parts[2] || batchDialog.defaultFolder,
+      }
+    })
+    .filter((item) => item.title && item.full_url)
 }
 
 function applyGrafanaConfig(data = {}) {
@@ -1145,6 +1162,51 @@ function openDashboardDrawer(source = null) {
   dashboardDrawer.visible = true
 }
 
+function openBatchDialog() {
+  batchDialog.text = ''
+  batchDialog.defaultFolder = selectedFolderPath.value || ''
+  batchDialog.appendKioskParams = true
+  batchDialog.visible = true
+}
+
+async function submitBatchDialog() {
+  const existingKeys = new Set(grafanaConfig.dashboards.map((item) => item.key).filter(Boolean))
+  const importedDashboards = []
+  for (const [index, row] of batchImportRows.value.entries()) {
+    const urlError = getDashboardUrlError(row.full_url)
+    if (urlError) {
+      ElMessage.error(`第 ${index + 1} 行 URL 无效：${urlError}`)
+      return
+    }
+    const resolvedKey = buildDashboardKey(row, existingKeys)
+    existingKeys.add(resolvedKey)
+    importedDashboards.push({
+      ...createEmptyDashboard(row.folder),
+      key: resolvedKey,
+      slug: resolvedKey,
+      title: row.title,
+      folder: normalizeFolderPath(row.folder),
+      full_url: batchDialog.appendKioskParams ? appendGrafanaDisplayParams(row.full_url) : row.full_url,
+      tags: [],
+    })
+  }
+  if (!importedDashboards.length) {
+    ElMessage.error('请至少输入一条有效记录')
+    return
+  }
+  try {
+    await persistGrafanaConfig({
+      foldersSource: grafanaConfig.folders,
+      dashboardsSource: [...grafanaConfig.dashboards, ...importedDashboards],
+    }, `已批量导入 ${importedDashboards.length} 个看板`)
+    selectedKey.value = importedDashboards[0].key
+    selectedFolderPath.value = importedDashboards[0].folder || selectedFolderPath.value
+    batchDialog.visible = false
+  } catch {
+    // validation message already shown
+  }
+}
+
 async function submitDashboardDrawer() {
   const title = String(dashboardDraft.title || '').trim()
   const rawFullUrl = String(dashboardDraft.full_url || '').trim()
@@ -1418,7 +1480,7 @@ function appendGrafanaContext(url) {
   const normalizedUrl = normalizeGrafanaUrl(url)
   const params = new URLSearchParams()
   params.set('kiosk', 'true')
-  params.set('theme', 'light')
+  params.set('theme', colorScheme.value)
   Object.entries(route.query).forEach(([key, raw]) => {
     if (['dashboard', 'folder', 'keyword', 'tag', 'fullscreen'].includes(key)) return
     if (!['traceId', 'service', 'workload', 'namespace', 'provider', 'source', 'from', 'to'].includes(key) && !key.startsWith('var-')) return
@@ -1581,95 +1643,19 @@ function collapseAllFolders() {
   })
 }
 
-function fallbackGrafanaFrameHeight() {
-  if (typeof window === 'undefined') return 2600
-  const isMobile = window.innerWidth <= 760
-  const ratio = isMobile ? 3.6 : 3.4
-  return Math.max(isMobile ? 2200 : 2600, Math.round(window.innerHeight * ratio))
-}
-
-function clearGrafanaFrameMeasure() {
-  if (grafanaFrameMeasureTimer) {
-    window.clearTimeout(grafanaFrameMeasureTimer)
-    grafanaFrameMeasureTimer = null
-  }
-  if (grafanaFrameMeasureInterval) {
-    window.clearInterval(grafanaFrameMeasureInterval)
-    grafanaFrameMeasureInterval = null
-  }
-  if (grafanaFrameResizeObserver) {
-    grafanaFrameResizeObserver.disconnect()
-    grafanaFrameResizeObserver = null
-  }
-}
-
-function measureGrafanaFrameHeight() {
-  const frame = immersiveFrameRef.value
-  if (!frame) return false
-  try {
-    const doc = frame.contentDocument || frame.contentWindow?.document
-    if (!doc) return false
-    const body = doc.body
-    const root = doc.documentElement
-    const measuredHeight = Math.max(
-      body?.scrollHeight || 0,
-      body?.offsetHeight || 0,
-      root?.clientHeight || 0,
-      root?.scrollHeight || 0,
-      root?.offsetHeight || 0
-    )
-    if (measuredHeight > 0) {
-      immersiveFrameHeight.value = Math.max(measuredHeight + 24, fallbackGrafanaFrameHeight())
-    }
-    return true
-  } catch {
-    immersiveFrameHeight.value = fallbackGrafanaFrameHeight()
-    return false
-  }
-}
-
-function scheduleGrafanaFrameMeasure() {
-  clearGrafanaFrameMeasure()
-  immersiveFrameHeight.value = fallbackGrafanaFrameHeight()
-  if (!fullscreenVisible.value || !selectedDashboardUrl.value) return
-  grafanaFrameMeasureTimer = window.setTimeout(() => {
-    const canReadFrame = measureGrafanaFrameHeight()
-    if (!canReadFrame) return
-    const frame = immersiveFrameRef.value
-    const doc = frame?.contentDocument || frame?.contentWindow?.document
-    const resizeTarget = doc?.body || doc?.documentElement
-    if (resizeTarget && typeof ResizeObserver !== 'undefined') {
-      grafanaFrameResizeObserver = new ResizeObserver(() => measureGrafanaFrameHeight())
-      grafanaFrameResizeObserver.observe(resizeTarget)
-    }
-    grafanaFrameMeasureInterval = window.setInterval(measureGrafanaFrameHeight, 1000)
-    window.setTimeout(() => {
-      if (grafanaFrameMeasureInterval) {
-        window.clearInterval(grafanaFrameMeasureInterval)
-        grafanaFrameMeasureInterval = null
-      }
-    }, 12000)
-  }, 300)
-}
-
-function handleGrafanaFrameLoad() {
-  scheduleGrafanaFrameMeasure()
-}
-
 function openFullscreen(item) {
   if (item?.key) {
     selectedKey.value = item.key
   }
-  if (!item?.url) {
+  if (!normalizeGrafanaUrl(item?.url)) {
+    ElMessage.warning('看板地址无效，请联系管理员检查 Grafana 配置')
     return
   }
   fullscreenVisible.value = true
-  nextTick(scheduleGrafanaFrameMeasure)
 }
 
 function closeFullscreen() {
   fullscreenVisible.value = false
-  clearGrafanaFrameMeasure()
 }
 
 function handleKeydown(event) {
@@ -1745,21 +1731,13 @@ watch(
   syncRouteQuery
 )
 
-watch(
-  () => [fullscreenVisible.value ? '1' : '0', selectedDashboardUrl.value].join('|'),
-  () => nextTick(scheduleGrafanaFrameMeasure)
-)
-
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
-  window.addEventListener('resize', scheduleGrafanaFrameMeasure)
   loadOverview()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
-  window.removeEventListener('resize', scheduleGrafanaFrameMeasure)
-  clearGrafanaFrameMeasure()
 })
 </script>
 
@@ -1772,7 +1750,31 @@ onBeforeUnmount(() => {
 
 .observability-page.is-immersive {
   gap: 0;
-  min-height: auto;
+  height: var(--page-content-height);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dashboard-title-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--el-color-primary);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-title-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dashboard-title-link:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 3px;
+  border-radius: 3px;
 }
 
 .panel {
@@ -2278,6 +2280,25 @@ onBeforeUnmount(() => {
   gap: 14px;
 }
 
+.batch-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.batch-import-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.batch-import-count {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 12px;
+}
+
 .help-section h4 {
   margin: 0 0 6px;
   font-size: 14px;
@@ -2446,9 +2467,11 @@ onBeforeUnmount(() => {
 
 .immersive-shell {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 4px;
-  min-height: auto;
+  min-height: 0;
+  overflow: hidden;
   padding: 2px;
   border: 0;
   box-shadow: none;
@@ -2523,18 +2546,21 @@ onBeforeUnmount(() => {
 }
 
 .immersive-stage {
-  flex: 0 0 auto;
-  min-height: auto;
-  overflow: visible;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   border-radius: 8px;
   border: 0;
   background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
 }
 
 .immersive-frame {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: max(1800px, 220vh);
-  min-height: calc(100vh - 148px);
+  height: 100%;
+  min-height: 0;
   display: block;
   border: 0;
   border-radius: 8px;
@@ -2593,10 +2619,6 @@ onBeforeUnmount(() => {
     justify-content: flex-start;
   }
 
-  .immersive-frame {
-    height: max(1400px, 240vh);
-    min-height: calc(100vh - 204px);
-  }
 }
 
 .hero.panel {

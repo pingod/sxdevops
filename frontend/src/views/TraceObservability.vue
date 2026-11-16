@@ -1,5 +1,5 @@
-﻿<template>
-  <div class="observability-page" :class="{ 'is-embedded': embeddedMode }">
+<template>
+  <div class="observability-page workbench-page-shell" :class="{ 'is-embedded': embeddedMode }">
     <section v-if="!embeddedMode" class="hero panel">
       <div class="hero-copy">
         <div class="hero-title-row">
@@ -234,7 +234,7 @@
       </div>
     </section>
 
-    <div v-if="!topologyOnly" class="content-grid" :class="{ 'has-selected-trace': Boolean(selectedTraceId) }">
+    <div v-if="!topologyOnly" class="content-grid">
       <section class="panel traces-panel">
         <div class="section-head">
           <h3>链路列表</h3>
@@ -586,7 +586,7 @@
     </template>
 
     <template v-else-if="activeTraceTab === 'datasources' && canViewTraceDataSources">
-      <TracingDataSources ref="tracingDataSourcesPanelRef" embedded />
+      <TracingDataSources ref="tracingDataSourcesPanelRef" class="workbench-fill-panel" embedded />
     </template>
 
   </div>
@@ -645,7 +645,7 @@ const traces = ref([])
 const traceDetail = ref(null)
 const selectedTraceId = ref('')
 const selectedSpanId = ref('')
-const topology = ref({})
+const topologyGraph = ref({})
 const searchSummary = ref({})
 const topologyChartRef = ref(null)
 const expandedSpanIds = ref(new Set())
@@ -656,6 +656,16 @@ const traceListPage = ref(1)
 const topologyListPage = ref(1)
 
 let topologyChart = null
+let topologyRenderTimer = null
+let traceDetailSeq = 0
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 
 const DEFAULT_DURATION_MINUTES = 30
 const TRACE_LIST_PAGE_SIZE = 15
@@ -889,7 +899,7 @@ const pagedTopologyHighlights = computed(() => {
 const topologyListPageCount = computed(() => Math.max(1, Math.ceil(topologyHighlights.value.length / TOPOLOGY_LIST_PAGE_SIZE)))
 
 const focusedTopology = computed(() => {
-  const source = topology.value || {}
+  const source = topologyGraph.value || {}
   const nodes = Array.isArray(source.nodes) ? source.nodes : []
   const calls = Array.isArray(source.calls) ? source.calls : []
   if (!filters.serviceId || !nodes.length) {
@@ -1517,7 +1527,7 @@ async function loadCatalog() {
     tracing.value = response.tracing || {}
     providers.value = response.providers || []
     services.value = response.services || []
-    topology.value = response.topology || {}
+    topologyGraph.value = response.topology || {}
     searchSummary.value = response.summary || {}
     traces.value = response.recent_traces || []
     if (!filters.provider) {
@@ -1630,16 +1640,19 @@ async function applyRouteTracePreset(force = false) {
 
 async function loadTrace(traceId) {
   if (!traceId) return
+  const seq = ++traceDetailSeq
   loading.detail = true
   try {
     const response = await getTraceDetail(traceId, { provider: filters.provider, datasource_id: filters.datasourceId })
+    // 快速连点不同链路时，只接受最后一次请求的结果，避免慢响应覆盖新选择。
+    if (seq !== traceDetailSeq) return
     tracing.value = response.tracing || tracing.value
     providers.value = response.providers || providers.value
     traceDetail.value = response.trace || null
     selectedTraceId.value = traceId
     resetSpanWorkbench(response.trace?.spans || [])
   } finally {
-    loading.detail = false
+    if (seq === traceDetailSeq) loading.detail = false
   }
 }
 
@@ -2143,11 +2156,12 @@ function renderTopology() {
       tooltip: {
         trigger: 'item',
         formatter: (params) => {
+          // 节点名来自链路后端，tooltip 按 HTML 渲染，必须转义。
           if (params.dataType === 'edge') {
-            const count = params.data?.value ? ` · ${params.data.value} 次` : ''
-            return `${params.data.source} → ${params.data.target}${count}`
+            const count = params.data?.value ? ` · ${escapeHtml(params.data.value)} 次` : ''
+            return `${escapeHtml(params.data.source)} → ${escapeHtml(params.data.target)}${count}`
           }
-          return params.data?.name || ''
+          return escapeHtml(params.data?.name || '')
         },
       },
       series: [
@@ -2180,7 +2194,7 @@ function handleResize() {
 }
 
 watch(
-  () => [topology.value, filters.serviceId],
+  () => [topologyGraph.value, filters.serviceId],
   async () => {
     topologyListPage.value = 1
     await nextTick()
@@ -2197,7 +2211,9 @@ watch(topologyExpanded, async (expanded) => {
   }
   await nextTick()
   renderTopology()
-  setTimeout(() => {
+  if (topologyRenderTimer) clearTimeout(topologyRenderTimer)
+  topologyRenderTimer = window.setTimeout(() => {
+    topologyRenderTimer = null
     if (topologyExpanded.value) renderTopology()
   }, 60)
 })
@@ -2235,6 +2251,7 @@ watch(
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', handleResize)
   if (!canViewTrace.value) {
     activeTraceTab.value = canViewTraceDataSources.value ? 'datasources' : 'traces'
     return
@@ -2253,7 +2270,6 @@ onMounted(async () => {
   if (!(await applyRouteTracePreset(true)) && !traces.value.length && services.value.length) {
     await runSearch(true)
   }
-  window.addEventListener('resize', handleResize)
 })
 
 watch(
@@ -2293,7 +2309,10 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  if (topologyRenderTimer) clearTimeout(topologyRenderTimer)
+  topologyRenderTimer = null
   topologyChart?.dispose()
+  topologyChart = null
 })
 </script>
 
@@ -3012,10 +3031,6 @@ onUnmounted(() => {
   align-items: start;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(340px, 0.8fr) minmax(0, 1.4fr);
-}
-
-.content-grid.has-selected-trace {
   grid-template-columns: minmax(280px, 0.52fr) minmax(0, 1.68fr);
 }
 
@@ -4016,10 +4031,6 @@ onUnmounted(() => {
   .trace-header-meta {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .content-grid.has-selected-trace {
-    grid-template-columns: 1fr;
   }
 
   .timeline-axis-row,

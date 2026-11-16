@@ -13,6 +13,7 @@ backend/config.json
 
 # Node
 node_modules/
+frontend/public/assets/third-party-notices.txt
 dist/
 
 # IDE
@@ -47,7 +48,32 @@ frontend/screenshots/
 docs/screenshots/*-smoke.png
 
 # Local dev runtime
-.codex/
+.codex/*
+!.codex/skills/
+!.codex/skills/**
+
+# Vendored planning engine local env
+planning/backend/.venv/
+planning/backend/.pytest_cache/
+planning/web/dist/
+
+# Deployment private material must stay ignored even inside a tracked skill.
+.codex/**/deploy.local.json
+.codex/**/connection.json
+.codex/**/known_hosts*
+.codex/**/compose.production.local
+.codex/skills/sxdevops-deploy/**/*.local.*
+.codex/skills/sxdevops-deploy/**/private/
+.codex/skills/sxdevops-deploy/**/*.pem
+.codex/skills/sxdevops-deploy/**/*.key
+.codex/skills/sxdevops-deploy/**/*.p12
+.codex/skills/sxdevops-deploy/**/*.pfx
+.codex/skills/sxdevops-deploy/**/.env*
+.codex/skills/sxdevops-deploy/**/*.crt
+.codex/skills/sxdevops-deploy/**/*.cer
+.codex/skills/sxdevops-deploy/**/*.tar
+.codex/skills/sxdevops-deploy/**/*.tar.gz
+.codex/skills/sxdevops-deploy/**/*.zip
 .runlogs/
 backend/run/
 backend/runtime/

@@ -303,10 +303,9 @@ class TemplatePresetEscapingTests(TestCase):
         values = documents[0]['spec']['template']['spec']['containers'][0]['env']
         self.assertEqual(values[0]['value'], 'a"\n---\nkind: Secret\nmetadata:\n  name: injected')
 
-    def test_render_template_strips_newlines_from_context(self):
-        rendered = deployer._render_template(
-            'value: {{DEMO_TOKEN}}\n',
-            {'DEMO_TOKEN': 'a\n---\nkind: Secret'},
-        )
-
-        self.assertEqual(rendered, 'value: a---kind: Secret\n')
+    def test_render_template_rejects_newlines_in_context(self):
+        with self.assertRaises(ValueError):
+            deployer._render_template(
+                'value: {{DEMO_TOKEN}}\n',
+                {'DEMO_TOKEN': 'a\n---\nkind: Secret'},
+            )

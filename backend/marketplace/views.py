@@ -3,6 +3,7 @@ import threading
 from django.utils.text import slugify
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -10,7 +11,8 @@ from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
 from eventwall.services import build_resource, record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
-from rbac.services import DEMO_ACCOUNT_MUTATION_MESSAGE, is_demo_account
+from rbac.services import user_has_permissions
+from rbac.k8s_access import can_access_k8s
 
 from . import deployer
 from .models import ServiceDeployment, ServiceTemplate
@@ -80,8 +82,53 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
         'logs': ['marketplace.deployment.view'],
     }
 
+    def _assert_target_allowed(self, deploy_mode, host_id=None, cluster_id=None, namespace=None):
+        """ModelViewSet 的 create/update 不经过 deploy_service_view，必须在这里重复目标授权检查。"""
+        user = self.request.user
+        if deploy_mode == 'docker_compose':
+            if not host_id:
+                raise ValidationError({'host': ['Docker Compose 部署需要指定目标主机']})
+            if not user_has_permissions(user, ['ops.host.manage']):
+                raise PermissionDenied('部署到主机需要主机管理权限')
+            return
+        if not cluster_id:
+            raise ValidationError({'cluster': ['K8s 部署需要指定目标集群']})
+        if not can_access_k8s(user, cluster_id, namespace or 'default', execute=True):
+            raise PermissionDenied('当前账号无权在该集群/命名空间操作')
+
+    def _assert_deployment_allowed(self, deployment):
+        self._assert_target_allowed(
+            deployment.deploy_mode,
+            host_id=deployment.host_id,
+            cluster_id=deployment.cluster_id,
+            namespace=deployment.namespace,
+        )
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        self._assert_target_allowed(
+            data.get('deploy_mode') or 'docker_compose',
+            host_id=getattr(data.get('host'), 'id', None),
+            cluster_id=getattr(data.get('cluster'), 'id', None),
+            namespace=data.get('namespace'),
+        )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        data = serializer.validated_data
+        host = data.get('host', instance.host)
+        cluster = data.get('cluster', instance.cluster)
+        self._assert_target_allowed(
+            data.get('deploy_mode', instance.deploy_mode),
+            host_id=getattr(host, 'id', None),
+            cluster_id=getattr(cluster, 'id', None),
+            namespace=data.get('namespace', instance.namespace),
+        )
+        serializer.save()
+
     def eventwall_should_record(self, action, instance=None):
-        return False
+        return True
 
     def eventwall_related_resources(self, instance):
         related = [build_resource('marketplace', 'service_template', instance.template_id, instance.template.name)]
@@ -102,6 +149,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def stop(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployer.stop_service(deployment)
         deployment.refresh_from_db()
         record_event(
@@ -126,6 +174,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def start(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployer.start_service(deployment)
         deployment.refresh_from_db()
         record_event(
@@ -150,6 +199,7 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['post'])
     def remove(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         deployment_id = deployment.id
         deployment_name = deployment.template.name
         related_resources = self.eventwall_related_resources(deployment)
@@ -179,18 +229,18 @@ class ServiceDeploymentViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, 
     @action(detail=True, methods=['get'])
     def logs(self, request, pk=None):
         deployment = self.get_object()
+        self._assert_deployment_allowed(deployment)
         try:
-            tail = max(1, min(int(request.query_params.get('tail', 100)), 10000))
+            tail = int(request.query_params.get('tail', 100))
         except (TypeError, ValueError):
             tail = 100
+        tail = max(1, min(tail, 5000))
         return Response({'logs': deployer.get_service_logs(deployment, tail=tail)})
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, build_rbac_permission('marketplace.deployment.manage')])
 def deploy_service_view(request):
-    if is_demo_account(request.user):
-        return Response({'detail': DEMO_ACCOUNT_MUTATION_MESSAGE}, status=status.HTTP_403_FORBIDDEN)
     serializer = DeployRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
@@ -224,6 +274,8 @@ def deploy_service_view(request):
             host = Host.objects.get(pk=data['host_id'])
         except Host.DoesNotExist:
             return Response({'detail': '目标主机不存在'}, status=status.HTTP_404_NOT_FOUND)
+        if not user_has_permissions(request.user, ['ops.host.manage']):
+            return Response({'detail': '部署到主机需要主机管理权限'}, status=status.HTTP_403_FORBIDDEN)
 
         if ServiceDeployment.objects.filter(
             template=template,
@@ -244,6 +296,8 @@ def deploy_service_view(request):
             return Response({'detail': '目标集群不存在'}, status=status.HTTP_404_NOT_FOUND)
 
         namespace = data.get('namespace') or 'default'
+        if not can_access_k8s(request.user, cluster.id, namespace, execute=True):
+            return Response({'detail': '当前账号无权在该集群/命名空间部署'}, status=status.HTTP_403_FORBIDDEN)
         if ServiceDeployment.objects.filter(
             template=template,
             cluster=cluster,

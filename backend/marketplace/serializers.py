@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 
 from .models import ServiceTemplate, ServiceDeployment
@@ -43,6 +45,19 @@ class ServiceDeploymentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['status', 'deploy_log', 'deploy_dir']
 
+    def validate_env_config(self, value):
+        # 与部署请求同一套规则：禁止换行，避免注入 compose YAML 结构。
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('env_config 必须是对象')
+        for key, item in value.items():
+            name = str(key)
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', name):
+                raise serializers.ValidationError(f'非法的环境变量名：{name}')
+            text = '' if item is None else str(item)
+            if '\n' in text or '\r' in text:
+                raise serializers.ValidationError({name: '值不能包含换行'})
+        return value
+
 
 class DeployRequestSerializer(serializers.Serializer):
     """部署请求"""
@@ -57,6 +72,22 @@ class DeployRequestSerializer(serializers.Serializer):
     version = serializers.CharField(max_length=32)
     env_config = serializers.DictField(required=False, default=dict)
     deployer = serializers.CharField(max_length=64, default='admin')
+
+    def validate_env_config(self, value):
+        # 值会替换进 docker-compose YAML 的双引号标量；换行可闭合标量并注入
+        # privileged/volumes 等键，因此必须拒绝。
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('env_config 必须是对象')
+        cleaned = {}
+        for key, item in value.items():
+            name = str(key)
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', name):
+                raise serializers.ValidationError(f'非法的环境变量名：{name}')
+            text = '' if item is None else str(item)
+            if '\n' in text or '\r' in text:
+                raise serializers.ValidationError({name: '值不能包含换行'})
+            cleaned[name] = item
+        return cleaned
 
     def validate(self, attrs):
         deploy_mode = attrs.get('deploy_mode')

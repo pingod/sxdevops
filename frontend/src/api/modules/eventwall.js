@@ -1,6 +1,6 @@
 import request from '../request'
 
-export const getEventWallAnalysis = (params) => request.get('/events/analysis_wall/', { params })
+export const getEventWallAnalysis = (params, config = {}) => request.get('/events/analysis_wall/', { ...config, params })
 export const getOperationAuditEvents = (params) => request.get('/events/operation_audit/', { params })
 export const pruneOperationAuditEvents = (data) => request.post('/events/prune_operation_audit/', data)
 export const getEventWallEvents = (params) => request.get('/events/', { params })
@@ -17,6 +17,6 @@ export const toggleEventSource = (type) => request.post(`/event-sources/${type}/
 export const issueEventSourceToken = (type) => request.post(`/event-sources/${type}/issue_token/`)
 export const getEventEnvironments = (params) => request.get('/event-environments/', { params })
 export const createEventEnvironment = (data) => request.post('/event-environments/', data)
-export const updateEventEnvironment = (code, data) => request.patch(`/event-environments/${code}/`, data)
-export const deleteEventEnvironment = (code) => request.delete(`/event-environments/${code}/`)
+export const updateEventEnvironment = (code, data) => request.patch(`/event-environments/${encodeURIComponent(code)}/`, data)
+export const deleteEventEnvironment = (code) => request.delete(`/event-environments/${encodeURIComponent(code)}/`)
 export const getUnmatchedEventEnvironments = () => request.get('/event-environments/unmatched/')
