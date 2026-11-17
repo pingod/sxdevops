@@ -110,3 +110,37 @@ class TwinProjectUploadSerializer(serializers.Serializer):
             checksum=parsed['checksum'],
             uploaded_by=self.context.get('uploader', ''),
         )
+
+
+class TwinProjectUpdateSerializer(serializers.Serializer):
+    """设计器保存：项目 JSON 是结构化对象，不是上传文件。"""
+
+    name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    project = serializers.JSONField()
+
+    def validate(self, attrs):
+        instance = self.instance
+        parsed = parse_project(json.dumps(attrs['project'], ensure_ascii=False).encode('utf-8'))
+        name = (attrs.get('name') or '').strip() or instance.name
+        if TwinProject.objects.exclude(pk=instance.pk).filter(name__iexact=name).exists():
+            raise serializers.ValidationError({'name': f'项目名称「{name}」已存在。'})
+        duplicate = TwinProject.objects.exclude(pk=instance.pk).filter(checksum=parsed['checksum']).first()
+        if duplicate:
+            raise serializers.ValidationError({'project': f'项目内容与已有项目「{duplicate.name}」完全相同。'})
+        attrs['name'] = name[:120]
+        attrs['parsed'] = parsed
+        return attrs
+
+    def update(self, instance, validated_data):
+        parsed = validated_data['parsed']
+        instance.name = validated_data['name']
+        if 'description' in validated_data:
+            instance.description = (validated_data['description'] or '').strip()[:255]
+        instance.project_name = parsed['project_name'] or instance.project_name
+        instance.content = parsed['content']
+        instance.object_count = parsed['object_count']
+        instance.size_bytes = parsed['size_bytes']
+        instance.checksum = parsed['checksum']
+        instance.save()
+        return instance

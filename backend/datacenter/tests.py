@@ -173,6 +173,57 @@ class TwinProjectApiTests(TestCase):
         self.assertEqual(response.data['viewer_path'], '/dc-viewer-app/')
 
 
+    def test_update_replaces_content_and_audits(self):
+        self.upload()
+        project = TwinProject.objects.get()
+        payload = room_project(name='机房-A', cabinets=3)
+        payload['meta']['roomHeight'] = 3200
+        response = self.manager_client.put(
+            f'/api/datacenter/twin/projects/{project.pk}/',
+            {'project': payload, 'description': '一期改版'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        project.refresh_from_db()
+        self.assertEqual(project.object_count, 4)
+        self.assertEqual(project.description, '一期改版')
+        self.assertEqual(json.loads(project.content)['meta']['roomHeight'], 3200)
+        self.assertEqual(EventRecord.objects.filter(action='update_twin_project').count(), 1)
+
+    def test_update_requires_manage_permission(self):
+        self.upload()
+        project = TwinProject.objects.get()
+        response = self.viewer_client.put(
+            f'/api/datacenter/twin/projects/{project.pk}/',
+            {'project': room_project(name='机房-A', cabinets=3)},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        project.refresh_from_db()
+        self.assertEqual(project.object_count, 3)
+
+    def test_update_rejects_invalid_project_and_name_collision(self):
+        self.upload()
+        other = TwinProject.objects.create(
+            name='机房-B', content='{"objects":[]}', object_count=0, size_bytes=2, checksum='x',
+        )
+        project = TwinProject.objects.get(name='机房-A')
+        bad = self.manager_client.put(
+            f'/api/datacenter/twin/projects/{project.pk}/',
+            {'project': {'objects': [{'id': 'w', 'type': 'wall'}]}},
+            format='json',
+        )
+        self.assertEqual(bad.status_code, 400)
+        clash = self.manager_client.put(
+            f'/api/datacenter/twin/projects/{project.pk}/',
+            {'name': '机房-B', 'project': room_project(name='机房-A', cabinets=4)},
+            format='json',
+        )
+        self.assertEqual(clash.status_code, 400)
+        self.assertIn('已存在', json.dumps(clash.data, ensure_ascii=False))
+        self.assertEqual(TwinProject.objects.get(pk=other.pk).name, '机房-B')
+
+
 class TwinViewerHostingTests(TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())

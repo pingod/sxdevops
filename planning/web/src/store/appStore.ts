@@ -41,8 +41,7 @@ export type TabKey =
   | 'compare'
   | 'ledger'
   | 'models'
-  | 'labels'
-  | 'scene3d';
+  | 'labels';
 
 /** 选中目标。设备级优先于机柜级（点设备时两者都设，以设备为准）。 */
 export interface Selection {
@@ -108,7 +107,6 @@ export const TAB_KEYS: TabKey[] = [
   'ledger',
   'models',
   'labels',
-  'scene3d',
 ];
 
 /**

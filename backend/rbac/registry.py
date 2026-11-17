@@ -86,7 +86,7 @@ PERMISSION_DEFINITIONS = [
     ('datacenter.planning.view', '查看 IDC 上架布线', 'datacenter', '查看机房平面、机柜 U 位、布线表、数据体检、端口台账与项目版本'),
     ('datacenter.planning.manage', '管理 IDC 上架布线', 'datacenter', '编辑上架意图、保存项目版本、导入型号库与调整 U 位'),
     ('datacenter.twin.view', '查看机房数字孪生', 'datacenter', '查看三维机房项目列表并打开只读三维查看器'),
-    ('datacenter.twin.manage', '管理机房数字孪生项目', 'datacenter', '上传和删除三维机房项目文件'),
+    ('datacenter.twin.manage', '管理机房数字孪生项目', 'datacenter', '上传、删除三维机房项目文件，并使用三维设计器建模与保存'),
     ('network.device.view', '查看网络设备', 'network', '查看网络设备、SNMP 凭据摘要与接口台账'),
     ('network.device.manage', '管理网络设备', 'network', '纳管设备、维护 SNMP 凭据、测试连通性与手动采集'),
     ('network.monitor.view', '查看网络监控', 'network', '查看 NOC 监控总览、接口流量与设备健康指标趋势'),

@@ -19,7 +19,9 @@ from eventwall.services import record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
 
 from .models import TwinProject
-from .serializers import MAX_PROJECT_BYTES, TwinProjectSerializer, TwinProjectUploadSerializer
+from .serializers import (
+    MAX_PROJECT_BYTES, TwinProjectSerializer, TwinProjectUpdateSerializer, TwinProjectUploadSerializer,
+)
 
 #: 仓库根/tools/dc-viewer/dist（本文件位于 backend/datacenter/）。
 VIEWER_DIST_DIR = Path(__file__).resolve().parents[2] / 'tools' / 'dc-viewer' / 'dist'
@@ -46,13 +48,14 @@ def _audit(request, action_name, title, *, resource_id='', resource_name='', sum
 class TwinProjectViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     queryset = TwinProject.objects.all()
     serializer_class = TwinProjectSerializer
-    # 项目文件只做新增/删除：改名或换内容等于换一份项目，避免同一 name 指向不同几何。
-    http_method_names = ['get', 'post', 'delete', 'head', 'options']
+    # 设计器按 id 覆盖保存项目；改名/换内容都走 update，不走「同名新建」。
+    http_method_names = ['get', 'post', 'put', 'delete', 'head', 'options']
     rbac_permissions = {
         'list': ('datacenter.twin.view',),
         'retrieve': ('datacenter.twin.view',),
         'content': ('datacenter.twin.view',),
         'create': ('datacenter.twin.manage',),
+        'update': ('datacenter.twin.manage',),
         'destroy': ('datacenter.twin.manage',),
     }
 
@@ -71,6 +74,18 @@ class TwinProjectViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             summary=f'{project.name}：{project.object_count} 个对象，{project.size_bytes / 1024:.0f} KB',
         )
         return Response(TwinProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        project = self.get_object()
+        serializer = TwinProjectUpdateSerializer(instance=project, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        project = serializer.save()
+        _audit(
+            request, 'update_twin_project', '更新三维机房项目',
+            resource_id=project.pk, resource_name=project.name,
+            summary=f'{project.name}：{project.object_count} 个对象，{project.size_bytes / 1024:.0f} KB',
+        )
+        return Response(TwinProjectSerializer(project).data)
 
     def destroy(self, request, *args, **kwargs):
         project = self.get_object()

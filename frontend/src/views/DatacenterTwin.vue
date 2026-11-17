@@ -33,6 +33,7 @@
           </span>
         </div>
         <div class="twin-toolbar__right">
+          <el-button v-if="canManage" :icon="EditPen" @click="$router.push('/datacenter/twin-design')">设计</el-button>
           <el-button v-if="canManage" type="primary" :icon="Upload" @click="openUploadDialog">上传项目</el-button>
           <el-button v-if="canManage" :icon="Delete" :disabled="!selectedProject || loading" @click="removeProject">删除</el-button>
           <el-button :icon="RefreshRight" :loading="loading" @click="reloadAll">刷新</el-button>
@@ -98,7 +99,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Delete, FolderOpened, RefreshRight, Upload } from '@element-plus/icons-vue'
+import { Box, Delete, EditPen, FolderOpened, RefreshRight, Upload } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   deleteTwinProject,

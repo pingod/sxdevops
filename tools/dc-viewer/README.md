@@ -57,6 +57,29 @@ npm run preview
 `explode=review`、`renderer=webgl|webgpu`、`bright`。默认值不写入地址；状态变化只做
 `history.replaceState`。
 
+## 三维机房设计器
+
+同一套构建产物里还有编辑态：`design.html`（平台页面 `/datacenter/twin-design` 以 iframe 嵌入）。
+
+- 构件库：机柜、墙体、桥架、空调、PDU、UPS、立柱；点放或拖线，墙体/桥架自动正交吸附。
+- 快速布局：按数量/间距/方向批量生成机柜排。
+- 编辑：拖动改平面位置（100mm 吸附，按 Alt 取消）、`R` 旋转 90°、`Del` 删除、`Ctrl+D` 复制、
+  `Ctrl+Z` / `Ctrl+Y` 撤销重做（整份项目快照，栈深 80）。
+- 围护默认半透明，避免墙挡住柜体；顶部可切回实心。
+- 保存：嵌入时把项目 JSON 通过 `postMessage` 交给父页面写入项目库（父页面持有令牌），
+  独立打开时导出 JSON 文件。
+
+消息约定（父页面 ⇄ 设计器）：
+
+| 方向 | 消息 |
+|---|---|
+| 设计器 → 父 | `ready`、`dirty {dirty}`、`save {project}` |
+| 父 → 设计器 | `load {project, id?, name?, force?}`、`new-room {name,width,depth,height,floorHeight}`、`request-save`、`saved {id,name}`、`error {message}` |
+
+```bash
+npm run dev   # http://127.0.0.1:5199/design.html
+```
+
 ## 校验
 
 ```bash

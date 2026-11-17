@@ -661,6 +661,16 @@ const routes = [
         },
       },
       {
+        path: 'datacenter/twin-design',
+        name: 'DatacenterTwinDesign',
+        component: () => import('@/views/DatacenterTwinDesign.vue'),
+        meta: {
+          title: '三维机房设计',
+          icon: 'Edit',
+          permission: 'datacenter.twin.manage',
+        },
+      },
+      {
         path: 'aiops/chat',
         name: 'AIOpsChat',
         component: () => import('@/views/AIOpsChatEntry.vue'),

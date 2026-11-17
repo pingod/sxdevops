@@ -14,7 +14,7 @@
  * 交叉避免、性能降级一整套东西 —— 留到有真实需求再做。
  */
 
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { JSX } from 'react';
 
 import { useAppStore } from './store/appStore';
@@ -34,23 +34,6 @@ import { PortsView } from './views/PortsView';
 import { RackView } from './views/RackView';
 
 
-/**
- * 3D 视图懒加载。
- *
- * ## 为什么必须懒加载（不是为了"体积好看"）
- *
- * three.js 一家就 530KB（压缩后）。静态 import 的话，**每个打开首页的人**
- * 都要下载它 —— 而绝大多数用户从不点 3D。这个项目要离线交付，
- * 首屏多 530KB 在跳板机上就是多等一秒多。
- *
- * 懒加载后 three 单独打成一个 chunk，只有真的点进「3D 机房」才下载。
- * `Suspense` 的 fallback 用一句话而不是转圈：加载通常 <1s，
- * 转圈反而像卡住了。
- */
-const Scene3DView = lazy(() =>
-  import('./views/Scene3DView').then((m) => ({ default: m.Scene3DView })),
-);
-
 const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: 'floor', label: '平面与机柜', hint: '机房平面图 + U 位图' },
   { key: 'design', label: '接线设计', hint: '949 行意图 → 5127 行布线表' },
@@ -64,7 +47,6 @@ const TABS: { key: TabKey; label: string; hint: string }[] = [
   { key: 'ledger', label: '设备台账', hint: '每台设备用了几个口、还剩几个' },
   { key: 'models', label: '设备型号库', hint: '端口模板：每个型号几个口、谁说的' },
   { key: 'labels', label: '线缆标签', hint: '每端一张贴纸印什么字' },
-  { key: 'scene3d', label: '3D 机房', hint: '三维看排布：拖动旋转、点柜进 2D' },
 ];
 
 /** 读取 sxdevops 平台主题（同源 iframe 共享 localStorage）。 */
@@ -195,11 +177,6 @@ export function App(): JSX.Element {
         {tab === 'ledger' && <LedgerView />}
         {tab === 'models' && <ModelsView />}
         {tab === 'labels' && <LabelsView />}
-        {tab === 'scene3d' && (
-          <Suspense fallback={<div className="view-placeholder">正在加载 3D 模块…</div>}>
-            <Scene3DView />
-          </Suspense>
-        )}
       </main>
 
       <footer className="app-footer">
