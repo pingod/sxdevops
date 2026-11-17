@@ -22,6 +22,17 @@ COPY planning/web/ ./
 RUN VITE_BASE=/planning-app/ VITE_API_BASE=/api/planning pnpm build
 
 
+FROM node:22-alpine AS dc-viewer-builder
+
+WORKDIR /app/tools/dc-viewer
+
+COPY tools/dc-viewer/package*.json ./
+RUN npm ci
+
+COPY tools/dc-viewer/ ./
+RUN npm run build
+
+
 FROM python:3.12-slim AS app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -65,6 +76,7 @@ COPY planning/rules/ /app/planning/rules/
 COPY planning/projects/ /app/planning/projects/
 COPY planning/信息港部署上架/ /app/planning/信息港部署上架/
 COPY --from=planning-web-builder /app/planning/web/dist /app/planning/web/dist
+COPY --from=dc-viewer-builder /app/tools/dc-viewer/dist /app/tools/dc-viewer/dist
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh

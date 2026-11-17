@@ -90,6 +90,16 @@ npm run dev
 
 访问 `http://localhost:3000`。修改后端 Python 后需手动重启 Daphne；worker 也要加载同一版本的代码与配置。
 
+「数据中心 · 数字孪生」页由独立构建的只读三维查看器承载（`tools/dc-viewer`），Django 从 `tools/dc-viewer/dist` 托管 `/dc-viewer-app/`。首次本地开发先构建一次查看器：
+
+```bash
+cd tools/dc-viewer
+npm ci
+npm run build
+```
+
+未构建时页面显示「三维查看器未构建」，平台其他功能不受影响；Docker 镜像构建会自动完成这一步。
+
 ## 演示数据与测试角色
 
 仅对独立、可丢弃的数据库运行以下命令：

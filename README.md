@@ -329,6 +329,7 @@ python3 k8s/deploy.py registry.example.com/your-team/sxdevops:v2.0.0
 backend/             Django、业务模块、RBAC、AIOps 和管理命令
 frontend/src/        Vue 页面、组件、路由、API 与状态
 docs/                使用、配置、运维、安全、架构与版本说明
+tools/               独立构建的辅助前端（dc-viewer 三维机房查看器）
 docker/              容器入口脚本
 k8s/                 Kubernetes 基础部署示例
 docker-compose.yml   本地源码构建与服务编排

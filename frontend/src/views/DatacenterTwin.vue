@@ -1,260 +1,350 @@
 <template>
-  <div class="fade-in twin-page workbench-page-shell">
+  <div class="twin-page workbench-page-shell">
     <section class="hero panel">
       <div class="hero-title-row">
-        <span class="hero-icon"><el-icon><Box /></el-icon></span>
-        <h2>机房数字孪生</h2>
-        <p class="page-inline-desc">三维机房场景叠加 SNMP 实时运行状态，机柜与设备按在线/离线/高负载着色</p>
+        <span class="hero-icon">
+          <el-icon><Box /></el-icon>
+        </span>
+        <h2>数字孪生</h2>
+        <p class="page-inline-desc">只读三维机房查看器：视角、显示、剖切、定位、漫游与拆解</p>
       </div>
     </section>
 
-    <div class="audit-grid">
-      <div class="audit-card audit-card--inline">
-        <div class="stat-value">{{ sceneTotals.rooms }}</div>
-        <div class="stat-label">机房</div>
-      </div>
-      <div class="audit-card audit-card--inline">
-        <div class="stat-value">{{ sceneTotals.racks }}</div>
-        <div class="stat-label">机柜</div>
-      </div>
-      <div class="audit-card audit-card--inline">
-        <div class="stat-value">{{ sceneTotals.devices }}</div>
-        <div class="stat-label">规划设备</div>
-      </div>
-      <div class="audit-card audit-card--inline" :class="{ 'audit-card--success': liveDevices.length, 'audit-card--danger': offlineCount > 0 }">
-        <div class="stat-value">{{ onlineCount }}<span class="stat-sub">/ {{ liveDevices.length }}</span></div>
-        <div class="stat-label">纳管设备在线</div>
-      </div>
-    </div>
-
-    <div class="workbench-card twin-stage-card">
-      <div class="section-toolbar">
-        <div class="toolbar-head">
-          <span class="toolbar-title">三维场景</span>
-          <span class="toolbar-desc">拖动旋转、滚轮缩放、点击机柜查看设备；实时状态每 30 秒刷新。</span>
+    <section class="panel twin-stage workbench-fill-panel">
+      <div class="twin-toolbar">
+        <div class="twin-toolbar__left">
+          <el-select
+            v-model="selectedId"
+            class="twin-select"
+            placeholder="选择三维项目"
+            :disabled="!projects.length || loading"
+            filterable
+            @change="openProject"
+          >
+            <el-option v-for="item in projects" :key="item.id" :label="item.name" :value="item.id">
+              <span class="twin-option-name">{{ item.name }}</span>
+              <span class="twin-option-meta">{{ item.object_count }} 对象</span>
+            </el-option>
+          </el-select>
+          <span v-if="selectedProject" class="twin-meta">
+            {{ selectedProject.object_count }} 个对象 · {{ formatBytes(selectedProject.size_bytes) }}
+            <template v-if="selectedProject.uploaded_by"> · {{ selectedProject.uploaded_by }} 上传</template>
+            · {{ formatTime(selectedProject.updated_at) }}
+          </span>
         </div>
-        <div class="workbench-card-actions">
-          <el-button class="filter-refresh-btn" :loading="loading" @click="refresh">
-            <el-icon><RefreshRight /></el-icon>刷新
+        <div class="twin-toolbar__right">
+          <el-button v-if="canManage" type="primary" :icon="Upload" @click="openUploadDialog">上传项目</el-button>
+          <el-button v-if="canManage" :icon="Delete" :disabled="!selectedProject || loading" @click="removeProject">删除</el-button>
+          <el-button :icon="RefreshRight" :loading="loading" @click="reloadAll">刷新</el-button>
+        </div>
+      </div>
+
+      <div class="twin-body">
+        <iframe
+          v-if="frameSrc && viewerBuilt"
+          :key="frameSrc"
+          class="twin-frame"
+          :src="frameSrc"
+          title="三维机房查看器"
+          sandbox="allow-scripts allow-same-origin allow-downloads"
+          referrerpolicy="no-referrer"
+          @load="onFrameLoad"
+        />
+        <div v-else class="twin-placeholder">
+          <el-icon :size="38"><Box /></el-icon>
+          <strong>{{ placeholderTitle }}</strong>
+          <p>{{ placeholderText }}</p>
+          <el-button v-if="canManage && !projects.length && viewerBuilt" type="primary" plain @click="openUploadDialog">
+            上传第一个项目
           </el-button>
         </div>
       </div>
-      <div class="twin-body">
-        <div class="twin-canvas-wrap">
-          <div ref="canvasMount" class="twin-canvas"></div>
-          <div v-if="webglError" class="twin-fallback">
-            <el-icon :size="34"><WarningFilled /></el-icon>
-            <p>{{ webglError }}</p>
-            <el-button type="primary" plain @click="$router.push('/datacenter/planning')">前往平面与机柜视图</el-button>
-          </div>
-          <div v-if="!webglError" class="twin-legend">
-            <span v-for="item in legendItems" :key="item.label" class="legend-item">
-              <span class="legend-dot" :style="{ background: item.color }"></span>{{ item.label }}
-            </span>
-          </div>
-        </div>
-        <aside class="twin-side">
-          <div class="side-section">
-            <div class="side-title">纳管设备实时状态</div>
-            <div v-if="!liveDevices.length" class="side-empty">暂无纳管设备，请先在「网络设备」页添加。</div>
-            <button v-for="dev in liveDevices" :key="dev.id" type="button" class="side-device" :class="{ 'is-active': activeDeviceId === dev.id }" @click="focusDevice(dev)">
-              <span class="device-dot" :class="`device-dot--${dev.status}`"></span>
-              <span class="device-info">
-                <span class="device-name">{{ dev.name }}</span>
-                <span class="device-meta">{{ dev.mgmt_ip }} · {{ dev.matchedCount }} 台关联</span>
-              </span>
-              <el-tag :type="dev.status === 'online' ? 'success' : dev.status === 'offline' ? 'danger' : 'info'" size="small" effect="light">{{ dev.status_display }}</el-tag>
-            </button>
-          </div>
-          <div v-if="pickedRack" class="side-section">
-            <div class="side-title">通道 {{ pickedRack.channel }} · 机柜 {{ pickedRack.rack }}（{{ pickedRackDevices.length }} 台）</div>
-            <div class="rack-device-list">
-              <div v-for="d in pickedRackDevices" :key="d.key" class="rack-device">
-                <span class="legend-dot" :style="{ background: deviceColor(d) }"></span>
-                <span class="rack-device-name">{{ d.displayName || d.model }}</span>
-                <span class="rack-device-u">{{ d.startU }}-{{ d.endU }}U</span>
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </div>
+    </section>
+
+    <el-dialog
+      v-model="uploadDialog"
+      title="上传三维机房项目"
+      width="640px"
+      top="5vh"
+      append-to-body
+      class="workbench-edit-dialog"
+      :close-on-click-modal="false"
+      @closed="resetUpload"
+    >
+      <el-form label-position="top" class="twin-upload-form">
+        <el-form-item label="项目文件">
+          <label class="twin-file-drop" :class="{ 'is-filled': uploadFile }">
+            <input type="file" accept=".json,application/json" @change="onFileChange">
+            <el-icon :size="22"><FolderOpened /></el-icon>
+            <span class="twin-file-name">{{ uploadFile ? uploadFile.name : '选择 DCDesigner 项目 JSON' }}</span>
+            <span class="twin-file-hint">{{ fileHint }}</span>
+          </label>
+        </el-form-item>
+        <el-form-item label="项目名称">
+          <el-input v-model="uploadName" maxlength="120" show-word-limit placeholder="默认取项目文件内的 name 字段" />
+        </el-form-item>
+        <el-form-item label="说明（可选）">
+          <el-input v-model="uploadDescription" maxlength="255" placeholder="如：403 房一期，含 A/B 通道" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="uploadDialog = false">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!uploadFile" @click="submitUpload">上传</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Box, RefreshRight, WarningFilled } from '@element-plus/icons-vue'
-import { colorScheme, THEME_CHANGE_EVENT } from '@/theme'
-import { getPlanningScene } from '@/api/modules/planning'
-import { getNetworkOverview, listNetworkDevices } from '@/api/modules/network'
-import { CATEGORY_COLOR, STATUS_COLOR, TwinScene } from '@/lib/twinScene'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Box, Delete, FolderOpened, RefreshRight, Upload } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
+import {
+  deleteTwinProject,
+  fetchTwinProjectContent,
+  getTwinViewerStatus,
+  listTwinProjects,
+  uploadTwinProject,
+} from '@/api/modules/datacenter'
 
-const canvasMount = ref()
+const FALLBACK_VIEWER_PATH = '/dc-viewer-app/'
+const DEFAULT_MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+
+const authStore = useAuthStore()
+const canManage = computed(() => authStore.hasPermission('datacenter.twin.manage'))
+
+const status = ref(null)
+const projects = ref([])
+const selectedId = ref(null)
+const selectedProject = computed(() => projects.value.find(item => item.id === selectedId.value) || null)
+const viewerBuilt = computed(() => status.value?.viewer_built ?? true)
+const viewerPath = computed(() => status.value?.viewer_path || FALLBACK_VIEWER_PATH)
+const maxUploadBytes = computed(() => status.value?.max_upload_bytes || DEFAULT_MAX_UPLOAD_BYTES)
+
 const loading = ref(false)
-const webglError = ref('')
-const scenePayload = ref(null)
-const liveDevices = ref([])
-const topUtil = ref([])
-const pickedRack = ref(null)
-const activeDeviceId = ref(null)
-let twin = null
-let timer = null
-let resizeObserver = null
+const errorText = ref('')
+const frameSrc = ref('')
+let blobUrls = []
+let activeBlobUrl = ''
 
-const sceneTotals = computed(() => scenePayload.value?.totals || { rooms: 0, racks: 0, devices: 0 })
-const onlineCount = computed(() => liveDevices.value.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => liveDevices.value.filter(d => d.status === 'offline').length)
-const pickedRackDevices = computed(() => {
-  if (!pickedRack.value || !scenePayload.value) return []
-  return scenePayload.value.devices.filter(d => d.channel === pickedRack.value.channel && d.rack === pickedRack.value.rack)
+const uploadDialog = ref(false)
+const uploadFile = ref(null)
+const uploadName = ref('')
+const uploadDescription = ref('')
+const uploadParsed = ref(null)
+const saving = ref(false)
+
+const fileHint = computed(() => {
+  if (!uploadFile.value) return `UTF-8 JSON，上限 ${formatBytes(maxUploadBytes.value)}`
+  const parsed = uploadParsed.value
+  const count = parsed ? `${parsed.count} 个对象 · ` : ''
+  return `${count}${formatBytes(uploadFile.value.size)}`
 })
-const legendItems = [
-  { label: '核心', color: CATEGORY_COLOR.core },
-  { label: '交换机', color: CATEGORY_COLOR.switch },
-  { label: '服务器', color: CATEGORY_COLOR.server },
-  { label: '存储', color: CATEGORY_COLOR.storage },
-  { label: '安全', color: CATEGORY_COLOR.security },
-  { label: '离线', color: STATUS_COLOR.offline },
-  { label: '高负载', color: STATUS_COLOR.warning },
-]
 
-const LIGHT_PALETTE = {
-  background: '#eef2f8',
-  floor: '#d7e0ec',
-  rackEmpty: '#b9c6d8',
-  rackUsed: '#8fa5bf',
-  capEmpty: '#a3b4c9',
-  capUsed: '#6f87a6',
-  selected: '#245bdb',
-  capSelected: '#245bdb',
+const placeholderTitle = computed(() => {
+  if (errorText.value) return '项目加载失败'
+  if (!viewerBuilt.value) return '三维查看器未构建'
+  if (!projects.value.length) return '还没有三维机房项目'
+  return '正在加载项目'
+})
+
+const placeholderText = computed(() => {
+  if (errorText.value) return errorText.value
+  if (!viewerBuilt.value) {
+    return '请在 tools/dc-viewer 执行 npm install && npm run build，产物由 /dc-viewer-app/ 托管。'
+  }
+  if (!projects.value.length) {
+    return canManage.value
+      ? '上传一份 DCDesigner 导出的项目 JSON 后即可查看三维机房。'
+      : '请联系管理员上传三维机房项目。'
+  }
+  return '正在读取项目文件，请稍候。'
+})
+
+function formatBytes(value) {
+  const size = Number(value) || 0
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`
+  return `${size} B`
 }
 
-function normalize(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, '')
+function formatTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function matchSceneDevices(netDevice) {
-  if (!scenePayload.value) return []
-  const names = [normalize(netDevice.name), normalize(netDevice.sys_name)].filter(Boolean)
-  return scenePayload.value.devices.filter((d) => {
-    const display = normalize(d.displayName)
-    const model = normalize(d.model)
-    return names.some(n => display === n || model === n || display.startsWith(n) || n.startsWith(model) && model.length >= 4)
+function releaseBlobs(keep = '') {
+  blobUrls = blobUrls.filter((url) => {
+    if (url === keep) return true
+    URL.revokeObjectURL(url)
+    return false
   })
 }
 
-function deviceStatus(netDevice) {
-  if (netDevice.status === 'offline') return 'offline'
-  const hot = topUtil.value.some(r => r.device_id === netDevice.id && Number(r.util) >= 80)
-  return hot ? 'warning' : 'online'
+function onFrameLoad() {
+  releaseBlobs(activeBlobUrl)
 }
 
-function deviceColor(d) {
-  const entry = liveDevices.value.find(dev => dev.matchedKeys?.includes(d.key))
-  if (entry) {
-    const status = deviceStatus(entry)
-    if (STATUS_COLOR[status]) return STATUS_COLOR[status]
-  }
-  return CATEGORY_COLOR[d.category] || CATEGORY_COLOR.other
-}
-
-async function fetchAllNetworkDevices() {
-  const first = await listNetworkDevices()
-  const all = [...(first.results || [])]
-  const pages = Math.ceil((first.count || 0) / 20)
-  for (let page = 2; page <= pages; page++) {
-    const data = await listNetworkDevices({ page })
-    all.push(...(data.results || []))
-  }
-  return all
-}
-
-async function refresh() {
-  loading.value = true
+async function loadStatus() {
   try {
-    const [scene, overview, devices] = await Promise.all([
-      scenePayload.value ? Promise.resolve(scenePayload.value) : getPlanningScene(),
-      getNetworkOverview().catch(() => null),
-      fetchAllNetworkDevices().catch(() => []),
-    ])
-    scenePayload.value = scene
-    topUtil.value = overview?.top_utilization || []
-    liveDevices.value = devices.map((dev) => {
-      const matched = matchSceneDevices(dev)
-      return { ...dev, matchedCount: matched.length, matchedKeys: matched.map(d => d.key) }
-    })
-    if (twin) {
-      if (!twin.payload) twin.setScene(scene)
-      applyLiveStatus()
-    }
+    status.value = await getTwinViewerStatus()
+  } catch {
+    status.value = null
+  }
+}
+
+async function refreshProjects({ keepSelection = true } = {}) {
+  const data = await listTwinProjects()
+  projects.value = data.results || data || []
+  if (!projects.value.length) {
+    selectedId.value = null
+    frameSrc.value = ''
+    return
+  }
+  if (!keepSelection || !projects.value.some(item => item.id === selectedId.value)) {
+    selectedId.value = projects.value[0].id
+  }
+}
+
+async function openProject(id) {
+  if (!id) return
+  loading.value = true
+  errorText.value = ''
+  try {
+    const text = await fetchTwinProjectContent(id)
+    const blob = new Blob([text], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    blobUrls.push(url)
+    activeBlobUrl = url
+    frameSrc.value = `${viewerPath.value}?src=${encodeURIComponent(url)}`
   } catch (error) {
-    webglError.value = ''
-    if (!scenePayload.value) {
-      webglError.value = '场景数据加载失败：' + (error?.response?.data?.detail || error?.message || '请确认规划引擎已就绪')
-    }
+    errorText.value = error?.response?.data?.detail || error?.message || '项目文件读取失败'
+    frameSrc.value = ''
   } finally {
     loading.value = false
   }
 }
 
-function applyLiveStatus() {
-  const statusByKey = new Map()
-  for (const dev of liveDevices.value) {
-    const status = deviceStatus(dev)
-    for (const key of dev.matchedKeys || []) statusByKey.set(key, status)
+async function reloadAll() {
+  try {
+    errorText.value = ''
+    await refreshProjects()
+    if (selectedId.value) await openProject(selectedId.value)
+  } catch (error) {
+    errorText.value = error?.response?.data?.detail || error?.message || '项目列表加载失败'
+    ElMessage.error(errorText.value)
   }
-  twin?.setDeviceStatus(statusByKey)
 }
 
-function focusDevice(dev) {
-  activeDeviceId.value = dev.id
-  const firstKey = dev.matchedKeys?.[0]
-  if (firstKey && scenePayload.value) {
-    const d = scenePayload.value.devices.find(item => item.key === firstKey)
-    if (d) {
-      pickedRack.value = { channel: d.channel, rack: d.rack }
-      twin?.setSelectedRack(d.channel, d.rack)
+async function removeProject() {
+  const project = selectedProject.value
+  if (!project) return
+  try {
+    await ElMessageBox.confirm(
+      `删除项目「${project.name}」后不可恢复，确定继续？`,
+      '删除三维项目',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  loading.value = true
+  try {
+    await deleteTwinProject(project.id)
+    ElMessage.success(`已删除项目「${project.name}」`)
+    selectedId.value = null
+    frameSrc.value = ''
+    releaseBlobs()
+    await refreshProjects({ keepSelection: false })
+    if (selectedId.value) await openProject(selectedId.value)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.detail || error?.message || '删除失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function openUploadDialog() {
+  uploadDialog.value = true
+}
+
+function resetUpload() {
+  uploadFile.value = null
+  uploadName.value = ''
+  uploadDescription.value = ''
+  uploadParsed.value = null
+  saving.value = false
+}
+
+function onFileChange(event) {
+  const input = event.target
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > maxUploadBytes.value) {
+    ElMessage.error(`项目文件超过 ${formatBytes(maxUploadBytes.value)} 上限`)
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(String(reader.result || ''))
+      const objects = Array.isArray(data?.objects) ? data.objects : null
+      if (!objects?.length) throw new Error('缺少非空的 objects 数组')
+      if (!objects.some(item => item?.type === 'cabinet')) throw new Error('没有任何 cabinet 对象')
+      uploadFile.value = file
+      uploadParsed.value = { count: objects.length, name: typeof data.name === 'string' ? data.name.trim() : '' }
+      if (!uploadName.value) {
+        uploadName.value = (uploadParsed.value.name || file.name.replace(/\.json$/i, '')).slice(0, 120)
+      }
+    } catch (error) {
+      uploadFile.value = null
+      uploadParsed.value = null
+      ElMessage.error(`项目文件校验失败：${error.message}`)
     }
   }
+  reader.onerror = () => ElMessage.error('项目文件读取失败')
+  reader.readAsText(file)
 }
 
-function onPickRack(channel, rack) {
-  pickedRack.value = { channel, rack }
-  twin?.setSelectedRack(channel, rack)
-}
-
-function applyTheme() {
-  twin?.setTheme(colorScheme.value === 'light' ? LIGHT_PALETTE : {})
-}
-
-function onThemeChange() {
-  applyTheme()
+async function submitUpload() {
+  if (!uploadFile.value) return
+  saving.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', uploadFile.value)
+    if (uploadName.value.trim()) formData.append('name', uploadName.value.trim())
+    if (uploadDescription.value.trim()) formData.append('description', uploadDescription.value.trim())
+    const project = await uploadTwinProject(formData)
+    ElMessage.success(`已上传项目「${project.name}」`)
+    uploadDialog.value = false
+    await refreshProjects({ keepSelection: false })
+    selectedId.value = project.id
+    await openProject(project.id)
+  } catch (error) {
+    const detail = error?.response?.data
+    const message = detail?.file?.[0] || detail?.name?.[0] || detail?.detail || error?.message || '上传失败'
+    ElMessage.error(message)
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(async () => {
+  await loadStatus()
   try {
-    twin = new TwinScene(canvasMount.value, { onPickRack })
-  } catch (exc) {
-    webglError.value = `当前浏览器未能启用 WebGL（${exc?.message || exc}）。数字孪生需要硬件加速，可改用平面与机柜视图。`
-    return
+    await refreshProjects({ keepSelection: false })
+    if (selectedId.value) await openProject(selectedId.value)
+  } catch (error) {
+    errorText.value = error?.response?.data?.detail || error?.message || '项目列表加载失败'
   }
-  applyTheme()
-  await refresh()
-  if (twin && scenePayload.value && !twin.payload) twin.setScene(scenePayload.value)
-  applyLiveStatus()
-  resizeObserver = new ResizeObserver(() => twin?.resize())
-  resizeObserver.observe(canvasMount.value)
-  window.addEventListener(THEME_CHANGE_EVENT, onThemeChange)
-  timer = setInterval(refresh, 30000)
 })
 
 onBeforeUnmount(() => {
-  clearInterval(timer)
-  resizeObserver?.disconnect()
-  window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange)
-  twin?.dispose()
-  twin = null
+  releaseBlobs()
 })
 </script>
 
@@ -317,203 +407,155 @@ onBeforeUnmount(() => {
   border-radius: 20px;
 }
 
-.stat-sub {
-  color: #94a3b8;
-  font-size: 14px;
-  font-weight: 500;
+.twin-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
 }
 
-.twin-stage-card {
+.twin-toolbar {
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
   display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.twin-toolbar__left {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.twin-toolbar__right {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.twin-select {
+  width: 300px;
+}
+
+.twin-option-name {
+  font-weight: 600;
+}
+
+.twin-option-meta {
+  color: #94a3b8;
+  float: right;
+  font-size: 12px;
+  margin-left: 12px;
+}
+
+.twin-meta {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .twin-body {
-  display: grid;
   flex: 1;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  min-height: 480px;
-}
-
-.twin-canvas-wrap {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  min-height: 480px;
-  overflow: hidden;
+  min-height: 320px;
   position: relative;
 }
 
-.twin-canvas {
+.twin-frame {
+  border: 0;
+  border-radius: 0 0 11px 11px;
+  display: block;
   height: 100%;
-  min-height: 480px;
+  inset: 0;
+  position: absolute;
   width: 100%;
 }
 
-.twin-canvas :deep(canvas) {
-  display: block;
-}
-
-.twin-fallback {
+.twin-placeholder {
   align-items: center;
   color: #64748b;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  inset: 0;
+  gap: 10px;
+  height: 100%;
   justify-content: center;
   padding: 24px;
-  position: absolute;
   text-align: center;
 }
 
-.twin-legend {
-  background: rgba(15, 23, 42, 0.55);
-  border-radius: 8px;
-  bottom: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  left: 10px;
-  padding: 6px 10px;
-  position: absolute;
+.twin-placeholder strong {
+  color: #334155;
+  font-size: 15px;
 }
 
-.legend-item {
+.twin-placeholder p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 480px;
+}
+
+.twin-upload-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.twin-file-drop {
   align-items: center;
-  color: #e2e8f0;
-  display: inline-flex;
-  font-size: 12px;
-  gap: 5px;
-}
-
-.legend-dot {
-  border-radius: 3px;
-  display: inline-block;
-  flex: none;
-  height: 10px;
-  width: 10px;
-}
-
-.twin-side {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.side-section {
-  border: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+  border: 1px dashed rgba(36, 91, 219, 0.28);
   border-radius: 12px;
-  padding: 12px;
-}
-
-.side-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.side-empty {
-  color: #94a3b8;
-  font-size: 12px;
-  padding: 12px 0;
-}
-
-.side-device {
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  color: #245bdb;
   cursor: pointer;
-  display: flex;
-  gap: 8px;
-  padding: 7px 8px;
-  text-align: left;
-  width: 100%;
-}
-
-.side-device:hover {
-  background: rgba(36, 91, 219, 0.06);
-}
-
-.side-device.is-active {
-  background: rgba(36, 91, 219, 0.1);
-  border-color: rgba(36, 91, 219, 0.25);
-}
-
-.device-dot {
-  border-radius: 50%;
-  flex: none;
-  height: 8px;
-  width: 8px;
-}
-
-.device-dot--online {
-  background: #16a34a;
-}
-
-.device-dot--offline {
-  background: #dc2626;
-}
-
-.device-dot--unknown {
-  background: #94a3b8;
-}
-
-.device-info {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.device-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.device-meta {
-  color: #94a3b8;
-  font-size: 12px;
-}
-
-.rack-device-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 320px;
-  overflow-y: auto;
+  padding: 18px 16px;
+  text-align: center;
+  width: 100%;
 }
 
-.rack-device {
-  align-items: center;
-  display: flex;
+.twin-file-drop.is-filled {
+  border-style: solid;
+  border-color: rgba(36, 91, 219, 0.4);
+}
+
+.twin-file-drop input {
+  display: none;
+}
+
+.twin-file-name {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.twin-file-hint {
+  color: #64748b;
   font-size: 12px;
-  gap: 8px;
 }
 
-.rack-device-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+@media (max-width: 760px) {
+  .twin-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
 
-.rack-device-u {
-  color: #94a3b8;
-  flex: none;
-}
+  .twin-select {
+    width: 100%;
+  }
 
-@media (max-width: 1100px) {
-  .twin-body {
-    grid-template-columns: 1fr;
+  .twin-meta {
+    white-space: normal;
   }
 }
 </style>

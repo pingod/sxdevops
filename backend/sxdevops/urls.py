@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include, re_path
 from . import frontend_views
+from datacenter import views as datacenter_views
 from planning import views as planning_views
 
 urlpatterns = [
@@ -32,7 +33,9 @@ urlpatterns = [
     path('api/', include('eventwall.urls')),
     path('api/', include('planning.urls')),
     path('api/network/', include('network.urls')),
+    path('api/datacenter/twin/', include('datacenter.urls')),
     re_path(r'^planning-app(?:/(?P<path>.*))?$', planning_views.planning_app),
+    re_path(r'^dc-viewer-app(?:/(?P<path>.*))?$', datacenter_views.dc_viewer_app),
     re_path(r'^(assets/.*|promo/.*|favicon\.svg)$', frontend_views.frontend_asset),
     path('', frontend_views.frontend_index),
     re_path(r'^(?!api/|admin/|ws/).*$' , frontend_views.frontend_index),

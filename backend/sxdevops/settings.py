@@ -444,6 +444,7 @@ INSTALLED_APPS = [
     'eventwall',
     'planning',
     'network',
+    'datacenter',
 ]
 
 MIDDLEWARE = [

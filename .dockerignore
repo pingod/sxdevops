@@ -23,6 +23,10 @@ planning/backend/tests
 planning/**/__pycache__
 planning/web/node_modules
 planning/web/dist
+
+tools/dc-viewer/node_modules
+tools/dc-viewer/dist
+tools/dc-viewer/test/parity
 planning/shared
 planning/docs
 planning/scripts
