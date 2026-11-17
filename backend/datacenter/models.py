@@ -19,6 +19,8 @@ class TwinProject(models.Model):
     size_bytes = models.PositiveIntegerField('文件字节数', default=0)
     checksum = models.CharField('SHA-256', max_length=64, blank=True, default='')
     uploaded_by = models.CharField('上传人', max_length=150, blank=True, default='')
+    version = models.PositiveIntegerField('内容版本', default=1)
+    updated_by = models.CharField('最后修改人', max_length=150, blank=True, default='')
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
 
@@ -29,3 +31,35 @@ class TwinProject(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TwinProjectSnapshot(models.Model):
+    """内容快照：每次覆盖保存前留一份旧内容，用于回滚与追责。
+
+    保留最近 `SNAPSHOT_KEEP` 个版本，更早的随写入裁剪；content 与主表同为
+    TextField，几 MB 量级在 SQLite/PostgreSQL 上都不需要额外对象存储。
+    """
+
+    SNAPSHOT_KEEP = 30
+
+    project = models.ForeignKey(
+        TwinProject, on_delete=models.CASCADE, related_name='snapshots', verbose_name='项目',
+    )
+    version = models.PositiveIntegerField('版本号')
+    content = models.TextField('项目 JSON')
+    object_count = models.PositiveIntegerField('对象数', default=0)
+    size_bytes = models.PositiveIntegerField('文件字节数', default=0)
+    checksum = models.CharField('SHA-256', max_length=64, blank=True, default='')
+    created_by = models.CharField('保存人', max_length=150, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '三维机房项目快照'
+        verbose_name_plural = '三维机房项目快照'
+        ordering = ['-version']
+        constraints = [
+            models.UniqueConstraint(fields=['project', 'version'], name='twin_snapshot_project_version_unique'),
+        ]
+
+    def __str__(self):
+        return f'{self.project_id} v{self.version}'

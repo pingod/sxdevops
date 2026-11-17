@@ -2,32 +2,33 @@
  * 设计器三维视口：复用只读查看器的 buildRoom 渲染器，保证「设计稿 = 数字孪生呈现」。
  *
  * 编辑态与查看态的差别只在交互：这里不做墙/柜自动隐藏、不做剖切与漫游，
- * 选中对象用 Box3Helper 描边，拖动只更新 Group 的位移，松手后由 store 回写数据并重建。
+ * 选中对象用 Box3Helper 描边，拖动只更新 Group 的位移，松手后由 store 回写数据。
+ *
+ * 更新分两级：点对象（机柜/空调/立柱…）在原地增量重建自己的对象组；墙体、
+ * 开洞、桥架、横梁与层高会影响包围盒/网格/阴影，交给调用方整场重建。
  */
 import * as THREE from 'three/webgpu';
 import { S } from '../data/units.js';
-import { buildRoom } from '../scene/builders.js';
+import { buildRoom, buildObjectInto, buildWallInto } from '../scene/builders.js';
 import { disposeGroup } from '../scene/dispose.js';
-import { createRenderer, backendOf } from '../scene/renderer.js';
+import { createRendererWithFallback, backendOf } from '../scene/renderer.js';
 import { createRoomEnvironment } from '../scene/environment.js';
+import { projectOnWall, nearestWall, clampTOnWall } from './opening.js';
 
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const ACCENT = new THREE.Color('#245bdb');
 
+/** 可以在原地增量重建的类型：几何只依赖自己，不影响包围盒。 */
+const INCREMENTAL_TYPES = new Set([
+  'cabinet', 'ac', 'pdu', 'ups', 'column', 'vent', 'extinguisher', 'battery', 'aisle',
+]);
+
+const BACKGROUNDS = { light: '#e9edf3', charcoal: '#1b1f24', dark: '#101722' };
+
 export async function createViewport(canvas) {
-  let renderer;
-  try {
-    renderer = await createRenderer(canvas, { antialias: true });
-  } catch (webgpuError) {
-    // Safari / 关闭硬件加速的环境没有 WebGPU：回退 WebGL2，而不是让设计器整页不可用。
-    try {
-      renderer = await createRenderer(canvas, { antialias: true, forceWebGL: true });
-    } catch (webglError) {
-      throw new Error(`${webgpuError.message || webgpuError}；WebGL2 回退也失败：${webglError.message || webglError}`);
-    }
-  }
+  const renderer = await createRendererWithFallback(canvas, { antialias: true });
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#e9edf3');
+  scene.background = new THREE.Color(BACKGROUNDS.light);
   scene.environment = createRoomEnvironment();
   scene.environmentIntensity = 0.55;
 
@@ -55,10 +56,14 @@ export async function createViewport(canvas) {
 
   let built = null;
   let roomGroup = null;
-  let selectionHelper = null;
+  let project = null;
   let grid = null;
   let ghostPoint = null;
   let ghostLine = null;
+  let theme = 'light';
+  const nodeById = new Map();
+  const helpers = new Map();
+  const bench = { fullMs: 0, incrementalMs: 0, last: '' };
 
   function updateCamera() {
     const { radius, theta, phi, target } = controls;
@@ -79,13 +84,13 @@ export async function createViewport(canvas) {
     return pointer;
   }
 
-  function findNode(obj) {
-    if (!roomGroup || !obj) return null;
-    let found = null;
-    roomGroup.traverse(node => {
-      if (!found && node.userData && node.userData.obj === obj) found = node;
+  function indexNodes() {
+    nodeById.clear();
+    if (!roomGroup) return;
+    roomGroup.traverse((node) => {
+      const obj = node.userData && node.userData.obj;
+      if (obj && obj.id && !nodeById.has(obj.id)) nodeById.set(obj.id, node);
     });
-    return found;
   }
 
   function rebuildGrid(b) {
@@ -154,7 +159,18 @@ export async function createViewport(canvas) {
     applyEnclosure();
   }
 
-  function rebuild(project, { fit = false } = {}) {
+  function ctxOf() {
+    return {
+      objs: project?.objects || [],
+      roomH: built?.roomH ?? 3000,
+      ceilH: built?.ceilH ?? 3000,
+      floorH: built?.floorH ?? 400,
+      cabH: Math.max(2000, ...(project?.objects || []).filter(o => o.type === 'cabinet').map(o => o.props.h || 2000)),
+    };
+  }
+
+  function rebuild(nextProject, { fit = false } = {}) {
+    const started = performance.now();
     if (roomGroup) {
       scene.remove(roomGroup);
       disposeGroup(roomGroup);
@@ -162,14 +178,66 @@ export async function createViewport(canvas) {
       built = null;
     }
     clearSelection();
+    nodeById.clear();
+    project = nextProject;
     built = buildRoom(project);
     roomGroup = built.group;
     scene.add(roomGroup);
+    indexNodes();
+    // 阴影贴图按机柜量降级：800 柜项目里 2048 的阴影通道才是帧时间大头。
+    const count = project.objects?.length || 0;
+    dir.shadow.mapSize.set(count > 500 ? 1024 : 2048, count > 500 ? 1024 : 2048);
+    if (dir.shadow.map) {
+      dir.shadow.map.dispose();
+      dir.shadow.map = null;
+    }
     rebuildGrid(built.bounds);
     fitShadow(built.bounds);
     applyEnclosure();
     if (fit) fitView();
+    bench.fullMs = performance.now() - started;
+    bench.last = 'full';
     return built;
+  }
+
+  /** 点对象原地重建；返回 false 表示这个对象必须整场重建。 */
+  function updateObject(obj) {
+    if (!obj || !INCREMENTAL_TYPES.has(obj.type) || !roomGroup) return false;
+    const started = performance.now();
+    const old = nodeById.get(obj.id);
+    if (old) {
+      roomGroup.remove(old);
+      disposeGroup(old);
+    }
+    const group = buildObjectInto(roomGroup, obj, ctxOf());
+    if (!group) return false;
+    nodeById.set(obj.id, group);
+    applyEnclosure();
+    refreshHelper(obj.id);
+    bench.incrementalMs = performance.now() - started;
+    bench.last = 'incremental';
+    return true;
+  }
+
+  /** 只重建一面墙（含它的门窗/格栅）；墙端点/厚度/层高变化仍走整场重建。 */
+  function rebuildWallGroup(wallId) {
+    if (!roomGroup || !project) return false;
+    const wall = (project.objects || []).find(o => o.id === wallId && o.type === 'wall');
+    if (!wall) return false;
+    const started = performance.now();
+    const old = nodeById.get(wallId);
+    if (old) {
+      roomGroup.remove(old);
+      disposeGroup(old);
+      nodeById.clear();
+    }
+    buildWallInto(roomGroup, wall, project.objects, built?.roomH ?? 3000);
+    indexNodes();
+    applyEnclosure();
+    for (const id of helpers.keys()) refreshHelper(id);
+    bench.incrementalMs = performance.now() - started;
+    bench.last = 'wall';
+    return true;
   }
 
   function fitView() {
@@ -185,27 +253,53 @@ export async function createViewport(canvas) {
     updateCamera();
   }
 
-  function clearSelection() {
-    if (selectionHelper) {
-      scene.remove(selectionHelper);
-      selectionHelper.geometry.dispose();
-      selectionHelper.material.dispose();
-      selectionHelper = null;
-    }
+  function disposeHelper(helper) {
+    scene.remove(helper);
+    helper.geometry.dispose();
+    helper.material.dispose();
   }
 
-  function setSelection(obj) {
-    clearSelection();
-    const node = findNode(obj);
+  function clearSelection() {
+    for (const helper of helpers.values()) disposeHelper(helper);
+    helpers.clear();
+  }
+
+  function refreshHelper(id) {
+    const helper = helpers.get(id);
+    if (!helper) return;
+    const node = nodeById.get(id);
     if (!node) return;
     const box = new THREE.Box3().setFromObject(node);
     if (box.isEmpty()) return;
-    box.expandByScalar(0.02);
-    selectionHelper = new THREE.Box3Helper(box, ACCENT);
-    selectionHelper.material.depthTest = false;
-    selectionHelper.material.transparent = true;
-    selectionHelper.renderOrder = 999;
-    scene.add(selectionHelper);
+    helper.box.copy(box).expandByScalar(0.02);
+  }
+
+  function setSelection(objects) {
+    const list = (Array.isArray(objects) ? objects : [objects]).filter(Boolean);
+    const wanted = new Set(list.map(o => o.id));
+    for (const [id, helper] of [...helpers]) {
+      if (!wanted.has(id)) {
+        disposeHelper(helper);
+        helpers.delete(id);
+      }
+    }
+    for (const obj of list) {
+      if (helpers.has(obj.id)) {
+        refreshHelper(obj.id);
+        continue;
+      }
+      const node = nodeById.get(obj.id);
+      if (!node) continue;
+      const box = new THREE.Box3().setFromObject(node);
+      if (box.isEmpty()) continue;
+      box.expandByScalar(0.02);
+      const helper = new THREE.Box3Helper(box, ACCENT);
+      helper.material.depthTest = false;
+      helper.material.transparent = true;
+      helper.renderOrder = 999;
+      scene.add(helper);
+      helpers.set(obj.id, helper);
+    }
   }
 
   function pick(clientX, clientY) {
@@ -227,13 +321,81 @@ export async function createViewport(canvas) {
     return { x: point.x / S, y: -point.z / S };
   }
 
+  /**
+   * 开洞落点：先射线命中墙体本身，否则用地面点找 500mm 内最近的墙。
+   * `width` 给出洞口宽度时按 `[width/2L, 1-width/2L]` 夹取；墙太短返回 null。
+   */
+  function wallHit(clientX, clientY, width = 0) {
+    if (!roomGroup || !project) return null;
+    let hit = null;
+    raycaster.setFromCamera(ndc(clientX, clientY), camera);
+    const hits = raycaster.intersectObject(roomGroup, true);
+    for (const candidate of hits) {
+      let node = candidate.object;
+      while (node && !(node.userData && node.userData.obj && node.userData.obj.type === 'wall')) node = node.parent;
+      const wall = node?.userData?.obj;
+      if (!wall) continue;
+      const spot = projectOnWall(wall, candidate.point.x / S, -candidate.point.z / S);
+      if (spot) { hit = { wall, t: spot.t }; break; }
+    }
+    if (!hit) {
+      const ground = groundPoint(clientX, clientY);
+      if (!ground) return null;
+      hit = nearestWall(project.objects, ground.x, ground.y, 500);
+      if (!hit) return null;
+    }
+    if (width > 0) {
+      const t = clampTOnWall(hit.wall, width, hit.t);
+      if (t === null) return null;
+      hit.t = t;
+    }
+    return hit;
+  }
+
+  /** 世界 mm → 画布 CSS 坐标；自动化点击与框选调试用。 */
+  function projectPoint(xMm, hMm, yMm) {
+    const rect = canvas.getBoundingClientRect();
+    const v = new THREE.Vector3(xMm * S, hMm * S, -yMm * S).project(camera);
+    return {
+      x: (v.x * 0.5 + 0.5) * rect.width + rect.left,
+      y: (-v.y * 0.5 + 0.5) * rect.height + rect.top,
+    };
+  }
+
+  /** 对象的 8 角投影矩形（CSS 像素），框选用。 */
+  function screenBounds(obj) {
+    const node = nodeById.get(obj?.id);
+    if (!node) return null;
+    const box = new THREE.Box3().setFromObject(node);
+    if (box.isEmpty()) return null;
+    const rect = canvas.getBoundingClientRect();
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < 8; i += 1) {
+      v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+      v.project(camera);
+      const x = (v.x * 0.5 + 0.5) * rect.width + rect.left;
+      const y = (-v.y * 0.5 + 0.5) * rect.height + rect.top;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
   /** 拖动预览：按对象原始坐标 + 位移直接定位 Group，数据回写在松手时做。 */
   function previewOffset(obj, dxMm, dyMm) {
-    const node = findNode(obj);
+    const node = nodeById.get(obj?.id);
     if (!node) return;
     if (obj.x !== undefined) node.position.set((obj.x + dxMm) * S, 0, -(obj.y + dyMm) * S);
     else node.position.set(dxMm * S, 0, -dyMm * S);
-    if (selectionHelper) selectionHelper.box.setFromObject(node).expandByScalar(0.02);
+    refreshHelper(obj.id);
+  }
+
+  function previewMany(objects, dxMm, dyMm) {
+    for (const obj of objects || []) previewOffset(obj, dxMm, dyMm);
   }
 
   function ensureGhostPoint() {
@@ -304,6 +466,11 @@ export async function createViewport(canvas) {
     updateCamera();
   }
 
+  function setTheme(next) {
+    theme = BACKGROUNDS[next] ? next : 'light';
+    scene.background.set(BACKGROUNDS[theme]);
+  }
+
   function resize() {
     const parent = canvas.parentElement;
     const width = Math.max(1, parent.clientWidth);
@@ -329,23 +496,34 @@ export async function createViewport(canvas) {
   return {
     backend: backendOf(renderer),
     rebuild,
+    updateObject,
+    rebuildWallGroup,
     fitView,
     pick,
     groundPoint,
+    wallHit,
+    screenBounds,
+    projectPoint,
     setSelection,
     clearSelection,
     previewOffset,
+    previewMany,
     showPointGhost,
     showLineGhost,
     clearGhost,
     setEnclosure: setEnclosureTranscript,
+    setTheme,
+    get theme() { return theme; },
     get enclosureTranslucent() { return enclosureTranslucent; },
     orbit,
     pan,
     zoom,
     resize,
+    bench: () => ({ ...bench, objects: project?.objects?.length || 0 }),
+    nodeOf: (id) => nodeById.get(id) || null,
     get controls() { return controls; },
     get built() { return built; },
+    get project() { return project; },
     dispose() {
       running = false;
       observer.disconnect();

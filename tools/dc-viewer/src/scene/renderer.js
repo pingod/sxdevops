@@ -26,6 +26,27 @@ export async function createRenderer(canvas, opts = {}) {
   return renderer;
 }
 
+const messageOf = (error) => (error && error.message) || String(error);
+
+/**
+ * 建渲染器：WebGPU 优先，失败回退 WebGL2，两者都失败抛合并错误。
+ * 查看器与设计器共用，避免各自写一份回退逻辑而漏掉某条路径。
+ */
+export async function createRendererWithFallback(canvas, opts = {}) {
+  try {
+    return await createRenderer(canvas, opts);
+  } catch (primary) {
+    try {
+      return await createRenderer(canvas, { ...opts, forceWebGL: true });
+    } catch (fallback) {
+      const error = new Error(`${messageOf(primary)}；WebGL2 回退也失败：${messageOf(fallback)}`);
+      error.primary = primary;
+      error.fallback = fallback;
+      throw error;
+    }
+  }
+}
+
 /** 后端标识：webgpu | webgl | unknown */
 export function backendOf(renderer) {
   if (!renderer) return 'unknown';

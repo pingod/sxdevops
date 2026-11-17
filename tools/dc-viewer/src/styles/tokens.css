@@ -15,3 +15,25 @@
   --tools-bottom: 0px;
   --tools-keyboard: 0px;
 }
+
+/* 主题：父页面通过 postMessage({type:'theme'}) 设置 <html data-theme>。
+   画布底色由 scene.background 同步，这里只管页面底部与文字对比。 */
+:root[data-theme="charcoal"] {
+  --dc-focus-light: #6f9bff;
+  --dc-focus-dark: #8fb4ff;
+  --dc-muted: #a8a8a8;
+  --dc-subtle: #8f8f8f;
+  --dc-selected-bg: #6f9bff;
+  --dc-selected-fg: #101010;
+  --dc-canvas-bg: #1b1f24;
+}
+
+:root[data-theme="dark"] {
+  --dc-focus-light: #6f9bff;
+  --dc-focus-dark: #8fb4ff;
+  --dc-muted: #93a4bd;
+  --dc-subtle: #7f8ea6;
+  --dc-selected-bg: #6f9bff;
+  --dc-selected-fg: #0b1220;
+  --dc-canvas-bg: #101722;
+}

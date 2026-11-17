@@ -1,0 +1,54 @@
+/* 实时状态图例：只在项目里有绑定机柜时出现，不占用画布操作区。 */
+#live-legend {
+  align-items: center;
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(15, 23, 42, .1);
+  border-radius: 10px;
+  bottom: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .12);
+  color: #0f172a;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 10px;
+  left: 14px;
+  max-width: calc(100vw - 120px);
+  padding: 7px 12px;
+  position: fixed;
+  z-index: 20;
+}
+
+.live-title { font-weight: 700; }
+.live-item { align-items: center; display: inline-flex; gap: 4px; white-space: nowrap; }
+.live-item i {
+  border-radius: 50%;
+  display: inline-block;
+  height: 9px;
+  width: 9px;
+}
+.live-item b { font-variant-numeric: tabular-nums; font-weight: 700; }
+.live-item[data-status="online"] i { background: #16a34a; }
+.live-item[data-status="warning"] i { background: #d97706; }
+.live-item[data-status="critical"] i { background: #dc2626; }
+.live-item[data-status="offline"] i { background: #7f1d1d; }
+.live-item[data-status="unknown"] i { background: #94a3b8; }
+.live-time { color: #64748b; margin-left: auto; white-space: nowrap; }
+
+:root[data-theme="charcoal"] #live-legend {
+  background: rgba(33, 33, 33, .92);
+  border-color: rgba(255, 255, 255, .12);
+  color: #f1f1f1;
+}
+:root[data-theme="dark"] #live-legend {
+  background: rgba(24, 35, 52, .92);
+  border-color: rgba(255, 255, 255, .12);
+  color: #edf2fa;
+}
+:root[data-theme="charcoal"] .live-time,
+:root[data-theme="dark"] .live-time { color: #93a4bd; }
+
+@media (max-width: 720px) {
+  #live-legend { font-size: 11px; gap: 7px; left: 8px; right: 8px; max-width: none; }
+  .live-time { margin-left: 0; }
+}

@@ -15,35 +15,44 @@
       <span id="dz-dirty" class="dz-dirty" hidden>未保存</span>
     </div>
     <div class="dz-top-actions">
-      <button type="button" id="dz-new" class="dz-embed-hide">新建机房</button>
-      <button type="button" id="dz-open" class="dz-embed-hide">打开 JSON</button>
+      <button type="button" id="dz-new" class="dz-embed-hide" aria-label="新建机房">新建机房</button>
+      <button type="button" id="dz-open" class="dz-embed-hide" aria-label="打开本地 JSON 项目">打开 JSON</button>
       <input id="dz-file" type="file" accept=".json,application/json" hidden>
       <span class="dz-sep" aria-hidden="true"></span>
-      <button type="button" id="dz-undo" title="Ctrl+Z">撤销</button>
-      <button type="button" id="dz-redo" title="Ctrl+Y">重做</button>
+      <button type="button" id="dz-undo" title="撤销 (Ctrl+Z)" aria-label="撤销">撤销</button>
+      <button type="button" id="dz-redo" title="重做 (Ctrl+Y)" aria-label="重做">重做</button>
       <span class="dz-sep" aria-hidden="true"></span>
-      <button type="button" id="dz-fit" title="F">复位视角</button>
-      <button type="button" id="dz-walls" title="墙体与吊顶透明度">围护：半透明</button>
-      <button type="button" id="dz-export" class="dz-embed-hide">导出 JSON</button>
-      <button type="button" id="dz-save" class="dz-embed-hide is-primary">保存</button>
+      <button type="button" id="dz-fit" title="复位视角 (F)" aria-label="复位视角">复位视角</button>
+      <button type="button" id="dz-walls" title="墙体与吊顶透明度" aria-label="切换围护透明度">围护：半透明</button>
+      <button type="button" id="dz-export" class="dz-embed-hide" aria-label="导出 JSON 文件">导出 JSON</button>
+      <button type="button" id="dz-save" class="dz-embed-hide is-primary" aria-label="保存到项目库">保存</button>
     </div>
   </header>
 
   <div class="dz-main">
-    <aside class="dz-palette" aria-label="构件">
+    <div id="dz-draft-banner" class="dz-banner" role="status" hidden>
+      <span id="dz-draft-text">发现未保存草稿</span>
+      <div class="dz-banner-actions">
+        <button type="button" id="dz-draft-restore" class="is-primary">恢复</button>
+        <button type="button" id="dz-draft-discard">丢弃</button>
+      </div>
+    </div>
+
+    <aside class="dz-palette" aria-label="构件库">
       <div class="dz-panel-title">构件库</div>
-      <p class="dz-panel-hint">选中构件后在地面点击放置；墙体/桥架按住拖出走向。</p>
+      <p class="dz-panel-hint">选中构件后在地面点击放置；墙体/桥架/横梁按住拖出走向；门窗格栅点到墙上。</p>
       <div id="dz-tools" class="dz-tools"></div>
       <div class="dz-panel-title dz-panel-title--sub">快速布局</div>
       <button type="button" id="dz-row" class="dz-wide-btn">机柜排…</button>
       <div class="dz-legend">
         <span><i class="dz-key">左键</i>选择 / 拖动 / 放置</span>
+        <span><i class="dz-key">Shift</i>加选，Shift 拖空白框选</span>
         <span><i class="dz-key">右键拖</i>旋转视角</span>
         <span><i class="dz-key">滚轮</i>缩放</span>
         <span><i class="dz-key">中键拖</i>平移</span>
         <span><i class="dz-key">R</i>旋转 90°</span>
-        <span><i class="dz-key">Del</i>删除</span>
-        <span><i class="dz-key">Ctrl+D</i>复制</span>
+        <span><i class="dz-key">Del</i>删除选中</span>
+        <span><i class="dz-key">Ctrl+D</i>复制选中</span>
         <span><i class="dz-key">Esc</i>取消选择</span>
         <span><i class="dz-key">Alt</i>临时取消吸附</span>
       </div>
@@ -51,7 +60,16 @@
 
     <main class="dz-viewport">
       <canvas id="dz-canvas" role="img" aria-label="三维机房编辑视图"></canvas>
-      <div id="dz-ghost-hint" class="dz-viewport-hint" hidden></div>
+      <div id="dz-align" class="dz-align" hidden>
+        <span id="dz-align-count" class="dz-align-count">已选 0 个</span>
+        <button type="button" data-align="minX" aria-label="左对齐">左对齐</button>
+        <button type="button" data-align="maxX" aria-label="右对齐">右对齐</button>
+        <button type="button" data-align="minY" aria-label="前对齐">前对齐</button>
+        <button type="button" data-align="maxY" aria-label="后对齐">后对齐</button>
+        <button type="button" data-distribute="x" aria-label="水平等距">水平等距</button>
+        <button type="button" data-distribute="y" aria-label="垂直等距">垂直等距</button>
+      </div>
+      <div id="dz-marquee" class="dz-marquee" hidden></div>
       <div id="dz-empty" class="dz-empty" hidden>
         <strong>空机房</strong>
         <p>先「新建机房」生成四面墙，或直接从构件库放置机柜。</p>
@@ -65,9 +83,9 @@
       <form id="dz-inspector-form" class="dz-form" hidden></form>
       <div class="dz-panel-title dz-panel-title--sub">机房设置</div>
       <div class="dz-form">
-        <label class="dz-field"><span>名称</span><input id="dz-name" type="text" maxlength="120"></label>
-        <label class="dz-field"><span>层高 mm</span><input id="dz-room-height" type="number" min="2000" max="12000" step="100"></label>
-        <label class="dz-field"><span>架空地板 mm</span><input id="dz-floor-height" type="number" min="0" max="1500" step="50"></label>
+        <label class="dz-field"><span>名称</span><input id="dz-name" type="text" maxlength="120" aria-label="机房名称"></label>
+        <label class="dz-field"><span>层高 mm</span><input id="dz-room-height" type="number" min="2000" max="12000" step="100" aria-label="层高"></label>
+        <label class="dz-field"><span>架空地板 mm</span><input id="dz-floor-height" type="number" min="0" max="1500" step="50" aria-label="架空地板高度"></label>
       </div>
     </aside>
   </div>
@@ -89,7 +107,7 @@
     </div>
   </div>
 
-  <div id="dz-toast" class="dz-toast" hidden></div>
+  <div id="dz-toast" class="dz-toast" role="status" aria-live="polite" hidden></div>
 </div>
 <script type="module" src="/src/design/main.js"></script>
 </body>

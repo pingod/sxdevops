@@ -26,16 +26,29 @@
               <span class="twin-option-meta">{{ item.object_count }} 对象</span>
             </el-option>
           </el-select>
-          <span v-if="selectedProject" class="twin-meta">
-            {{ selectedProject.object_count }} 个对象 · {{ formatBytes(selectedProject.size_bytes) }}
-            <template v-if="selectedProject.uploaded_by"> · {{ selectedProject.uploaded_by }} 上传</template>
-            · {{ formatTime(selectedProject.updated_at) }}
+          <el-input
+            v-model="search"
+            class="twin-search"
+            placeholder="搜索项目名称/说明"
+            clearable
+            :prefix-icon="Search"
+            @update:model-value="onSearchInput"
+          />
+          <el-button v-if="hasMore" text :loading="loading" @click="loadMore">加载更多</el-button>
+          <span v-if="selected" class="twin-meta">
+            {{ selected.object_count }} 个对象 · {{ formatBytes(selected.size_bytes) }}
+            <template v-if="selected.updated_by"> · {{ selected.updated_by }} 保存</template>
+            · v{{ selected.version }} · {{ formatTime(selected.updated_at) }}
           </span>
         </div>
         <div class="twin-toolbar__right">
+          <span v-if="liveStamp" class="twin-live-chip" :class="{ 'is-error': liveError }">
+            {{ liveError ? '监控状态获取失败' : `监控更新于 ${liveStamp}` }}
+          </span>
           <el-button v-if="canManage" :icon="EditPen" @click="$router.push('/datacenter/twin-design')">设计</el-button>
           <el-button v-if="canManage" type="primary" :icon="Upload" @click="openUploadDialog">上传项目</el-button>
-          <el-button v-if="canManage" :icon="Delete" :disabled="!selectedProject || loading" @click="removeProject">删除</el-button>
+          <el-button v-if="canManage" :icon="Delete" :disabled="!selected || loading" @click="removeProject">删除</el-button>
+          <el-button :icon="Link" :disabled="!selected" @click="copyLink">复制链接</el-button>
           <el-button :icon="RefreshRight" :loading="loading" @click="reloadAll">刷新</el-button>
         </div>
       </div>
@@ -43,6 +56,7 @@
       <div class="twin-body">
         <iframe
           v-if="frameSrc && viewerBuilt"
+          ref="frameRef"
           :key="frameSrc"
           class="twin-frame"
           :src="frameSrc"
@@ -55,9 +69,15 @@
           <el-icon :size="38"><Box /></el-icon>
           <strong>{{ placeholderTitle }}</strong>
           <p>{{ placeholderText }}</p>
-          <el-button v-if="canManage && !projects.length && viewerBuilt" type="primary" plain @click="openUploadDialog">
-            上传第一个项目
-          </el-button>
+          <div class="twin-placeholder-actions">
+            <el-button v-if="frameError" type="primary" plain @click="reloadFrame">重新加载</el-button>
+            <el-button v-if="frameError && canManage" plain @click="$router.push('/datacenter/twin-design')">
+              打开设计器
+            </el-button>
+            <el-button v-if="canManage && !projects.length && viewerBuilt" type="primary" plain @click="openUploadDialog">
+              上传第一个项目
+            </el-button>
+          </div>
         </div>
       </div>
     </section>
@@ -97,37 +117,52 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Delete, EditPen, FolderOpened, RefreshRight, Upload } from '@element-plus/icons-vue'
+import { Box, Delete, EditPen, FolderOpened, Link, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { theme, THEME_CHANGE_EVENT } from '@/theme'
+import { useTwinProjects } from '@/composables/useTwinProjects'
 import {
   deleteTwinProject,
   fetchTwinProjectContent,
+  getTwinLive,
   getTwinViewerStatus,
-  listTwinProjects,
   uploadTwinProject,
 } from '@/api/modules/datacenter'
 
 const FALLBACK_VIEWER_PATH = '/dc-viewer-app/'
 const DEFAULT_MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+const LIVE_INTERVAL = 30000
 
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('datacenter.twin.manage'))
 
+const {
+  projects, loading, search, selectedId, selected, hasMore, refresh, loadMore, ensureSelection,
+} = useTwinProjects({ pageSize: 50 })
+
 const status = ref(null)
-const projects = ref([])
-const selectedId = ref(null)
-const selectedProject = computed(() => projects.value.find(item => item.id === selectedId.value) || null)
 const viewerBuilt = computed(() => status.value?.viewer_built ?? true)
 const viewerPath = computed(() => status.value?.viewer_path || FALLBACK_VIEWER_PATH)
 const maxUploadBytes = computed(() => status.value?.max_upload_bytes || DEFAULT_MAX_UPLOAD_BYTES)
 
-const loading = ref(false)
 const errorText = ref('')
+const frameError = ref('')
 const frameSrc = ref('')
+const frameRef = ref()
+const frameReady = ref(false)
+// shallowRef：payload 直接 postMessage 给 iframe，普通 ref 的 Proxy 无法结构化克隆。
+const livePayload = shallowRef(null)
+const liveStamp = ref('')
+const liveError = ref(false)
 let blobUrls = []
 let activeBlobUrl = ''
+let liveTimer = null
+let searchTimer = null
 
 const uploadDialog = ref(false)
 const uploadFile = ref(null)
@@ -144,6 +179,7 @@ const fileHint = computed(() => {
 })
 
 const placeholderTitle = computed(() => {
+  if (frameError.value) return '三维视图加载失败'
   if (errorText.value) return '项目加载失败'
   if (!viewerBuilt.value) return '三维查看器未构建'
   if (!projects.value.length) return '还没有三维机房项目'
@@ -151,6 +187,7 @@ const placeholderTitle = computed(() => {
 })
 
 const placeholderText = computed(() => {
+  if (frameError.value) return frameError.value
   if (errorText.value) return errorText.value
   if (!viewerBuilt.value) {
     return '请在 tools/dc-viewer 执行 npm install && npm run build，产物由 /dc-viewer-app/ 托管。'
@@ -189,6 +226,31 @@ function onFrameLoad() {
   releaseBlobs(activeBlobUrl)
 }
 
+function frameWindow() {
+  return frameRef.value?.contentWindow || null
+}
+
+function post(message) {
+  frameWindow()?.postMessage(message, '*')
+}
+
+function sendTheme() {
+  post({ type: 'theme', theme: theme.value })
+}
+
+function sendLive() {
+  if (!livePayload.value) return
+  post({ type: 'twin-live', payload: livePayload.value })
+}
+
+function syncQuery(id) {
+  const next = id ? { ...route.query, project: String(id) } : { ...route.query }
+  if (!id) delete next.project
+  const current = route.query.project ? String(route.query.project) : ''
+  if (current === (id ? String(id) : '')) return
+  router.replace({ query: next }).catch(() => {})
+}
+
 async function loadStatus() {
   try {
     status.value = await getTwinViewerStatus()
@@ -197,16 +259,40 @@ async function loadStatus() {
   }
 }
 
-async function refreshProjects({ keepSelection = true } = {}) {
-  const data = await listTwinProjects()
-  projects.value = data.results || data || []
-  if (!projects.value.length) {
-    selectedId.value = null
-    frameSrc.value = ''
+async function fetchLive(id) {
+  if (!id) {
+    livePayload.value = null
+    liveStamp.value = ''
     return
   }
-  if (!keepSelection || !projects.value.some(item => item.id === selectedId.value)) {
-    selectedId.value = projects.value[0].id
+  try {
+    const payload = await getTwinLive(id)
+    if (selectedId.value !== id) return
+    livePayload.value = payload
+    liveError.value = false
+    const when = payload?.generated_at ? new Date(payload.generated_at) : new Date()
+    liveStamp.value = Number.isNaN(when.getTime())
+      ? ''
+      : when.toLocaleTimeString('zh-CN', { hour12: false })
+    if (frameReady.value) sendLive()
+  } catch {
+    liveError.value = true
+    liveStamp.value = ''
+  }
+}
+
+function startLivePolling() {
+  stopLivePolling()
+  liveTimer = setInterval(() => {
+    if (document.hidden) return
+    if (selectedId.value) fetchLive(selectedId.value)
+  }, LIVE_INTERVAL)
+}
+
+function stopLivePolling() {
+  if (liveTimer) {
+    clearInterval(liveTimer)
+    liveTimer = null
   }
 }
 
@@ -214,6 +300,10 @@ async function openProject(id) {
   if (!id) return
   loading.value = true
   errorText.value = ''
+  frameError.value = ''
+  frameReady.value = false
+  livePayload.value = null
+  liveStamp.value = ''
   try {
     const text = await fetchTwinProjectContent(id)
     const blob = new Blob([text], { type: 'application/json' })
@@ -221,6 +311,8 @@ async function openProject(id) {
     blobUrls.push(url)
     activeBlobUrl = url
     frameSrc.value = `${viewerPath.value}?src=${encodeURIComponent(url)}`
+    syncQuery(id)
+    fetchLive(id)
   } catch (error) {
     errorText.value = error?.response?.data?.detail || error?.message || '项目文件读取失败'
     frameSrc.value = ''
@@ -229,10 +321,19 @@ async function openProject(id) {
   }
 }
 
+function reloadFrame() {
+  frameError.value = ''
+  if (!selectedId.value) return
+  frameSrc.value = ''
+  openProject(selectedId.value)
+}
+
 async function reloadAll() {
   try {
     errorText.value = ''
-    await refreshProjects()
+    frameError.value = ''
+    await refresh()
+    ensureSelection()
     if (selectedId.value) await openProject(selectedId.value)
   } catch (error) {
     errorText.value = error?.response?.data?.detail || error?.message || '项目列表加载失败'
@@ -240,8 +341,34 @@ async function reloadAll() {
   }
 }
 
+function onSearchInput() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    try {
+      await refresh()
+      ensureSelection()
+      if (selectedId.value) await openProject(selectedId.value)
+    } catch (error) {
+      ElMessage.error(error?.response?.data?.detail || error?.message || '项目列表加载失败')
+    }
+  }, 300)
+}
+
+async function copyLink() {
+  const id = selectedId.value
+  if (!id) return
+  const url = `${window.location.origin}/datacenter/twin?project=${id}`
+  try {
+    if (!navigator.clipboard || !window.isSecureContext) throw new Error('clipboard unavailable')
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('链接已复制')
+  } catch {
+    window.prompt('复制链接', url)
+  }
+}
+
 async function removeProject() {
-  const project = selectedProject.value
+  const project = selected.value
   if (!project) return
   try {
     await ElMessageBox.confirm(
@@ -259,8 +386,10 @@ async function removeProject() {
     selectedId.value = null
     frameSrc.value = ''
     releaseBlobs()
-    await refreshProjects({ keepSelection: false })
+    await refresh()
+    ensureSelection()
     if (selectedId.value) await openProject(selectedId.value)
+    else syncQuery(null)
   } catch (error) {
     ElMessage.error(error?.response?.data?.detail || error?.message || '删除失败')
   } finally {
@@ -322,7 +451,7 @@ async function submitUpload() {
     const project = await uploadTwinProject(formData)
     ElMessage.success(`已上传项目「${project.name}」`)
     uploadDialog.value = false
-    await refreshProjects({ keepSelection: false })
+    await refresh()
     selectedId.value = project.id
     await openProject(project.id)
   } catch (error) {
@@ -334,17 +463,52 @@ async function submitUpload() {
   }
 }
 
+function onFrameMessage(event) {
+  const frame = frameWindow()
+  if (!frame || event.source !== frame) return
+  const data = event.data || {}
+  if (data.source !== 'dc-viewer') return
+  if (data.type === 'ready') {
+    frameReady.value = true
+    frameError.value = ''
+    // 握手后补发主题与最近一次实时状态：父页面拿到的是「当前上下文」而不是加载期的猜测。
+    sendTheme()
+    sendLive()
+    return
+  }
+  if (data.type === 'error') {
+    frameError.value = data.message || '三维查看器初始化失败'
+  }
+}
+
+function onThemeChange(event) {
+  const value = event?.detail || theme.value
+  post({ type: 'theme', theme: value })
+}
+
 onMounted(async () => {
+  window.addEventListener('message', onFrameMessage)
+  window.addEventListener(THEME_CHANGE_EVENT, onThemeChange)
   await loadStatus()
   try {
-    await refreshProjects({ keepSelection: false })
+    await refresh()
+    const preferred = Number(route.query.project)
+    ensureSelection(Number.isFinite(preferred) && preferred > 0 ? preferred : null)
     if (selectedId.value) await openProject(selectedId.value)
   } catch (error) {
     errorText.value = error?.response?.data?.detail || error?.message || '项目列表加载失败'
   }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && selectedId.value) fetchLive(selectedId.value)
+  })
+  startLivePolling()
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  stopLivePolling()
+  window.removeEventListener('message', onFrameMessage)
+  window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange)
   releaseBlobs()
 })
 </script>
@@ -445,6 +609,10 @@ onBeforeUnmount(() => {
   width: 300px;
 }
 
+.twin-search {
+  width: 220px;
+}
+
 .twin-option-name {
   font-weight: 600;
 }
@@ -463,6 +631,22 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.twin-live-chip {
+  background: #eef7f0;
+  border: 1px solid #c8e6cf;
+  border-radius: 999px;
+  color: #1f6b3a;
+  font-size: 12px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.twin-live-chip.is-error {
+  background: #fdecec;
+  border-color: #f5c2c2;
+  color: #a12626;
 }
 
 .twin-body {
@@ -503,6 +687,13 @@ onBeforeUnmount(() => {
   line-height: 1.6;
   margin: 0;
   max-width: 480px;
+}
+
+.twin-placeholder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
 }
 
 .twin-upload-form :deep(.el-form-item:last-child) {
@@ -551,7 +742,8 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 
-  .twin-select {
+  .twin-select,
+  .twin-search {
     width: 100%;
   }
 

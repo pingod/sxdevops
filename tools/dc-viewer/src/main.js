@@ -9,6 +9,7 @@ import './styles/drawer.css';
 import './styles/panels.css';
 import './styles/hud.css';
 import './styles/labels.css';
+import './styles/live.css';
 import './styles/responsive.css';
 
 import { sanitize } from './data/sanitize.js';
@@ -26,6 +27,7 @@ import { createSearchPanel } from './ui/search.js';
 import { createContextBar } from './ui/contextbar.js';
 import { createTourHud } from './ui/tourhud.js';
 import { createWalkHud } from './ui/walkhud.js';
+import { summarizeLive } from './live/status.js';
 import { nextIsolateMode } from './features/isolate.js';
 import { HEIGHT_ROTATE } from './ui/contextbar.js';
 
@@ -47,6 +49,44 @@ function hideMsg() {
 function fail(text) {
   showMsg(text, true);
   console.error('[3D]', text);
+}
+
+const embedded = window.parent !== window;
+const liveLegend = document.getElementById('live-legend');
+const liveTime = document.getElementById('live-time');
+
+/** 父页面主题：只换底色与变量，不动几何。 */
+function applyTheme(theme) {
+  const next = ['light', 'charcoal', 'dark'].includes(theme) ? theme : 'light';
+  document.documentElement.dataset.theme = next;
+  V.setTheme(next);
+}
+
+function renderLegend(live) {
+  if (!liveLegend) return;
+  const cabinets = live?.cabinets || {};
+  if (!Object.keys(cabinets).length) {
+    liveLegend.hidden = true;
+    return;
+  }
+  liveLegend.hidden = false;
+  const { counts } = summarizeLive({ cabinets });
+  for (const [status, value] of Object.entries(counts)) {
+    const el = liveLegend.querySelector(`[data-count="${status}"]`);
+    if (el) el.textContent = String(value);
+  }
+  const when = live?.generatedAt ? new Date(live.generatedAt) : new Date();
+  if (liveTime) {
+    liveTime.textContent = `更新于 ${Number.isNaN(when.getTime())
+      ? '—'
+      : when.toLocaleTimeString('zh-CN', { hour12: false })}`;
+  }
+}
+
+function applyLive(payload) {
+  const result = V.applyLiveStatus(payload);
+  renderLegend(result);
+  return result;
 }
 
 const isTyping = t => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
@@ -684,9 +724,15 @@ async function boot() {
     hideMsg();
     urlCtl = { sync: syncUrl, current: capture };
     window.__dcxd = makeDebugApi();
+    // 握手：父页面收到 ready 后补发主题与最近一次实时状态。
+    if (embedded) window.parent.postMessage({ source: 'dc-viewer', type: 'ready' }, '*');
   } catch (err) {
     console.error(err);
-    fail(`项目加载失败：${err.message}（本地文件请通过任意静态服务器打开页面）`);
+    if (!V.is3DReady()) {
+      fail(`三维初始化失败：${err.message}（请开启硬件加速或使用 Chrome/Edge）`);
+    } else {
+      fail(`项目加载失败：${err.message}（本地文件请通过任意静态服务器打开页面）`);
+    }
   }
 }
 
@@ -724,6 +770,18 @@ function makeDebugApi() {
     runtime: V.runtime,
     state: { get project() { return V.runtime().project; } },
     info: () => ({ ...V.viewerInfo(), url: capture() }),
+    liveInfo: () => V.liveInfo(),
+    applyLive: payload => {
+      const live = applyLive(payload);
+      return live ? { ...live, legend: liveLegend ? !liveLegend.hidden : false } : null;
+    },
+    clearLive: () => {
+      V.clearLiveStatus();
+      renderLegend(null);
+      return true;
+    },
+    setTheme: theme => applyTheme(theme),
+    theme: () => V.themeName(),
     isReady: V.is3DReady,
     hovered: () => V.hoveredObject(),
     tour: () => tour,
@@ -798,5 +856,12 @@ function makeDebugApi() {
     },
   };
 }
+
+window.addEventListener('message', (event) => {
+  if (event.source !== window.parent) return;
+  const data = event.data || {};
+  if (data.type === 'twin-live') applyLive(data.payload);
+  else if (data.type === 'theme') applyTheme(data.theme);
+});
 
 boot();

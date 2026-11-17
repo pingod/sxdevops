@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" dir="ltr">
+<html lang="zh-CN" dir="ltr" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +12,16 @@
   按 V 打开视角工具，/ 打开搜索定位，T 进入俯视，I 进入轴测，G 进入手动步行，Esc 退出当前模式。
   右侧工具分为视角、显示、剖切、定位、漫游、拆解六类；展开面板时与三维画布分区，不遮挡预览；窄屏上下分区。
   正交视图左下角会显示指北针与比例尺；透视轨道与第一视角不显示。</p>
+
+<div id="live-legend" hidden aria-live="polite">
+  <span class="live-title">运行状态</span>
+  <span class="live-item" data-status="online"><i aria-hidden="true"></i>在线 <b data-count="online">0</b></span>
+  <span class="live-item" data-status="warning"><i aria-hidden="true"></i>高负载 <b data-count="warning">0</b></span>
+  <span class="live-item" data-status="critical"><i aria-hidden="true"></i>严重 <b data-count="critical">0</b></span>
+  <span class="live-item" data-status="offline"><i aria-hidden="true"></i>离线 <b data-count="offline">0</b></span>
+  <span class="live-item" data-status="unknown"><i aria-hidden="true"></i>未采集 <b data-count="unknown">0</b></span>
+  <span id="live-time" class="live-time"></span>
+</div>
 
 <div id="msg" hidden>
   <div class="msg-box">

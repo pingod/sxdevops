@@ -650,6 +650,51 @@ function buildFloor(g, b, floorH) {
 }
 
 /**
+ * 构建单个对象到 `g` 下（含自己的对象组）。
+ *
+ * 墙体与开洞（door/window/grille）不在这里处理：它们的几何属于所属墙的
+ * 洞口切分，走 `buildWallInto`。返回 null 表示调用方应交给墙体重建。
+ *
+ * @param {THREE.Group} g 目标组（通常是机房根组）
+ * @param {object} o 项目对象
+ * @param {{objs?:object[],roomH?:number,ceilH?:number,floorH?:number,cabH?:number}} ctx
+ * @returns {THREE.Group|null} 新建的对象组，未处理时返回 null
+ */
+export function buildObjectInto(g, o, ctx = {}) {
+  const { objs = [], ceilH = 3000, floorH = 400, cabH = 2000 } = ctx;
+  const grp = objGroup(g, o);
+  switch (o.type) {
+    case 'column': buildColumn(grp, o, floorH); break;
+    case 'beam': buildBeam(grp, o, objs); break;
+    case 'cabinet': buildCabinet(grp, o); break;
+    case 'pdu': buildPdu(grp, o); break;
+    case 'ac': buildAC(grp, o); break;
+    case 'ups': buildUPS(grp, o); break;
+    case 'battery': buildBattery(grp, o); break;
+    case 'extinguisher': buildExtinguisher(grp, o); break;
+    case 'vent': buildVent(grp, o); break;
+    case 'tray': buildTray(grp, o, ceilH); break;
+    case 'aisle': buildAisle(grp, o, cabH); break;
+    default:
+      g.remove(grp);
+      return null;
+  }
+  return grp;
+}
+
+/**
+ * 构建一面墙及其开洞，返回墙的对象组（开洞组挂在墙组下面）。
+ * @returns {THREE.Group}
+ */
+export function buildWallInto(g, wall, objs = [], roomH = 3000) {
+  const ops = objs.filter(o =>
+    (o.type === 'door' || o.type === 'window' || o.type === 'grille') && o.wallId === wall.id);
+  const grp = objGroup(g, wall);
+  buildWall(grp, wall, ops, roomH);
+  return grp;
+}
+
+/**
  * 构建整机房。
  * @returns {{group:THREE.Group,bounds:object,roomH:number,ceilH:number,floorH:number,
  *   walls:THREE.Group[],floor:THREE.Group,ceiling:THREE.Group|null}}
@@ -701,26 +746,11 @@ export function buildRoom(project) {
 
   const wallGroups = [];
   for (const w of objs.filter(o => o.type === 'wall')) {
-    const ops = objs.filter(o =>
-      (o.type === 'door' || o.type === 'window' || o.type === 'grille') && o.wallId === w.id);
-    const grp = objGroup(g, w);
-    buildWall(grp, w, ops, roomH);
-    wallGroups.push(grp);
+    wallGroups.push(buildWallInto(g, w, objs, roomH));
   }
 
-  for (const o of objs) {
-    if (o.type === 'column') buildColumn(objGroup(g, o), o, floorH);
-    else if (o.type === 'beam') buildBeam(objGroup(g, o), o, objs);
-    else if (o.type === 'cabinet') buildCabinet(objGroup(g, o), o);
-    else if (o.type === 'pdu') buildPdu(objGroup(g, o), o);
-    else if (o.type === 'ac') buildAC(objGroup(g, o), o);
-    else if (o.type === 'ups') buildUPS(objGroup(g, o), o);
-    else if (o.type === 'battery') buildBattery(objGroup(g, o), o);
-    else if (o.type === 'extinguisher') buildExtinguisher(objGroup(g, o), o);
-    else if (o.type === 'vent') buildVent(objGroup(g, o), o);
-    else if (o.type === 'tray') buildTray(objGroup(g, o), o, ceilH);
-    else if (o.type === 'aisle') buildAisle(objGroup(g, o), o, cabH);
-  }
+  const ctx = { objs, roomH, ceilH, floorH, cabH };
+  for (const o of objs) buildObjectInto(g, o, ctx);
 
   const floorGroup = buildFloor(g, b, floorH);
   const bc = { minx: b.minx + 840, miny: b.miny + 840, maxx: b.maxx - 840, maxy: b.maxy - 840 };

@@ -1,13 +1,13 @@
 /* 基础壳层：全屏画布、无障碍隐藏文本、加载/错误遮罩 */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body { height: 100%; overflow: hidden; background: #e9ecef; }
+html, body { height: 100%; overflow: hidden; background: var(--dc-canvas-bg, #e9ecef); }
 
 #cv3d {
   display: block;
   width: 100vw;
   height: 100vh;
-  background: #e9ecef;
+  background: var(--dc-canvas-bg, #e9ecef);
   outline: none;
 }
 

@@ -26,9 +26,19 @@
               <span class="design-option__meta">{{ item.object_count }} 对象</span>
             </el-option>
           </el-select>
+          <el-input
+            v-model="search"
+            class="design-search"
+            placeholder="搜索项目名称/说明"
+            clearable
+            :prefix-icon="Search"
+            @update:model-value="onSearchInput"
+          />
+          <el-button v-if="hasMore" text :loading="loadingList" @click="loadMore">加载更多</el-button>
           <span class="design-meta">
             <template v-if="currentProject">
-              {{ currentProject.object_count }} 个对象 · {{ formatTime(currentProject.updated_at) }}
+              {{ currentProject.object_count }} 个对象 · v{{ currentProject.version }} ·
+              {{ formatTime(currentProject.updated_at) }}
             </template>
             <template v-else>新建设计，保存后进入项目库</template>
             <span v-if="dirty" class="design-dirty">未保存</span>
@@ -37,6 +47,7 @@
         <div class="design-toolbar__right">
           <el-button :icon="Plus" @click="openRoomDialog">新建机房</el-button>
           <el-button :icon="DocumentAdd" @click="saveAs">另存为</el-button>
+          <el-button v-if="canManage" :icon="Clock" :disabled="!currentProject" @click="openVersions">版本</el-button>
           <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
           <el-button :icon="View" @click="backToViewer">查看孪生</el-button>
         </div>
@@ -104,6 +115,7 @@
       append-to-body
       class="workbench-edit-dialog"
       :close-on-click-modal="false"
+      @closed="onSaveDialogClosed"
     >
       <el-form label-position="top" class="design-form">
         <el-form-item label="项目名称">
@@ -118,46 +130,99 @@
         <el-button type="primary" :loading="saving" :disabled="!saveDialog.name.trim()" @click="confirmCreate">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="versionDialog.visible"
+      title="版本历史"
+      width="620px"
+      top="8vh"
+      append-to-body
+      class="workbench-edit-dialog"
+    >
+      <el-table :data="versionDialog.rows" size="small" empty-text="还没有历史版本（保存两次以上才会产生）">
+        <el-table-column prop="version" label="版本" width="80" />
+        <el-table-column prop="object_count" label="对象数" width="90" />
+        <el-table-column label="文件大小" width="110">
+          <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+        </el-table-column>
+        <el-table-column prop="created_by" label="保存人" width="120" />
+        <el-table-column label="时间">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="rollbackTo(row.version)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="versionDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, DocumentAdd, EditPen, Plus, View } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { Check, Clock, DocumentAdd, EditPen, Plus, Search, View } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
+import { theme, THEME_CHANGE_EVENT } from '@/theme'
+import { useTwinProjects } from '@/composables/useTwinProjects'
 import {
   fetchTwinProjectContent,
   getTwinViewerStatus,
-  listTwinProjects,
+  listTwinMonitorTargets,
+  listTwinVersions,
+  rollbackTwinProject,
   updateTwinProject,
   uploadTwinProject,
 } from '@/api/modules/datacenter'
 
+const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canManage = computed(() => authStore.hasPermission('datacenter.twin.manage'))
+
+const {
+  projects, loading: loadingList, search, selectedId, selected: currentProject,
+  hasMore, refresh, loadMore, ensureSelection,
+} = useTwinProjects({ pageSize: 50 })
+
 const frameRef = ref()
 const viewerBuilt = ref(true)
 const frameReady = ref(false)
 const saving = ref(false)
 const dirty = ref(false)
-const projects = ref([])
-const selectedId = ref(null)
-const currentProject = computed(() => projects.value.find(item => item.id === selectedId.value) || null)
-const pendingPayload = ref(null)
 const pendingMessage = shallowRef(null)
+const pendingPayload = ref(null)
 const saveAsMode = ref(false)
 let loadToken = 0
+let searchTimer = null
+let readyTimer = null
+// 是否已经把某个项目推给设计器：ready 与列表加载是两条独立时序，
+// 谁先到都可能；用这个标记保证「后到的一方」补一次加载，且不覆盖用户刚新建的机房。
+let designerLoaded = false
 
 const roomDialog = reactive({
   visible: false, name: '', width: 12000, depth: 8000, height: 3000, floorHeight: 400,
 })
 const saveDialog = reactive({ visible: false, name: '', description: '', project: null })
+const versionDialog = reactive({ visible: false, rows: [] })
 
 function formatTime(value) {
   if (!value) return ''
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function formatBytes(value) {
+  const size = Number(value) || 0
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`
+  return `${size} B`
 }
 
 function frameWindow() {
@@ -174,6 +239,15 @@ function send(message) {
   else pendingMessage.value = message
 }
 
+function syncQuery(id) {
+  const next = { ...route.query }
+  if (id) next.project = String(id)
+  else delete next.project
+  const current = route.query.project ? String(route.query.project) : ''
+  if (current === (id ? String(id) : '')) return
+  router.replace({ query: next }).catch(() => {})
+}
+
 async function loadStatus() {
   try {
     const status = await getTwinViewerStatus()
@@ -183,9 +257,14 @@ async function loadStatus() {
   }
 }
 
-async function refreshProjects() {
-  const data = await listTwinProjects()
-  projects.value = data.results || data || []
+/** 绑定下拉需要网络设备清单：进了设计器就拉一次，父页面转给 iframe。 */
+async function pushMonitorTargets() {
+  try {
+    const data = await listTwinMonitorTargets()
+    post({ type: 'monitor-targets', items: data.items || [] })
+  } catch {
+    post({ type: 'monitor-targets', items: [] })
+  }
 }
 
 function onDesignerMessage(event) {
@@ -197,12 +276,16 @@ function onDesignerMessage(event) {
   if (data.type === 'ready') {
     clearTimeout(readyTimer)
     frameReady.value = true
+    post({ type: 'theme', theme: theme.value })
+    pushMonitorTargets()
     if (pendingMessage.value) {
       post(pendingMessage.value)
       pendingMessage.value = null
     } else if (pendingPayload.value) {
       post(pendingPayload.value)
       pendingPayload.value = null
+    } else if (selectedId.value) {
+      loadProject(selectedId.value, { token: ++loadToken })
     } else if (projects.value.length) {
       loadProject(projects.value[0].id, { token: ++loadToken })
     }
@@ -221,10 +304,13 @@ function onDesignerMessage(event) {
   }
 }
 
-let readyTimer = null
+function onThemeChange(event) {
+  post({ type: 'theme', theme: event?.detail || theme.value })
+}
 
 onMounted(async () => {
   window.addEventListener('message', onDesignerMessage)
+  window.addEventListener(THEME_CHANGE_EVENT, onThemeChange)
   readyTimer = setTimeout(() => {
     if (!frameReady.value) {
       ElMessage.warning('三维设计器初始化较慢或失败，请确认浏览器已开启硬件加速（需要 WebGL2）')
@@ -232,7 +318,13 @@ onMounted(async () => {
   }, 12000)
   await loadStatus()
   try {
-    await refreshProjects()
+    await refresh()
+    const preferred = Number(route.query.project)
+    ensureSelection(Number.isFinite(preferred) && preferred > 0 ? preferred : null)
+    // 设计器可能比项目列表先握手完成，这里补一次加载。
+    if (frameReady.value && !designerLoaded && !dirty.value && selectedId.value) {
+      await loadProject(selectedId.value, { token: ++loadToken })
+    }
   } catch (error) {
     ElMessage.error(error?.response?.data?.detail || error?.message || '项目列表加载失败')
   }
@@ -240,7 +332,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   clearTimeout(readyTimer)
+  clearTimeout(searchTimer)
   window.removeEventListener('message', onDesignerMessage)
+  window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange)
 })
 
 async function loadProject(id, { token } = {}) {
@@ -252,6 +346,8 @@ async function loadProject(id, { token } = {}) {
     const project = JSON.parse(text)
     selectedId.value = id
     dirty.value = false
+    designerLoaded = true
+    syncQuery(id)
     post({ type: 'load', project, id, name: currentProject.value?.name, force: true })
   } catch (error) {
     ElMessage.error(error?.response?.data?.detail || error?.message || '项目内容加载失败')
@@ -272,6 +368,18 @@ async function switchProject(id) {
   await loadProject(id)
 }
 
+function onSearchInput() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    try {
+      await refresh()
+      ensureSelection()
+    } catch (error) {
+      ElMessage.error(error?.response?.data?.detail || error?.message || '项目列表加载失败')
+    }
+  }, 300)
+}
+
 function openRoomDialog() {
   roomDialog.name = ''
   roomDialog.visible = true
@@ -282,6 +390,8 @@ async function createRoom() {
   roomDialog.visible = false
   selectedId.value = null
   dirty.value = false
+  designerLoaded = false
+  syncQuery(null)
   send({
     type: 'new-room',
     name: roomDialog.name.trim() || '未命名机房',
@@ -307,25 +417,76 @@ function projectFileName(name) {
   return `${safe || 'room'}.json`
 }
 
+function onSaveDialogClosed() {
+  // 关掉「另存为」弹窗却没有真的保存：通知设计器清掉忙碌态。
+  if (!saveDialog.project) return
+  saveDialog.project = null
+  post({ type: 'cancel' })
+}
+
+function openSaveDialog(project) {
+  saveDialog.project = project
+  saveDialog.name = (project.name || '').slice(0, 120) || '未命名机房'
+  saveDialog.description = ''
+  saveDialog.visible = true
+}
+
+/** 版本冲突：让用户选「加载最新」或「另存为副本」，绝不静默覆盖。 */
+async function handleConflict(project, detail) {
+  const who = detail?.updated_by || '其他人'
+  const version = detail?.current_version ?? '?'
+  const when = formatTime(detail?.updated_at)
+  try {
+    await ElMessageBox.confirm(
+      `项目已被 ${who} 更新到 v${version}${when ? `（${when}）` : ''}。\n`
+      + '「加载最新」会放弃你未保存的改动；「另存为副本」把当前内容保存成新项目。',
+      '版本冲突',
+      {
+        type: 'warning',
+        confirmButtonText: '加载最新',
+        cancelButtonText: '另存为副本',
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch (action) {
+    post({ type: 'cancel' })
+    if (action === 'cancel') {
+      saveAsMode.value = true
+      openSaveDialog(project)
+    }
+    return
+  }
+  await refresh()
+  await loadProject(selectedId.value, { token: ++loadToken })
+  ElMessage.success('已加载最新版本')
+}
+
 async function handleSave(project) {
   const useExisting = selectedId.value && !saveAsMode.value
   if (!useExisting) {
-    saveDialog.project = project
-    saveDialog.name = (project.name || '').slice(0, 120) || '未命名机房'
-    saveDialog.description = ''
-    saveDialog.visible = true
+    openSaveDialog(project)
     return
   }
   saving.value = true
   try {
-    const updated = await updateTwinProject(selectedId.value, { project })
-    await refreshProjects()
+    const updated = await updateTwinProject(selectedId.value, {
+      project,
+      base_version: currentProject.value?.version ?? 1,
+    })
+    await refresh()
     post({ type: 'saved', id: updated.id, name: updated.name })
     dirty.value = false
-    ElMessage.success(`已保存「${updated.name}」`)
+    ElMessage.success(`已保存「${updated.name}」v${updated.version}`)
   } catch (error) {
+    const status = error?.response?.status
     const detail = error?.response?.data
-    const message = detail?.project?.[0] || detail?.detail || detail?.name?.[0] || error?.message || '保存失败'
+    if (status === 409) {
+      saving.value = false
+      await handleConflict(project, detail)
+      return
+    }
+    const message = detail?.project?.[0] || detail?.base_version?.[0] || detail?.detail
+      || detail?.name?.[0] || error?.message || '保存失败'
     post({ type: 'error', message })
     ElMessage.error(message)
   } finally {
@@ -343,10 +504,13 @@ async function confirmCreate() {
     formData.append('name', saveDialog.name.trim())
     if (saveDialog.description.trim()) formData.append('description', saveDialog.description.trim())
     const created = await uploadTwinProject(formData)
+    saveDialog.project = null
     saveDialog.visible = false
+    saveAsMode.value = false
     selectedId.value = created.id
     dirty.value = false
-    await refreshProjects()
+    await refresh()
+    syncQuery(created.id)
     post({ type: 'saved', id: created.id, name: created.name })
     ElMessage.success(`已保存到项目库「${created.name}」`)
   } catch (error) {
@@ -354,6 +518,42 @@ async function confirmCreate() {
     const message = detail?.file?.[0] || detail?.name?.[0] || detail?.detail || error?.message || '保存失败'
     post({ type: 'error', message })
     ElMessage.error(message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function openVersions() {
+  if (!selectedId.value) return
+  try {
+    const rows = await listTwinVersions(selectedId.value)
+    versionDialog.rows = Array.isArray(rows) ? rows : (rows.results || [])
+    versionDialog.visible = true
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.detail || error?.message || '版本列表加载失败')
+  }
+}
+
+async function rollbackTo(version) {
+  if (!selectedId.value) return
+  try {
+    await ElMessageBox.confirm(
+      `回滚到 v${version} 会把该版本内容写成新版本（当前内容仍保留在历史里），确定继续？`,
+      '回滚版本',
+      { type: 'warning', confirmButtonText: '回滚', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    const updated = await rollbackTwinProject(selectedId.value, version)
+    ElMessage.success(`已回滚到 v${version}，当前 v${updated.version}`)
+    await refresh()
+    await loadProject(selectedId.value, { token: ++loadToken })
+    await openVersions()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.detail || error?.message || '回滚失败')
   } finally {
     saving.value = false
   }
@@ -369,7 +569,7 @@ async function backToViewer() {
       return
     }
   }
-  router.push('/datacenter/twin')
+  router.push(selectedId.value ? `/datacenter/twin?project=${selectedId.value}` : '/datacenter/twin')
 }
 </script>
 
@@ -469,6 +669,10 @@ async function backToViewer() {
   width: 280px;
 }
 
+.design-search {
+  width: 200px;
+}
+
 .design-option {
   font-weight: 600;
 }
@@ -554,7 +758,8 @@ async function backToViewer() {
     flex-direction: column;
   }
 
-  .design-select {
+  .design-select,
+  .design-search {
     width: 100%;
   }
 

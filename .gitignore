@@ -79,3 +79,6 @@ backend/run/
 backend/runtime/
 frontend/run/
 tmp_deploy/
+
+# 三维设计器 E2E 产物（截图/结果）
+tools/dc-viewer/scripts/e2e/out/

@@ -3,9 +3,10 @@
  * UI 与 main.js 只经本模块导出的门面访问 3D 能力（形状与参考站 __dc3d 对齐）。
  */
 import * as THREE from 'three/webgpu';
-import { createRenderer, backendOf } from './scene/renderer.js';
+import { createRendererWithFallback, backendOf } from './scene/renderer.js';
 import { createRoomEnvironment } from './scene/environment.js';
 import { buildRoom } from './scene/builders.js';
+import { STATUS_COLORS, resolveCabinets } from './live/status.js';
 import { mergeStatics } from './scene/merge.js';
 import { disposeGroup } from './scene/dispose.js';
 import { CameraRig, MODES } from './camera/rig.js';
@@ -29,6 +30,9 @@ import { listViewpoints, summarizeViewpoints } from './camera/pose.js';
 import { createFocusFacade } from './features/focus.js';
 
 const S = 0.001;
+
+/** 主题底色：与设计器一致，避免同一项目两种观感。 */
+export const THEME_BACKGROUNDS = { light: 0xe9edf3, charcoal: 0x1b1f24, dark: 0x101722 };
 
 export const SCENE = Object.freeze({
   bg: 0xe9ecef,
@@ -71,6 +75,9 @@ const state = {
   frames: 0,
   shadowDirty: true,
   preExplodeR: 0,
+  live: null,
+  liveRings: [],
+  theme: 'light',
   hooks: [],
 };
 
@@ -147,7 +154,7 @@ export async function ensureScene(canvas) {
   if (state.ready) return;
   if (!canvas) throw new Error('缺少 #cv3d 画布');
   state.canvas = canvas;
-  const renderer = await createRenderer(canvas);
+  const renderer = await createRendererWithFallback(canvas);
   state.renderer = renderer;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SCENE.bg);
@@ -567,6 +574,7 @@ function widenAtmosphere(on) {
 }
 
 function disposeRoom() {
+  clearLiveRings();
   if (!state.room) return;
   state.clipGroup.remove(state.room);
   disposeGroup(state.room);
@@ -767,6 +775,86 @@ export function routeInfo(id) {
 }
 
 /* ---------- 自检 ---------- */
+/* ---------- 实时运行状态（父页面 postMessage 推送） ---------- */
+
+function clearLiveRings() {
+  for (const mesh of state.liveRings) {
+    if (mesh.parent) mesh.parent.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  state.liveRings.length = 0;
+  state.live = null;
+}
+
+export function clearLiveStatus() {
+  clearLiveRings();
+  state.dirty = true;
+  notify('live');
+}
+
+/**
+ * 按服务端聚合结果给绑定机柜加地面状态环。
+ * 未绑定的机柜不出现环——数据缺失不伪造在线。
+ */
+export function applyLiveStatus(payload) {
+  clearLiveRings();
+  if (!state.ready || !state.built || !payload) return null;
+  const cabinets = resolveCabinets(payload);
+  const objects = state.project?.objects || [];
+  for (const [objectId, entry] of Object.entries(cabinets)) {
+    const obj = objects.find(o => o.id === objectId && o.type === 'cabinet');
+    if (!obj) continue;
+    let group = null;
+    state.built.group.traverse((node) => {
+      if (!group && node.userData?.obj?.id === objectId) group = node;
+    });
+    if (!group) continue;
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.42, 0.56, 32),
+      new THREE.MeshBasicMaterial({
+        color: STATUS_COLORS[entry.status] || STATUS_COLORS.unknown,
+        transparent: true,
+        opacity: 0.92,
+        depthTest: false,
+      }),
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(obj.x * S, 0.02, -obj.y * S);
+    mesh.renderOrder = 900;
+    group.add(mesh);
+    state.liveRings.push(mesh);
+  }
+  state.live = {
+    generatedAt: payload.generated_at || new Date().toISOString(),
+    thresholds: payload.thresholds || null,
+    cabinets,
+    devices: payload.devices || [],
+    rings: state.liveRings.length,
+  };
+  state.dirty = true;
+  notify('live');
+  return state.live;
+}
+
+export function liveInfo() {
+  return state.live;
+}
+
+/** 主题：只换场景底色，几何与材质不动。 */
+export function setTheme(theme) {
+  const next = THEME_BACKGROUNDS[theme] ? theme : 'light';
+  state.theme = next;
+  if (state.scene) state.scene.background.set(THEME_BACKGROUNDS[next]);
+  state.dirty = true;
+  notify('theme');
+  return next;
+}
+
+export function themeName() {
+  return state.theme;
+}
+
 export function viewerInfo() {
   const built = state.built;
   let meshes = 0;
@@ -814,6 +902,8 @@ export function viewerInfo() {
     compass: compass ? compass.info() : null,
     perf: perf.info(),
     walls: wallHider ? wallHider.info() : null,
+    live: state.live,
+    theme: state.theme,
   };
 }
 
