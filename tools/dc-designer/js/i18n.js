@@ -27,6 +27,11 @@ const changeHandlers = [];
 /** 初始语言：localStorage 记忆 → 浏览器语言（es/ar/en 前缀）→ 默认中文 */
 function detectLocale() {
   try {
+    // 平台内嵌可显式指定语言（?lang=zh-CN|en），优先于本机记忆与浏览器语言
+    const forced = new URLSearchParams(location.search).get('lang');
+    if (forced && DICTS[forced]) return forced;
+  } catch (e) { /* file:// / 非浏览器 */ }
+  try {
     const saved = localStorage.getItem(LOCALE_KEY);
     if (saved && DICTS[saved]) return saved;
     const nav = String(navigator.language || navigator.userLanguage || '').toLowerCase();

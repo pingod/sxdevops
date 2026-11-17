@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="css/inspect.css">
 </head>
 <body>
+<script>if (new URLSearchParams(location.search).get('embed') === '1') window.__IDC_APP_BASE__ = '/';</script>
 <header class="tb">
   <span class="brand"><span data-i18n="app.title">机房设计器</span></span>
   <div class="tb-menu">
@@ -124,7 +125,6 @@
   </div>
 </div>
 <script type="module" src="js/main.js"></script>
-<script type="module" src="js/agent.js"></script>
 <script type="module" src="js/license.js"></script>
 <script type="module" src="js/inspect.js"></script>
 </body>

@@ -146,6 +146,10 @@ function initResize() {
   });
 }
 
+const AI_ENABLED = (() => {
+  try { return new URLSearchParams(location.search).get('ai') === '1'; } catch (e) { return false; }
+})();
+
 export function initSidebar() {
   if (initialized) return;
   main = document.querySelector('main');
@@ -182,5 +186,14 @@ export function initSidebar() {
     if (mode3d && document.activeElement === tabs[0]) tabs[1].focus();
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   initResize();
+  if (!AI_ENABLED) {
+    // AI 建模已拆到 AIOps「AI 机房建模」：普通设计器不加载/不显示 AI 入口
+    const btn = document.getElementById('btn-ai');
+    if (btn) btn.style.display = 'none';
+    const tabAi = document.getElementById('tab-ai');
+    if (tabAi) tabAi.style.display = 'none';
+    if (tab === 'ai') tab = 'props';
+  }
   render(); // 刷新恢复不广播 ai-enter，保留用户显式展开的左栏
+  if (AI_ENABLED) setTimeout(() => selectSidebarTab('ai', { focus: true }), 0);
 }

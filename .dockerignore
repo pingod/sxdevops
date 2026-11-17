@@ -27,6 +27,11 @@ planning/web/dist
 tools/dc-viewer/node_modules
 tools/dc-viewer/dist
 tools/dc-viewer/test/parity
+tools/dc-designer/node_modules
+tools/dc-designer/dist
+tools/dc-designer/public/inspect
+tools/dc-designer/test/parity
+tools/dc-designer/test/e2e-out
 planning/shared
 planning/docs
 planning/scripts

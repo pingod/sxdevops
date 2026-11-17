@@ -173,6 +173,8 @@ class TwinProjectApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('viewer_built', response.data)
         self.assertEqual(response.data['viewer_path'], '/dc-viewer-app/')
+        self.assertIn('cad_designer_built', response.data)
+        self.assertEqual(response.data['cad_designer_path'], '/dc-designer-app/')
 
 
     def test_update_replaces_content_and_audits(self):
@@ -575,6 +577,43 @@ class TwinViewerHostingTests(TestCase):
 
     def test_path_traversal_is_rejected(self):
         response = self.client.get('/dc-viewer-app/../backend/manage.py')
+        self.assertEqual(response.status_code, 404)
+
+
+class CadDesignerHostingTests(TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / 'index.html').write_text('<!doctype html><canvas id="cv"></canvas>', encoding='utf-8')
+        (self.tmp / 'assets').mkdir()
+        (self.tmp / 'assets' / 'main.js').write_text('console.log(1)', encoding='utf-8')
+        (self.tmp / 'inspect').mkdir()
+        (self.tmp / 'inspect' / 'index.html').write_text('<!doctype html><canvas id="cv3d"></canvas>', encoding='utf-8')
+        self.patch = patch('datacenter.views.DESIGNER_DIST_DIR', self.tmp)
+        self.patch.start()
+        self.client = APIClient()
+
+    def tearDown(self):
+        self.patch.stop()
+
+    def test_index_is_served_without_auth_and_not_cached(self):
+        response = self.client.get('/dc-designer-app/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'id="cv"', b''.join(response.streaming_content))
+        self.assertIn('no-store', response['Cache-Control'])
+
+    def test_hashed_assets_are_immutable_and_typed(self):
+        response = self.client.get('/dc-designer-app/assets/main.js')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/javascript')
+        self.assertIn('immutable', response['Cache-Control'])
+
+    def test_nested_inspect_app_is_served(self):
+        response = self.client.get('/dc-designer-app/inspect/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'cv3d', b''.join(response.streaming_content))
+
+    def test_path_traversal_is_rejected(self):
+        response = self.client.get('/dc-designer-app/../backend/manage.py')
         self.assertEqual(response.status_code, 404)
 
 

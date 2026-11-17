@@ -32,7 +32,11 @@ if (!fs.existsSync(src)) {
   console.error(`viewer dist not found: ${src}`);
   process.exit(1);
 }
-fs.rmSync(dst, { recursive: true, force: true });
+// 保留 public/inspect 目录本身（只清空内容）：Vite dev 对 public 根目录做了缓存，
+// 删除再重建目录会让开发服务器继续回退到 SPA index，导致检视 iframe 打不开。
 fs.mkdirSync(dst, { recursive: true });
+for (const name of fs.readdirSync(dst)) {
+  fs.rmSync(path.join(dst, name), { recursive: true, force: true });
+}
 fs.cpSync(src, dst, { recursive: true });
 console.log(`inspect bundle ready → ${dst}`);

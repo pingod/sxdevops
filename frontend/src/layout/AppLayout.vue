@@ -264,6 +264,7 @@ const menuItems = [
       { path: '/datacenter/planning', visibilityKey: 'datacenter.planning', title: 'IDC 上架布线', icon: 'OfficeBuilding', permission: 'datacenter.planning.view' },
       { path: '/datacenter/twin', visibilityKey: 'datacenter.twin', title: '数字孪生', icon: 'Box', permission: 'datacenter.twin.view' },
       { path: '/datacenter/twin-design', visibilityKey: 'datacenter.twin-design', title: '三维机房设计', icon: 'Edit', permission: 'datacenter.twin.manage' },
+      { path: '/datacenter/designer', visibilityKey: 'datacenter.designer', title: '机房 CAD 设计', icon: 'Edit', permission: 'datacenter.twin.manage' },
     ],
   },
   {
@@ -272,6 +273,7 @@ const menuItems = [
     icon: 'ChatDotSquare',
     children: [
       { path: '/aiops/chat', visibilityKey: 'aiops.chat', title: '智能助手', icon: 'Service', permission: 'aiops.chat.view' },
+      { path: '/aiops/modeling', visibilityKey: 'aiops.modeling', title: 'AI 机房建模', icon: 'MagicStick', permission: 'aiops.chat.view' },
       { path: '/aiops/knowledge', visibilityKey: 'aiops.knowledge', title: '知识图谱', icon: 'Share', permission: 'aiops.knowledge.view' },
       { path: '/aiops/config', visibilityKey: 'aiops.config', title: '智能体配置', icon: 'Tools', permission: 'aiops.config.view' },
       { path: '/aiops/audit', visibilityKey: 'aiops.audit', title: '智能体审计', icon: 'Tickets', permission: 'aiops.audit.view' },

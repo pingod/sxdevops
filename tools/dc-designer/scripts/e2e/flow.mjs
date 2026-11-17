@@ -41,7 +41,7 @@ const readState = () => page.evaluate(() => {
 try {
   await step('boot + dismiss welcome + zh', async () => {
     await page.goto(URL_LOCAL, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#cv');
+    await page.waitForSelector('#cv', { state: 'attached' });
     await page.evaluate(() => {
       try { localStorage.clear(); sessionStorage.clear(); localStorage.setItem('idc2d_no_welcome', '1'); } catch (e) {}
     });
@@ -135,6 +135,8 @@ try {
       await d.saveAs(p);
       assert(fs.statSync(p).size > (ext === '.png' ? 10000 : 500), `${ext} non-empty`);
     }
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
   });
 
   await step('3D real/bim/labels', async () => {
@@ -166,11 +168,30 @@ try {
     assert(await page.evaluate(() => !document.getElementById('dc-inspect')), 'inspect closed');
   });
 
-  await step('AI panel + settings', async () => {
-    await page.evaluate(() => document.getElementById('tab-ai').click());
+  await step('AI hidden in designer; AIOps mode loads it', async () => {
+    const hidden = await page.evaluate(() => ({
+      btn: getComputedStyle(document.getElementById('btn-ai')).display,
+      tab: getComputedStyle(document.getElementById('tab-ai')).display,
+      body: (document.getElementById('ai-design').textContent || '').trim().length,
+    }));
+    assert(hidden.btn === 'none' && hidden.tab === 'none' && hidden.body === 0, 'AI entry hidden by default');
+
+    await page.goto(URL_LOCAL + '?ai=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#cv', { state: 'attached' });
+    await page.waitForFunction(() => !!window.__dcd);
     await page.waitForTimeout(900);
-    const txt = await page.textContent('#ai-design');
-    assert(/API Key|API 密钥/.test(txt), 'AI settings present');
+    const ai = await page.evaluate(() => ({
+      tab: getComputedStyle(document.getElementById('tab-ai')).display,
+      selected: document.getElementById('tab-ai').getAttribute('aria-selected'),
+      text: document.getElementById('ai-design').textContent || '',
+    }));
+    assert(ai.tab !== 'none' && ai.selected === 'true', 'AI tab auto-opened');
+    assert(/API Key|API 密钥/.test(ai.text), 'AI settings present');
+
+    await page.goto(URL_LOCAL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#cv', { state: 'attached' });
+    await page.waitForFunction(() => !!window.__dcd);
+    await page.waitForTimeout(900);
   });
 
   await step('locale switch + reload draft', async () => {

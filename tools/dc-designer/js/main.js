@@ -594,6 +594,8 @@ onLocaleChange(() => {
 });
 
 /* 自动化/回归测试钩子：暴露页面真实模块实例（避免动态 import 因 HMR 查询串产生第二实例）。 */
+if (new URLSearchParams(location.search).get('ai') === '1') import('./agent.js');
+
 window.__dcd = Object.freeze({
   state, runtime, ui, newProject, markDirty, sanitize, undoDepth, flushDraft, loadDraft,
   tools, render: () => doRender(),

@@ -37,7 +37,6 @@ const STATES = [
   { id: 'wizard', kind: '2d' },
   { id: 'checks', kind: '2d' },
   { id: 'export-menu', kind: '2d' },
-  { id: 'ai-panel', kind: '2d' },
   { id: '3d-real', kind: '3d' },
   { id: '3d-bim', kind: '3d' },
   { id: '3d-labels', kind: '3d' },
