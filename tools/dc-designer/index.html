@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DCDesigner</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="logo.svg">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/sidebar.css">
+<link rel="stylesheet" href="css/inspect.css">
+</head>
+<body>
+<header class="tb">
+  <a class="brand" href="https://www.nvisual.com/" target="_blank" rel="noopener noreferrer" title="访问 nVisual 官网 www.nvisual.com（在新窗口打开）" data-i18n-title="app.brand.t"><img class="logo" src="logo.svg" alt="DCDesigner"><span data-i18n="app.title">DCDesigner</span></a>
+  <div class="tb-menu">
+  <div class="group">
+    <button id="btn-new" title="新建项目" data-i18n-title="btn.new"><i data-ic="new"></i></button>
+    <button id="btn-open" title="打开：标准文件选择对话框" data-i18n-title="btn.open.t"><i data-ic="open"></i><span data-i18n="btn.open">打开</span></button>
+    <button id="btn-save" title="保存 (Ctrl+S)：首次选择位置，之后直接覆盖保存" data-i18n-title="btn.save.t"><i data-ic="save"></i><span data-i18n="btn.save">保存</span></button>
+  </div>
+  <div class="group g-edit">
+    <button data-tool="select" class="active" title="选择 (V)" data-i18n-title="btn.select.t"><i data-ic="cursor"></i><span data-i18n="btn.select">选择</span></button>
+    <button id="btn-undo" title="撤销 (Ctrl+Z)" data-i18n-title="btn.undo"><i data-ic="undo"></i></button>
+    <button id="btn-redo" title="重做 (Ctrl+Y)" data-i18n-title="btn.redo"><i data-ic="redo"></i></button>
+    <button id="btn-rotate" title="旋转 90° (R)，机柜/柱子/空调/风口/列头柜" data-i18n-title="btn.rotate"><i data-ic="rotate"></i></button>
+    <button data-tool="brush" title="格式刷 (M)：拾取一个对象的属性，批量复制到其他同类型对象（单击/框选应用）" data-i18n-title="btn.brush"><i data-ic="brush"></i></button>
+    <button id="btn-del" title="删除选中 (Del)" data-i18n-title="btn.del"><i data-ic="trash"></i></button>
+  </div>
+  <div class="group">
+    <button id="btn-grid" class="active" title="显示/隐藏网格" data-i18n-title="btn.grid"><i data-ic="grid"></i></button>
+    <button id="btn-snap" class="active" title="100mm 网格捕捉" data-i18n-title="btn.snap"><i data-ic="magnet"></i></button>
+  </div>
+  <div class="group" id="export-grp">
+    <!-- 导出合并入口：一个「导出」快捷图标 + 下拉菜单（PNG / DXF / CSV 三项，见 js/exportmenu.js） -->
+    <button id="btn-export" class="has-pop" title="导出：PNG 图片 / DXF 图纸 / CSV 工程量清单（点击展开选择格式）" data-i18n-title="btn.export.t" aria-haspopup="menu" aria-expanded="false"><i data-ic="export"></i></button>
+    <div id="export-menu" class="pop-menu" role="menu" hidden>
+      <button id="btn-png" role="menuitem" title="导出 PNG 图片（完整平面图 · 高清）" data-i18n-title="btn.png"><i data-ic="image"></i><span data-i18n="exp.png">PNG 图片</span><b data-i18n="exp.png.d">完整视图 · 高清</b></button>
+      <button id="btn-dxf" role="menuitem" title="导出 DXF 图纸（CAD 1:1 毫米图，AutoCAD/中望/浩辰可打开，按类型分图层）" data-i18n-title="btn.dxf"><i data-ic="dxf"></i><span data-i18n="exp.dxf">DXF 图纸</span><b data-i18n="exp.dxf.d">1:1 毫米 CAD 图</b></button>
+      <button id="btn-csv" role="menuitem" title="导出 CSV 工程量清单（Excel/WPS 直接打开：数量汇总 + 设备明细）" data-i18n-title="btn.csv"><i data-ic="csv"></i><span data-i18n="exp.csv">CSV 清单</span><b data-i18n="exp.csv.d">汇总 + 设备明细</b></button>
+    </div>
+    <!-- 提交到 nVisual Studio：把机房成果（房间/机柜/列头柜/UPS/蓄电池/空调/消防/桥架/门窗…）回传资源库，见 js/nvsubmit.js -->
+    <button id="btn-sync-nvisual" title="提交当前机房设计/工勘数据到nVisual Studio资源管理平台，实现资源统一管理、分析、仿真等业务" data-i18n-title="btn.nv.t"><i data-ic="nvisual-upload"></i><span data-i18n="btn.nv">提交nVisual Studio</span></button>
+  </div>
+  <div class="group">
+    <button id="btn-wizard" class="active" title="显示/隐藏工勘向导" data-i18n-title="btn.wizard"><i data-ic="clipboard"></i></button>
+    <button id="btn-check" title="合规自检：按规则集校验设计（净距/电力/制冷/消防/承重/土建），生成校验报告" data-i18n-title="btn.check"><i data-ic="check"></i></button>
+    <button id="btn-ai" title="AI 建模(试验)：用中文描述即可生成机房（内置 DeepSeek，需填自己的 API Key）" data-i18n-title="aip.btn.t"><i data-ic="ai"></i></button>
+  </div>
+  </div>
+  <div class="tb-right">
+    <select id="lang-sel" class="lang-sel" title="语言 / Language / اللغة / Idioma">
+      <option value="zh-CN">中</option>
+      <option value="en">EN</option>
+    </select>
+    <a class="btn tb-feedback" href="https://www.nvisual.com/" target="_blank" rel="noopener noreferrer" title="问题反馈，或进一步了解资产与线缆管理解决方案，在新窗口打开" data-i18n-title="btn.feedback.t"><i data-ic="feedback"></i></a>
+  </div>
+</header>
+<main>
+  <nav id="toolbox" title="建模对象工具" data-i18n-title="nav.tools">
+    <div class="tb-grp"><span data-i18n="grp.building">建筑</span></div>
+    <button data-tool="wall" title="墙体 (W)，Shift 正交，可输长度+回车" data-i18n-title="hint.tool.wall"><i data-ic="wall"></i><span data-i18n="type.wall">墙体</span></button>
+    <button data-tool="door" title="机房门 (D)，点击墙体放置" data-i18n-title="hint.tool.door"><i data-ic="door"></i><span data-i18n="type.door">机房门</span></button>
+    <button data-tool="column" title="柱子 (C)" data-i18n-title="hint.tool.column"><i data-ic="column"></i><span data-i18n="type.column">柱子</span></button>
+    <button data-tool="beam" title="框架梁 (K)，单击起点柱/点，再单击终点柱/点（端点自动吸附柱心），可连续绘制" data-i18n-title="hint.tool.beam"><i data-ic="beam"></i><span data-i18n="type.beam">框架梁</span></button>
+    <button data-tool="grille" title="格栅 (L)，点击墙体放置百叶风口（风墙送/回风）" data-i18n-title="hint.tool.grille"><i data-ic="grille"></i><span data-i18n="type.grille">格栅</span></button>
+    <button data-tool="tray" title="桥架 (T)，逐段绘制，可输长度+回车" data-i18n-title="hint.tool.tray"><i data-ic="tray"></i><span data-i18n="type.tray">桥架</span></button>
+    <button data-tool="pipe" title="液冷管 (I)：在工作标高连续绘制，属性面板可创建立管和双管" data-i18n-title="hint.tool.pipe"><i data-ic="pipe"></i><span data-i18n="type.pipe">液冷管</span></button>
+    <button data-tool="vent" title="地板出风口 (F)，静电地板地面出风口（下送风），R 旋转" data-i18n-title="hint.tool.vent"><i data-ic="vent"></i><span data-i18n="typeShort.vent">风口</span></button>
+    <button data-tool="window" title="窗 (N)，点击墙体放置" data-i18n-title="hint.tool.window"><i data-ic="window"></i><span data-i18n="type.window">窗</span></button>
+    <div class="tb-grp"><span data-i18n="grp.equipment">设备</span></div>
+    <button data-tool="cabinet" title="机柜 (G=600 / B=800)，规格跟随属性面板最近修改，单击放置，R 旋转" data-i18n-title="hint.tool.cabinet"><i data-ic="cabinet"></i><span data-i18n="type.cabinet">机柜</span></button>
+    <button data-tool="pdu" title="列头柜 (P)，默认尺寸同机柜，记录输入电压/电流，单击放置，R 旋转" data-i18n-title="hint.tool.pdu"><i data-ic="pdu"></i><span data-i18n="type.pdu">列头柜</span></button>
+    <button data-tool="dbox" title="配电箱：单击放置，记录用途、安装方式、电压/电流和输出回路，R 旋转" data-i18n-title="hint.tool.dbox"><i data-ic="dbox"></i><span data-i18n="type.dbox">配电箱</span></button>
+    <button data-tool="ups" title="UPS (U)，单击放置不间断电源（默认 800×800×2000，记录容量/后备时间），R 旋转" data-i18n-title="hint.tool.ups"><i data-ic="ups"></i><span data-i18n="type.ups">UPS</span></button>
+    <button data-tool="battery" title="蓄电池 (X)，单击放置电池柜（默认 800×800×2000，记录电池类型/单只容量/只数/组电压），R 旋转" data-i18n-title="hint.tool.battery"><i data-ic="battery"></i><span data-i18n="type.battery">蓄电池</span></button>
+    <button data-tool="ac" title="空调 (A)，单击放置精密空调，R 旋转" data-i18n-title="hint.tool.ac"><i data-ic="ac"></i><span data-i18n="type.ac">空调</span></button>
+    <button data-tool="extinguisher" title="灭火器 (E)，单击放置灭火器（默认 400×400×1200，记录灭火器类型/充装量），R 旋转" data-i18n-title="hint.tool.extinguisher"><i data-ic="extinguisher"></i><span data-i18n="type.extinguisher">灭火器</span></button>
+  </nav>
+  <aside id="wizard"></aside>
+  <aside id="checks" style="display:none"></aside>
+  <div id="view-wrap">
+    <canvas id="cv"></canvas>
+    <canvas id="cv3d" hidden></canvas>
+    <button id="btn-3d" title="切换到 3D 查看视图" data-i18n-title="btn3d">3D</button>
+    <button id="btn-style" title="切换 3D 显示风格">素模</button>
+    <button id="btn-pipe-view" data-i18n="pipe.view" data-i18n-title="pipe.view" title="管路视图">管路视图</button>
+    <button id="btn-label" title="显示 / 隐藏机柜编号" data-i18n="labels3d.btn" data-i18n-title="btn3dLabel">编号</button>
+    <button id="btn-joints3d" type="button" aria-controls="joints3d-panel" aria-expanded="false" data-i18n="joints3d.title">平滑接头</button>
+    <button id="btn-inspect" title="打开三维检视（巡检/步行/剖切/定位/显示/拆解）" data-i18n-title="inspect.open" data-i18n="inspect.open">检视</button>
+    <section id="joints3d-panel" hidden aria-labelledby="btn-joints3d">
+      <label class="joints3d-enable"><input id="joints3d-enabled" type="checkbox"><span data-i18n="joints3d.enabled">启用 3D 圆弯</span></label>
+      <label><span data-i18n="joints3d.pipeRadius">管道中心线半径 (mm)</span><input id="joints3d-pipeRadius" type="number" min="0" max="10000" step="any"></label>
+      <label><span data-i18n="joints3d.trayInnerRadius">桥架内弯半径 (mm)</span><input id="joints3d-trayInnerRadius" type="number" min="0" max="10000" step="any"></label>
+      <p data-i18n="joints3d.help"></p>
+      <p id="joints3d-stats" role="status" aria-live="polite"></p>
+      <ul id="joints3d-details"></ul>
+      <p data-i18n="joints3d.risks"></p>
+    </section>
+  </div>
+  <button id="props-close" type="button" aria-controls="sidebar" title="收起右侧工作区">&#215;</button>
+  <aside id="sidebar" data-tab="props">
+    <div id="props-grip" title="拖拽调整右侧工作区宽度，双击恢复默认"></div>
+    <div id="sidebar-tabs" role="tablist" aria-label="设计工作区">
+      <button id="tab-props" type="button" role="tab" data-sidebar-tab="props" aria-controls="props" aria-selected="true"><i data-ic="file" aria-hidden="true"></i><span class="sidebar-tab-label" data-i18n="sidebar.props">属性</span></button>
+      <button id="tab-ai" type="button" role="tab" data-sidebar-tab="ai" aria-controls="ai-design" aria-selected="false" tabindex="-1"><i data-ic="ai" aria-hidden="true"></i><span class="sidebar-tab-label" data-i18n="sidebar.ai">AI建模</span><span id="sidebar-ai-status" role="status" aria-live="polite" hidden></span></button>
+    </div>
+    <section id="props" role="tabpanel" aria-labelledby="tab-props"></section>
+    <section id="ai-design" role="tabpanel" aria-labelledby="tab-ai" hidden></section>
+  </aside>
+</main>
+<footer class="sb">
+  <span id="st-hint" data-i18n="hint.welcome">按左侧工勘向导逐步记录：量房间 → 记机柜 → 记桥架 → 核对保存</span>
+  <span id="st-license" class="lic" hidden></span>
+  <span class="zg" title="缩放" data-i18n-title="zoom.title">
+    <button id="btn-zoomout" title="缩小" data-i18n-title="zoom.out"><i data-ic="zoomout"></i></button>
+    <span id="st-zoom">100%</span>
+    <button id="btn-zoomin" title="放大" data-i18n-title="zoom.in"><i data-ic="zoomin"></i></button>
+    <button id="btn-fit" title="缩放到全部内容" data-i18n-title="zoom.fit"><i data-ic="fit"></i></button>
+  </span>
+  <span id="st-coords">X 0.00 m　Y 0.00 m</span>
+</footer>
+<!-- 打开大项目时的加载遮罩：旋转圈 + 阶段文本 + 进度条（main.js showLoading/hideLoading 控制） -->
+<div id="loading" class="ld-overlay" hidden>
+  <div class="ld-modal" role="status" aria-live="polite">
+    <div class="ld-spinner"></div>
+    <div class="ld-text" id="ld-text"></div>
+    <div class="ld-bar"><div class="ld-fill" id="ld-fill"></div></div>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+<script type="module" src="js/agent.js"></script>
+<script type="module" src="js/license.js"></script>
+<script type="module" src="js/inspect.js"></script>
+</body>
+</html>

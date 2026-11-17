@@ -52,6 +52,8 @@ function fail(text) {
 }
 
 const embedded = window.parent !== window;
+/* 设计器 union 检视：?embed=1 时不从 URL 取项目，等待父页 postMessage 传入项目数据。 */
+const embedMode = new URLSearchParams(location.search).get('embed') === '1';
 const liveLegend = document.getElementById('live-legend');
 const liveTime = document.getElementById('live-time');
 
@@ -681,10 +683,54 @@ async function fetchProject(src) {
   return sanitize(await res.json());
 }
 
+let embedProjectLoaded = false;
+/** 设计器 union：接收父页项目并渲染（首次取景适配，之后重复调用保留相机）。 */
+async function applyEmbeddedProject(raw) {
+  if (!raw || typeof raw !== 'object') return;
+  const project = sanitize(raw);
+  V.loadProject(project, { preserveCamera: embedProjectLoaded, preserveView: false });
+  if (!embedProjectLoaded) { V.fitCamera(); embedProjectLoaded = true; }
+  mountUIOnce();
+  installKeysOnce();
+  refresh();
+  document.title = `${project.name || ''} · DCDesigner 3D`;
+  hideMsg();
+}
+
+let uiMounted = false;
+function mountUIOnce() {
+  if (uiMounted) return;
+  mountUI();
+  uiMounted = true;
+}
+let keysInstalled = false;
+function installKeysOnce() {
+  if (keysInstalled) return;
+  installKeys();
+  keysInstalled = true;
+}
+
+async function bootEmbedded() {
+  try {
+    const canvas = document.getElementById('cv3d');
+    await V.ensureScene(canvas);
+    mountUIOnce();
+    installKeysOnce();
+    showMsg('等待设计器数据…');
+    window.__dcxd = makeDebugApi();
+    if (embedded) window.parent.postMessage({ source: 'dc-viewer', type: 'ready' }, '*');
+    else hideMsg();
+  } catch (err) {
+    console.error(err);
+    fail(`三维初始化失败：${err.message}（请开启硬件加速或使用 Chrome/Edge）`);
+  }
+}
+
 async function boot() {
   params = parseViewState(location.search);
   currentSrc = params.src || '';
   if (!currentSrc) {
+    if (embedMode || embedded) { await bootEmbedded(); return; }
     fail('缺少项目地址：请通过 ?src=<项目 JSON 地址> 打开本页面');
     return;
   }
@@ -862,6 +908,9 @@ window.addEventListener('message', (event) => {
   const data = event.data || {};
   if (data.type === 'twin-live') applyLive(data.payload);
   else if (data.type === 'theme') applyTheme(data.theme);
+  else if (data.source === 'dc-designer' && data.type === 'project') {
+    applyEmbeddedProject(data.payload && data.payload.project);
+  }
 });
 
 boot();

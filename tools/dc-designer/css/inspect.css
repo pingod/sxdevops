@@ -1,0 +1,39 @@
+/* 三维检视（union）：在 3D 视图上全屏嵌入 DCExplorer 查看器，复用其巡检/步行/剖切/定位/显示/拆解。
+ * 查看器以 iframe 方式运行（dev: 5199，prod: ./inspect/），父页只通过 postMessage 传项目数据。 */
+
+#btn-inspect {
+  display: none;
+  position: absolute; right: 12px; bottom: 14px; z-index: 7;
+  padding: 7px 10px; border: 1px solid #ccd3dd; border-radius: 6px;
+  background: #f6f8fa; color: #2c3e50; font: 12px/1.2 "Microsoft YaHei", "PingFang SC", sans-serif;
+  cursor: pointer;
+}
+body.mode3d #btn-inspect { display: block; }
+#btn-inspect:hover { border-color: #2f6fb2; color: #2f6fb2; background: #fff; }
+#btn-inspect:disabled { opacity: .5; cursor: not-allowed; }
+
+#dc-inspect {
+  position: fixed; inset: 0; z-index: 60; background: #e9ecef;
+  display: flex; flex-direction: column;
+}
+#dc-inspect[hidden] { display: none; }
+#dc-inspect .dci-bar {
+  flex: none; height: 40px; display: flex; align-items: center; gap: 10px;
+  padding: 0 12px; background: #2c3e50; color: #eaf2f8;
+  font: 12px/1.4 "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+#dc-inspect .dci-bar b { font-weight: 600; }
+#dc-inspect .dci-bar span { color: #b8c8d8; }
+#dc-inspect .dci-back {
+  margin-left: auto; height: 28px; padding: 0 12px; border-radius: 5px;
+  border: 1px solid #56708c; background: #3b5872; color: #eaf2f8; cursor: pointer;
+  font: inherit;
+}
+#dc-inspect .dci-back:hover { background: #4a6b8a; }
+#dc-inspect iframe { flex: 1; width: 100%; border: 0; background: #e9ecef; }
+#dc-inspect .dci-hint {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  max-width: 520px; padding: 14px 18px; border-radius: 8px;
+  border: 1px solid #ddd; background: #fff; color: #2c3e50; line-height: 1.6;
+  box-shadow: 0 4px 18px #0002; font: 13px/1.6 "Microsoft YaHei", "PingFang SC", sans-serif;
+}

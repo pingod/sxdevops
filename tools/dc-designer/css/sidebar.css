@@ -1,0 +1,77 @@
+/* 右侧统一工作区（属性 / AI建模）。宽度、显隐只由外壳承担，子面板各自滚动。 */
+#sidebar {
+  position: relative; display: flex; flex-direction: column; flex: none;
+  width: var(--props-w, 320px); max-width: 100%; min-width: 0; min-height: 0;
+  background: #fff; border-inline-start: 1px solid #ddd;
+}
+main.phide #sidebar { display: none; }
+/* 扁平双 TAB：12px 图文、等宽分区、浅底与青绿底线，收起按钮占独立留白。 */
+#sidebar-tabs {
+  display: flex; flex: none; align-items: stretch; height: 42px;
+  padding: 0 36px 0 8px; background: #fff; border-bottom: 1px solid #e4e9ef;
+}
+#sidebar-tabs [role="tab"] {
+  position: relative; display: flex; flex: 1 1 0; align-items: center; justify-content: center; gap: 5px;
+  min-width: 0; padding: 0 6px; border: 0; border-radius: 0;
+  color: #8a98a9; background: transparent; font: inherit; font-size: 12px; line-height: 18px;
+  white-space: nowrap; cursor: pointer;
+}
+#sidebar-tabs [role="tab"]::after {
+  content: ''; position: absolute; inset-inline: 8px; bottom: -1px;
+  height: 2px; border-radius: 2px 2px 0 0; background: transparent;
+}
+#sidebar-tabs [role="tab"]:hover:not(:disabled) { background: #f5faf9; color: #00a78f; }
+#sidebar-tabs [role="tab"].active { background: #f5faf9; color: #00a78f; font-weight: 600; }
+#sidebar-tabs [role="tab"].active::after { background: #00b49b; }
+#sidebar-tabs [role="tab"]:disabled { opacity: .45; cursor: not-allowed; }
+#sidebar-tabs [role="tab"]:focus-visible { outline: 2px solid #1abc9c; outline-offset: -3px; }
+#sidebar-tabs .sidebar-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#sidebar-tabs i { display: flex; align-items: center; flex: none; }
+#sidebar-tabs svg.ic { width: 14px; height: 14px; }
+#props-close { top: 10px; z-index: 9; }
+#sidebar-ai-status { flex: none; color: #16a085; font-size: 10px; }
+#sidebar-ai-status[hidden] { display: none; }
+#sidebar-ai-status.pending { color: #b56912; font-size: 11px; }
+#props-close.has-ai-status::after {
+  content: ''; position: absolute; top: -1px; right: -1px;
+  width: 6px; height: 6px; border-radius: 50%; background: #d28a25;
+}
+#sidebar #props {
+  position: static; width: auto; flex: 1; min-height: 0; min-width: 0;
+  overflow-y: auto; border: 0; box-shadow: none;
+}
+#sidebar #props[hidden], #sidebar #ai-design[hidden] { display: none; }
+#sidebar #props h3:first-child { padding-inline: 0; }
+#ai-design { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+#sidebar .aip-drawer {
+  position: static; width: 100%; max-width: none; flex: 1; min-width: 0;
+  border: 0; box-shadow: none;
+}
+#sidebar .aip-msgs { min-height: 0; }
+#sidebar .aip-head { background: #f6f9fc; padding: 5px 12px; }
+#sidebar .aip-head b { font-size: 12px; }
+#sidebar .aip-guide { overflow-wrap: anywhere; }
+/* 分隔条放在外壳内，宽度受视口钳制时仍准确贴住边缘。 */
+#sidebar #props-grip { inset-inline-start: -4px; inset-inline-end: auto; }
+body.mode3d main.ai-tab #sidebar, body.mode3d main.ai-tab #props-close,
+body.mode3d main.ai-tab #props-grip { display: flex; }
+body.mode3d main:not(.ai-tab) #sidebar { display: none; }
+body.mode3d main.ai-tab.phide #sidebar { display: none; }
+body.mode3d main.ai-tab.phide #props-grip { display: none; }
+body.mode3d main.ai-tab.phide #btn-3d { right: 46px; }
+[dir="rtl"] #sidebar-tabs { padding: 0 8px 0 36px; }
+[dir="rtl"] body.mode3d main.ai-tab.phide #btn-3d { right: 12px; }
+@media (min-width: 1201px) and (max-width: 1439px) {
+  main { --props-w: 304px; }
+}
+@media (max-width: 1200px) {
+  #sidebar {
+    position: absolute; inset-block: 0; inset-inline-end: 0; z-index: 8;
+    box-shadow: -4px 0 16px rgba(0,0,0,.25);
+  }
+  [dir="rtl"] #sidebar { box-shadow: 4px 0 16px rgba(0,0,0,.25); }
+}
+@media (max-width: 560px) {
+  #sidebar { width: 100%; }
+  #sidebar #props-grip { display: none; }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "dc-designer",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "DCDesigner 1:1 standalone clone: local-first 2D data-center editor with embedded 3D and optional services.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5200",
+    "dev:inspect": "npm --prefix ../dc-viewer run dev",
+    "build": "vite build && node scripts/build-inspect.mjs",
+    "preview": "vite preview --host 127.0.0.1 --port 5200",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "test": "node --test test/",
+    "e2e": "node scripts/e2e/flow.mjs",
+    "parity": "node scripts/parity.mjs"
+  },
+  "dependencies": {
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "playwright-core": "1.65.1",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0",
+    "vite": "8.3.8"
+  }
+}
