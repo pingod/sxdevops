@@ -16,7 +16,7 @@ const numOr = v => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const NUM_TOP = ['x', 'y', 'x1', 'y1', 'x2', 'y2', 'rotation', 't'];
+const NUM_TOP = ['x', 'y', 'z', 'x1', 'y1', 'z1', 'x2', 'y2', 'z2', 'rotation', 't'];
 const NUM_PROPS = [
   'thickness', 'height', 'width', 'sill', 'bodyH', 'w', 'd', 'h',
   'u', 'power', 'rpdu', 'voltage', 'current', 'cool', 'air', 'temp', 'supplyRh', 'returnTemp',
@@ -24,6 +24,7 @@ const NUM_PROPS = [
   'doorW',
   'ah', 'cells',
   'b', 'top',
+  'outsideDiameter', 'wallThickness', 'insulationThickness',
   'kg',
 ];
 const NONNEG_PROPS = new Set(NUM_PROPS.filter(k => k !== 'temp' && k !== 'returnTemp'));
