@@ -33,6 +33,20 @@ COPY tools/dc-viewer/ ./
 RUN npm run build
 
 
+FROM node:22-alpine AS dc-designer-builder
+
+WORKDIR /app/tools
+
+COPY tools/dc-viewer/package*.json ./dc-viewer/
+COPY tools/dc-designer/package*.json ./dc-designer/
+RUN cd dc-viewer && npm ci && cd ../dc-designer && npm ci
+
+COPY tools/dc-viewer/ ./dc-viewer/
+COPY tools/dc-designer/ ./dc-designer/
+# prebuild 会先构建 dc-viewer 并复制到 public/inspect，再构建设计器本体
+RUN cd dc-designer && npm run build
+
+
 FROM python:3.12-slim AS app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -77,6 +91,7 @@ COPY planning/projects/ /app/planning/projects/
 COPY planning/信息港部署上架/ /app/planning/信息港部署上架/
 COPY --from=planning-web-builder /app/planning/web/dist /app/planning/web/dist
 COPY --from=dc-viewer-builder /app/tools/dc-viewer/dist /app/tools/dc-viewer/dist
+COPY --from=dc-designer-builder /app/tools/dc-designer/dist /app/tools/dc-designer/dist
 COPY docker/entrypoint.sh /entrypoint.sh
 
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh

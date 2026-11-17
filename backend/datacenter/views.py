@@ -30,6 +30,9 @@ from .serializers import (
 #: 仓库根/tools/dc-viewer/dist（本文件位于 backend/datacenter/）。
 VIEWER_DIST_DIR = Path(__file__).resolve().parents[2] / 'tools' / 'dc-viewer' / 'dist'
 VIEWER_PATH = '/dc-viewer-app/'
+#: 机房 CAD 设计器（tools/dc-designer 的独立构建产物，含 inspect/ 检视子应用）。
+DESIGNER_DIST_DIR = Path(__file__).resolve().parents[2] / 'tools' / 'dc-designer' / 'dist'
+DESIGNER_PATH = '/dc-designer-app/'
 IMMUTABLE_SUFFIXES = {'.js', '.css', '.wasm', '.webp', '.png', '.svg', '.woff2'}
 MIME_OVERRIDES = {
     '.js': 'text/javascript',
@@ -266,13 +269,15 @@ class TwinViewerStatusView(APIView):
         return Response({
             'viewer_built': (VIEWER_DIST_DIR / 'index.html').is_file(),
             'designer_built': (VIEWER_DIST_DIR / 'design.html').is_file(),
+            'cad_designer_built': (DESIGNER_DIST_DIR / 'index.html').is_file(),
             'viewer_path': VIEWER_PATH,
+            'cad_designer_path': DESIGNER_PATH,
             'max_upload_bytes': MAX_PROJECT_BYTES,
         })
 
 
-def _viewer_file(rel_path, cache_control):
-    dist_root = VIEWER_DIST_DIR.resolve()
+def _viewer_file(rel_path, cache_control, dist_dir=None):
+    dist_root = (dist_dir or VIEWER_DIST_DIR).resolve()
     target = (dist_root / rel_path).resolve()
     if target != dist_root and dist_root not in target.parents:
         raise Http404('Invalid viewer asset path')
@@ -296,4 +301,18 @@ def dc_viewer_app(request, path=''):
         raise Http404('三维查看器未构建：请在 tools/dc-viewer 执行 npm install && npm run build')
     suffix = Path(rel).suffix.lower()
     cache_control = 'public, max-age=31536000, immutable' if suffix in IMMUTABLE_SUFFIXES else 'no-cache'
-    return _viewer_file(rel, cache_control)
+    return _viewer_file(rel, cache_control, VIEWER_DIST_DIR)
+
+
+def dc_designer_app(request, path=''):
+    """托管机房 CAD 设计器构建产物（含 inspect/ 检视子应用）。"""
+    rel = (path or '').strip('/')
+    if not rel:
+        rel = 'index.html'
+    elif rel.endswith('/') or (DESIGNER_DIST_DIR / rel).is_dir():
+        rel = rel.rstrip('/') + '/index.html'
+    if not (DESIGNER_DIST_DIR / 'index.html').is_file():
+        raise Http404('机房设计器未构建：请在 tools/dc-designer 执行 npm install && npm run build')
+    suffix = Path(rel).suffix.lower()
+    cache_control = 'public, max-age=31536000, immutable' if suffix in IMMUTABLE_SUFFIXES else 'no-cache'
+    return _viewer_file(rel, cache_control, DESIGNER_DIST_DIR)

@@ -37,6 +37,7 @@ npm run preview
 - 语言：中文 / English（跟随浏览器，可切换并记忆）
 - AI 建模：OpenAI 兼容端点（本机 `/api/ai` 代理可选，否则浏览器直连；Key 只存本机浏览器）
 - 检视：3D 内“检视” → 嵌入只读查看器，复用巡检/步行/剖切/定位/显示/拆解
+- AI 建模：默认不在设计器加载；通过 `?ai=1` 打开，平台内入口为 AIOps → AI 机房建模
 
 ## 数据与 fixtures
 
@@ -58,8 +59,8 @@ npm run e2e          # Playwright：向导→POD→选择/撤销→检查→导�
 npm run parity       # 与基准截图对比（1600×1000、zh、同 fixture）
 ```
 
-`parity` 的基准截图在 `test/parity/ref/`；品牌区与顶栏属于刻意去标识化区域，对比时已屏蔽
-（见 `scripts/parity.mjs`）。差异图输出到 `test/parity/out/`。
+`parity` 的基准截图在 `test/parity/ref/`；品牌区与顶栏属于刻意去标识化区域，对比时已屏蔽；
+AI 面板已拆到 AIOps 并改为用户自配模型，不再参与设计器像素对比（见 `scripts/parity.mjs`）。差异图输出到 `test/parity/out/`。
 
 ## 说明
 

@@ -671,12 +671,32 @@ const routes = [
         },
       },
       {
+        path: 'datacenter/designer',
+        name: 'DatacenterDesigner',
+        component: () => import('@/views/DatacenterDesigner.vue'),
+        meta: {
+          title: '机房 CAD 设计',
+          icon: 'Edit',
+          permission: 'datacenter.twin.manage',
+        },
+      },
+      {
         path: 'aiops/chat',
         name: 'AIOpsChat',
         component: () => import('@/views/AIOpsChatEntry.vue'),
         meta: {
           title: '智能助手',
           icon: 'Service',
+          permission: 'aiops.chat.view',
+        },
+      },
+      {
+        path: 'aiops/modeling',
+        name: 'AIOpsModeling',
+        component: () => import('@/views/AIOpsModeling.vue'),
+        meta: {
+          title: 'AI 机房建模',
+          icon: 'MagicStick',
           permission: 'aiops.chat.view',
         },
       },
