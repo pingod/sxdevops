@@ -35,9 +35,9 @@
           </span>
         </div>
         <div class="design-toolbar__right">
-          <el-button :icon="Plus" :disabled="!frameReady" @click="openRoomDialog">新建机房</el-button>
-          <el-button :icon="DocumentAdd" :disabled="!frameReady" @click="saveAs">另存为</el-button>
-          <el-button type="primary" :icon="Check" :loading="saving" :disabled="!frameReady" @click="save">保存</el-button>
+          <el-button :icon="Plus" @click="openRoomDialog">新建机房</el-button>
+          <el-button :icon="DocumentAdd" @click="saveAs">另存为</el-button>
+          <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
           <el-button :icon="View" @click="backToViewer">查看孪生</el-button>
         </div>
       </div>
@@ -51,7 +51,6 @@
           title="三维机房设计器"
           sandbox="allow-scripts allow-same-origin allow-downloads"
           referrerpolicy="no-referrer"
-          @load="onFrameLoad"
         />
         <div v-else class="design-placeholder">
           <el-icon :size="38"><EditPen /></el-icon>
@@ -123,7 +122,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, DocumentAdd, EditPen, Plus, View } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
@@ -145,6 +144,7 @@ const projects = ref([])
 const selectedId = ref(null)
 const currentProject = computed(() => projects.value.find(item => item.id === selectedId.value) || null)
 const pendingPayload = ref(null)
+const pendingMessage = shallowRef(null)
 const saveAsMode = ref(false)
 let loadToken = 0
 
@@ -168,6 +168,12 @@ function post(message) {
   frameWindow()?.postMessage(message, '*')
 }
 
+/** 设计器还没握手完成时先排队，避免用户点了按钮却什么都没发生。 */
+function send(message) {
+  if (frameReady.value) post(message)
+  else pendingMessage.value = message
+}
+
 async function loadStatus() {
   try {
     const status = await getTwinViewerStatus()
@@ -182,10 +188,6 @@ async function refreshProjects() {
   projects.value = data.results || data || []
 }
 
-function onFrameLoad() {
-  frameReady.value = false
-}
-
 function onDesignerMessage(event) {
   const frame = frameWindow()
   if (!frame || event.source !== frame) return
@@ -193,8 +195,12 @@ function onDesignerMessage(event) {
   if (data.source !== 'dc-designer') return
 
   if (data.type === 'ready') {
+    clearTimeout(readyTimer)
     frameReady.value = true
-    if (pendingPayload.value) {
+    if (pendingMessage.value) {
+      post(pendingMessage.value)
+      pendingMessage.value = null
+    } else if (pendingPayload.value) {
       post(pendingPayload.value)
       pendingPayload.value = null
     } else if (projects.value.length) {
@@ -208,11 +214,22 @@ function onDesignerMessage(event) {
   }
   if (data.type === 'save' && data.project) {
     handleSave(data.project)
+    return
+  }
+  if (data.type === 'error') {
+    ElMessage.error(data.message || '三维设计器初始化失败')
   }
 }
 
+let readyTimer = null
+
 onMounted(async () => {
   window.addEventListener('message', onDesignerMessage)
+  readyTimer = setTimeout(() => {
+    if (!frameReady.value) {
+      ElMessage.warning('三维设计器初始化较慢或失败，请确认浏览器已开启硬件加速（需要 WebGL2）')
+    }
+  }, 12000)
   await loadStatus()
   try {
     await refreshProjects()
@@ -222,6 +239,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(readyTimer)
   window.removeEventListener('message', onDesignerMessage)
 })
 
@@ -264,7 +282,7 @@ async function createRoom() {
   roomDialog.visible = false
   selectedId.value = null
   dirty.value = false
-  post({
+  send({
     type: 'new-room',
     name: roomDialog.name.trim() || '未命名机房',
     width: roomDialog.width,
@@ -275,15 +293,13 @@ async function createRoom() {
 }
 
 function save() {
-  if (!frameReady.value) return
   saveAsMode.value = false
-  post({ type: 'request-save' })
+  send({ type: 'request-save' })
 }
 
 function saveAs() {
-  if (!frameReady.value) return
   saveAsMode.value = true
-  post({ type: 'request-save' })
+  send({ type: 'request-save' })
 }
 
 function projectFileName(name) {

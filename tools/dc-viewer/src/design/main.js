@@ -589,7 +589,7 @@ function refresh(reason) {
   }
   if (reason === 'selection') {
     buildInspector(store.selected());
-    viewport.setSelection(store.selected());
+    if (viewport) viewport.setSelection(store.selected());
     syncDirty();
     return;
   }
@@ -599,8 +599,10 @@ function refresh(reason) {
     return;
   }
   // model / load / meta / restore
-  viewport.rebuild(store.project(), { fit: reason === 'load' });
-  viewport.setSelection(store.selected());
+  if (viewport) {
+    viewport.rebuild(store.project(), { fit: reason === 'load' });
+    viewport.setSelection(store.selected());
+  }
   buildInspector(store.selected());
   syncHeader();
   syncStats();
@@ -650,11 +652,14 @@ async function boot() {
   if (embedded) document.body.classList.add('is-embedded');
   buildToolbar();
   syncTools();
+  // 先握手：工具栏不依赖 3D 初始化结果，否则浏览器没有 WebGL 时父页面按钮会永久置灰。
+  if (embedded) post('ready');
   try {
     viewport = await createViewport(canvas);
   } catch (error) {
     $('dz-busy').hidden = true;
     $('dz-hint').textContent = `3D 初始化失败：${error.message}`;
+    post('error', { message: `三维视图初始化失败：${error.message}` });
     return;
   }
 
@@ -677,7 +682,6 @@ async function boot() {
   }
 
   if (embedded) {
-    post('ready');
     // 父页面没有项目时给一个空机房占位；只在用户还没动手时生效，
     // 否则 1.5s 后的兜底会覆盖用户刚新建的机房（实测过）。
     state.fallbackTimer = setTimeout(() => {

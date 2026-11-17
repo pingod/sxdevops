@@ -15,7 +15,17 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const ACCENT = new THREE.Color('#245bdb');
 
 export async function createViewport(canvas) {
-  const renderer = await createRenderer(canvas, { antialias: true });
+  let renderer;
+  try {
+    renderer = await createRenderer(canvas, { antialias: true });
+  } catch (webgpuError) {
+    // Safari / 关闭硬件加速的环境没有 WebGPU：回退 WebGL2，而不是让设计器整页不可用。
+    try {
+      renderer = await createRenderer(canvas, { antialias: true, forceWebGL: true });
+    } catch (webglError) {
+      throw new Error(`${webgpuError.message || webgpuError}；WebGL2 回退也失败：${webglError.message || webglError}`);
+    }
+  }
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#e9edf3');
   scene.environment = createRoomEnvironment();
