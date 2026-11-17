@@ -27,8 +27,14 @@ import { AiProvider } from './ai-provider.js';
 import { AiOrchestrator } from './ai-orchestrator.js';
 import { ATTACH_LIMITS, prepareAttachment, formatBytes, attachmentChars } from './ai-attach.js';
 
-// 反代子路径部署（如 /designer/）下自动带上应用基路径，避免请求打到站点根 404
-const CONTRACT_URL = apiUrl('/api/agent/openapi.json');
+// AIOps 代理模式：契约随设计器静态资源发布（/dc-designer-app/api/agent/openapi.json）；
+// 独立/本机模式仍走应用基路径下的 /api/agent/openapi.json。
+const AIOPS_PROXY = (() => {
+  try { return new URLSearchParams(location.search).get('aiProxy') === '1'; } catch (e) { return false; }
+})();
+const CONTRACT_URL = AIOPS_PROXY
+  ? new URL('api/agent/openapi.json', document.baseURI).href
+  : apiUrl('/api/agent/openapi.json');
 const AGENT_STATUS_URL = apiUrl('/api/agent/status');
 
 const el = (tag, cls, text) => {
@@ -196,7 +202,8 @@ class AiPanel {
     });
     this.el.cfgSave.addEventListener('click', () => this.saveConfig());
     this.el.cfgClear.addEventListener('click', () => this.clearConfig());
-    this.el.url.value = location.origin + CONTRACT_URL;
+    this.el.url.value = /^https?:/.test(CONTRACT_URL) ? CONTRACT_URL : location.origin + CONTRACT_URL;
+    this.el.guide.hidden = AIOPS_PROXY;
     this.el.copy.addEventListener('click', () => this.copyUrl());
     this.el.guide.addEventListener('toggle', () => { if (this.el.guide.open) this.refreshRoute(); });
     this.syncTexts();
@@ -245,7 +252,8 @@ class AiPanel {
     e.guideText.textContent = t('ai.step1') + ' / ' + t('ai.step2');
     e.copy.textContent = t('ai.copy');
     e.warn.textContent = t('aip.direct', { url: this.provider.statusUrl || apiUrl('/api/ai/status') });
-    e.warn.hidden = !this.provider.direct;
+    e.warn.hidden = this.provider.aiProxy || !this.provider.direct;
+    this.applyProxyMode();
     if (!this.el.root.hidden) this.autoGrow(); // 提示文案随语言变化：重算高度，长提示（en/es）不被裁切
     this.refreshRoute();
   }
@@ -300,11 +308,25 @@ class AiPanel {
   async loadConfig() {
     try { await this.provider.loadConfig(); } catch (e) { /* 配置读取失败不阻塞对话 */ }
     this.refreshConfigStatus();
-    this.el.warn.hidden = !this.provider.direct;
+    this.el.warn.hidden = this.provider.aiProxy || !this.provider.direct;
+    this.applyProxyMode();
+  }
+
+  /** AIOps 代理模式：模型/Key/地址由平台统一管理，设置区只保留只读说明。 */
+  applyProxyMode() {
+    if (!this.built || !this.provider.aiProxy) return;
+    this.el.root.classList.add('ai-proxy');
+    this.el.settings.querySelectorAll('.aip-field, .aip-cfg-actions').forEach((el) => { el.hidden = true; });
+    this.el.privacy.hidden = true;
+    this.el.cfgStatus.textContent = t('aip.proxyNote');
   }
 
   refreshConfigStatus() {
     const c = this.provider.cfg;
+    if (this.provider.aiProxy) {
+      this.el.cfgStatus.textContent = t('aip.proxyNote');
+      return;
+    }
     const srcKey = 'aip.source.' + (c.source || 'none');
     const src = t(srcKey) === srcKey ? (c.source || 'none') : t(srcKey);
     this.el.key.value = '';
@@ -340,7 +362,7 @@ class AiPanel {
   }
 
   async refreshRoute() {
-    if (!this.built || this.el.root.hidden) return;
+    if (!this.built || this.el.root.hidden || AIOPS_PROXY) return;
     try {
       const r = await fetch(AGENT_STATUS_URL, { cache: 'no-store' });
       const s = await r.json();

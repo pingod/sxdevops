@@ -19329,3 +19329,86 @@ def build_audit_overview():
         'providers_total': AIOpsModelProvider.objects.count(),
         'mcp_total': AIOpsMCPServer.objects.filter(is_enabled=True).count(),
     }
+
+
+# ---------------------------------------------------------------------------
+# AI 机房建模代理：使用 AIOps 统一配置的默认模型提供商，服务端调用 + 审计。
+# ---------------------------------------------------------------------------
+MODELING_MAX_MESSAGES = 80
+MODELING_MAX_CHARS = 200000
+
+
+def modeling_provider_status():
+    """当前可用于 AI 建模代理的模型提供商（不返回凭据）。"""
+    config = get_agent_config()
+    provider = get_active_provider(config)
+    ready = bool(provider and provider.is_enabled and _provider_is_ready(provider))
+    return {
+        'available': ready,
+        'provider': getattr(provider, 'name', '') if provider else '',
+        'model': (getattr(provider, 'default_model', '') or '') if provider else '',
+        'audit': True,
+    }
+
+
+def _clean_modeling_messages(messages):
+    if not isinstance(messages, list) or not messages:
+        raise AIOpsModelCallError('messages 不能为空')
+    if len(messages) > MODELING_MAX_MESSAGES:
+        raise AIOpsModelCallError(f'消息数量超过上限（{MODELING_MAX_MESSAGES}）')
+    cleaned = []
+    chars = 0
+    for item in messages:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get('role') or '').strip().lower()
+        if role not in {'system', 'user', 'assistant'}:
+            continue
+        content = item.get('content')
+        if isinstance(content, str):
+            chars += len(content)
+        elif isinstance(content, list):
+            chars += sum(len(str(part.get('text') or '')) for part in content if isinstance(part, dict))
+        else:
+            continue
+        cleaned.append({'role': role, 'content': content})
+    if not cleaned:
+        raise AIOpsModelCallError('messages 中没有有效消息')
+    if chars > MODELING_MAX_CHARS:
+        raise AIOpsModelCallError(f'消息内容超过上限（{MODELING_MAX_CHARS} 字符）')
+    return cleaned
+
+
+def run_modeling_chat(payload, user=None):
+    """AI 机房建模统一模型代理：鉴权在上层视图，本函数只负责选提供商、调用与审计。"""
+    if not isinstance(payload, dict):
+        raise AIOpsModelCallError('请求格式无效')
+    messages = _clean_modeling_messages(payload.get('messages'))
+    config = get_agent_config()
+    provider = get_active_provider(config)
+    if not provider or not provider.is_enabled or not _provider_is_ready(provider):
+        raise AIOpsModelCallError('AIOps 未配置可用的模型提供商，请先在「智能体配置 → 模型提供商」中启用并测试')
+    max_tokens = payload.get('max_tokens')
+    try:
+        max_tokens = int(max_tokens)
+    except (TypeError, ValueError):
+        max_tokens = 8192
+    max_tokens = max(1, min(max_tokens, int(getattr(provider, 'max_tokens', 10000) or 10000)))
+    request_payload = {
+        'model': provider.default_model,
+        'messages': messages,
+        'max_tokens': max_tokens,
+    }
+    temperature = payload.get('temperature')
+    if isinstance(temperature, (int, float)):
+        request_payload['temperature'] = temperature
+    response_format = payload.get('response_format')
+    if isinstance(response_format, dict) and response_format.get('type'):
+        request_payload['response_format'] = response_format
+    data = _request_model_completion(
+        provider,
+        request_payload,
+        user=user,
+        purpose=AIOpsModelInvocation.PURPOSE_MODELING,
+    )
+    return provider, data

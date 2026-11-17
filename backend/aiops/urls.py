@@ -22,6 +22,8 @@ router.register('review-knowledge', views.AIOpsReviewKnowledgeViewSet, basename=
 
 urlpatterns = [
     path('bootstrap/', views.bootstrap, name='aiops-bootstrap'),
+    path('modeling/status/', views.modeling_status, name='aiops-modeling-status'),
+    path('modeling/chat/', views.modeling_chat, name='aiops-modeling-chat'),
     path('capabilities/', views.capabilities, name='aiops-capabilities'),
     path('admin/capabilities/', views.admin_capabilities, name='aiops-admin-capabilities'),
     path('admin/capabilities/<str:code>/', views.capability_skills, name='aiops-capability-skills'),

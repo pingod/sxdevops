@@ -39,6 +39,11 @@ const CLIENT_TIMEOUT = 130000;    // 浏览器直连超时（无服务端可参�
 const PROBE_TIMEOUT = 3000;       // 探测本机服务；离线时别拖慢面板首屏
 const RETRY_DELAYS = [800, 2000]; // 429/5xx/网络错误重试 2 次
 
+// 平台 AIOps 代理模式：模型调用由父页面（AIOps 页面）带鉴权转发，服务端统一选提供商并写审计。
+const AIOPS_PROXY = (() => {
+  try { return new URLSearchParams(location.search).get('aiProxy') === '1'; } catch (e) { return false; }
+})();
+
 const maskKey = k => (k && k.length > 8 ? k.slice(0, 3) + '****' + k.slice(-4) : (k ? '****' : ''));
 
 function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
@@ -77,6 +82,21 @@ export class AiProvider {
     this.noTemp = false;      // 部分推理模型不接受 temperature：上游拒绝时自动省略
     this.noVision = false;    // 上游拒绝图片内容（模型无视觉能力）：改为只发文字，面板会提示用户
     this.lastModel = '';
+    this.aiProxy = AIOPS_PROXY;
+    this.pending = new Map();
+    this.requestSeq = 0;
+    if (this.aiProxy && typeof window !== 'undefined') {
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return;
+        const data = event.data || {};
+        if (data.source !== 'dc-aiops' || data.type !== 'ai-chat-result') return;
+        const entry = this.pending.get(data.requestId);
+        if (!entry) return;
+        this.pending.delete(data.requestId);
+        clearTimeout(entry.timer);
+        entry.resolve(data);
+      });
+    }
   }
 
   /* ---------- 配置：只存本机浏览器 localStorage（服务端不落盘） ---------- */
@@ -96,6 +116,11 @@ export class AiProvider {
 
   /** 载入配置（localStorage）+ 探测本机服务是否可用（不可用则走浏览器直连） */
   async loadConfig() {
+    if (this.aiProxy) {
+      this.direct = false;
+      this.cfg = { configured: true, keyMask: '', baseUrl: '', model: '', source: 'aiops' };
+      return this.cfg;
+    }
     this.readLocal();
     await this.probeProxy();
     return this.cfg;
@@ -138,6 +163,7 @@ export class AiProvider {
       const r = await mock(messages, { ...opts, model: this.cfg.model, jsonMode: this.jsonMode });
       return this.normalize(r);
     }
+    if (this.aiProxy) return this.chatAIOps(messages, opts);
     if (!lsGet(LS_KEY)) throw new AiError('NO_KEY', '未配置 API Key：请在设置中填写（Key 只存本机浏览器）');
     if (!this.cfg.baseUrl || !this.cfg.model) throw new AiError('NO_CONFIG', '未配置接口地址或模型：请在设置中填写');
     // 已判定该模型不支持图片：后续请求直接把图片块降级为一行说明，不再反复触发 400
@@ -163,6 +189,73 @@ export class AiProvider {
       : (r.choices && r.choices[0] && r.choices[0].message ? String(r.choices[0].message.content || '') : '');
     if (r.model) this.lastModel = r.model;
     return { content, usage: r.usage || null, model: r.model || this.cfg.model };
+  }
+
+  /** AIOps 平台代理：父页面持鉴权调用后端，模型选择与审计都在服务端完成。 */
+  async chatAIOps(messages, { signal } = {}) {
+    const payload = {
+      messages,
+      max_tokens: 8192,
+      ...(this.noTemp ? {} : { temperature: 0.2 }),
+      ...(this.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+    };
+    const requestId = `${Date.now().toString(36)}-${(++this.requestSeq).toString(36)}`;
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.pending.delete(requestId);
+          reject(new AiError('TIMEOUT', 'AIOps 模型代理响应超时'));
+        }, this.timeout || 150000);
+        this.pending.set(requestId, { resolve, timer });
+        if (signal) {
+          if (signal.aborted) {
+            clearTimeout(timer);
+            this.pending.delete(requestId);
+            reject(new AiError('STOPPED', '请求已中断'));
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            const entry = this.pending.get(requestId);
+            if (!entry) return;
+            this.pending.delete(requestId);
+            clearTimeout(entry.timer);
+            reject(new AiError('STOPPED', '请求已中断'));
+          }, { once: true });
+        }
+        window.parent.postMessage({ source: 'dc-designer', type: 'ai-chat', requestId, payload }, '*');
+      });
+    } catch (e) {
+      if (e instanceof AiError) throw e;
+      throw new AiError('NETWORK', (e && e.message) || 'AIOps 模型代理不可用');
+    }
+    if (!result.ok) {
+      const message = result.message || 'AIOps 模型代理调用失败';
+      const status = Number(result.status) || 0;
+      const code = status === 401 || status === 403 ? 'UNAUTHORIZED'
+        : status === 429 ? 'RATE_LIMIT'
+          : status === 400 || status === 422 ? 'BAD_REQUEST'
+            : status ? 'UPSTREAM' : 'NETWORK';
+      if (code === 'BAD_REQUEST' && this.jsonMode && /response_format|json_object/i.test(message)) {
+        this.jsonMode = false;
+        return this.chatAIOps(messages, { signal });
+      }
+      if (code === 'BAD_REQUEST' && !this.noTemp && /temperature|top_p|max_tokens|not support/i.test(message)) {
+        this.noTemp = true;
+        return this.chatAIOps(messages, { signal });
+      }
+      if (code === 'BAD_REQUEST' && this.retryWithoutImages(messages, message)) {
+        return this.chatAIOps(this.withoutImages(messages), { signal });
+      }
+      throw new AiError(code, message);
+    }
+    const data = result.data || {};
+    const choice = (data.choices || [])[0] || {};
+    return this.normalize({
+      content: choice.message ? choice.message.content : '',
+      usage: data.usage,
+      model: data.model || ((data._meta || {}).resolved_model),
+    });
   }
 
   /** 本机服务无状态转发（默认路径；Key 随请求体带上，服务端不落盘） */

@@ -733,6 +733,8 @@ export const zhCN = {
   'aip.cleared': '已清除',
   'aip.key.current': '当前 Key：{mask}',
   'aip.source': '来源：{src}',
+  'aip.source.aiops': 'AIOps 统一代理',
+  'aip.proxyNote': '模型由 AIOps 统一选择并调用，调用记录写入模型调用审计与操作审计。',
   'aip.source.page': '本机浏览器 localStorage',
   'aip.source.none': '未配置',
   'aip.privacy': '隐私：API Key / 接口地址 / 模型只保存在本机浏览器 localStorage（服务端不落盘、不写日志）；只把对话文本、工具契约与执行结果（含对象 id 与坐标等结构化数据）发给模型；不上传项目文件、不发送甲方/园区/勘测人信息。',

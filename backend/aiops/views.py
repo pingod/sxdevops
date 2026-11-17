@@ -87,6 +87,9 @@ from .services import (
     list_platform_mcp_tools,
     publish_runbook,
     recover_masked_suggested_question,
+    run_modeling_chat,
+    modeling_provider_status,
+    AIOpsModelCallError,
     run_external_task_orchestration,
     start_async_chat_processing,
     test_model_provider_connection,
@@ -1977,6 +1980,49 @@ def action_preflight(request):
         return Response(build_action_preflight_contract(action_code, request.data, user=request.user))
     except ValueError as exc:
         return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, build_rbac_permission('aiops.chat.view')])
+def modeling_status(request):
+    """AI 机房建模代理状态：只暴露提供商名称/模型/可用性，不返回密钥。"""
+    return Response(modeling_provider_status())
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, build_rbac_permission('aiops.chat.view')])
+def modeling_chat(request):
+    """AI 机房建模统一模型代理：服务端调用 AIOps 默认提供商，并写入模型调用与事件审计。"""
+    try:
+        provider, data = run_modeling_chat(request.data, request.user)
+    except AIOpsModelCallError as exc:
+        record_event(
+            request=request, module='aiops', category='model', action='modeling_chat',
+            title='AI 机房建模模型调用', summary=str(exc)[:240],
+            result=EventRecord.RESULT_FAILED, severity=EventRecord.SEVERITY_WARNING,
+            resource_type='ai_modeling', resource_name='AI 机房建模',
+            metadata={'purpose': 'ai_modeling', 'status': 'failed'},
+        )
+        return Response({'detail': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    meta = (data or {}).get('_meta') if isinstance(data, dict) else {}
+    meta = meta if isinstance(meta, dict) else {}
+    usage = (data or {}).get('usage') or {}
+    record_event(
+        request=request, module='aiops', category='model', action='modeling_chat',
+        title='AI 机房建模模型调用',
+        summary=f'使用模型 {meta.get("resolved_model") or provider.default_model or ""} 完成一次建模规划调用',
+        result=EventRecord.RESULT_SUCCESS, severity=EventRecord.SEVERITY_INFO,
+        resource_type='ai_modeling', resource_id=str(provider.pk),
+        resource_name=provider.name,
+        metadata={
+            'purpose': 'ai_modeling',
+            'provider': provider.name,
+            'model': meta.get('resolved_model') or provider.default_model,
+            'total_tokens': usage.get('total_tokens') or 0,
+            'status': 'success',
+        },
+    )
+    return Response(data)
 
 
 @api_view(['GET'])

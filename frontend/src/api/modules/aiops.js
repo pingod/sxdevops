@@ -4,6 +4,8 @@ const AIOPS_CHAT_TIMEOUT = 120000
 const AIOPS_MODEL_TEST_TIMEOUT = 45000
 
 export const getAIOpsBootstrap = () => request.get('/aiops/bootstrap/')
+export const getAIOpsModelingStatus = () => request.get('/aiops/modeling/status/')
+export const postAIOpsModelingChat = (data) => request.post('/aiops/modeling/chat/', data, { timeout: AIOPS_CHAT_TIMEOUT })
 export const getAIOpsKnowledgeGraph = (params) => request.get('/aiops/knowledge-graph/', { params })
 export const getAIOpsKnowledgeEnvironments = (params) => request.get('/aiops/knowledge-environments/', { params })
 export const getAIOpsKnowledgeEnvironmentCatalog = () => request.get('/aiops/knowledge-environments/catalog/')

@@ -1,0 +1,1516 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "IDC 2D Modeler - AI Agent Design Command API",
+    "version": "1.3.0",
+    "description": "Lets an AI agent () drive the IDC 2D survey/modeling tool through natural-language conversation: every command is executed **inside the user's open editor page**, the canvas updates live, and all domain rules (auto numbering / collision push-aside / aisle-width linkage) behave exactly as manual editing.\n\n## Usage flow\n1. Call `GET /api/agent/status` first and make sure `connected=true` **and `pages=1`** (exactly one editor page open). Since v1.1.1 every command batch is pinned to the single most-recently-active page, so multiple pages can no longer split a batch — but if `pages>1` still ask the user to close extra editor tabs to avoid working on the wrong page.\n2. Call design commands **one at a time, in order** (wait for each response before sending the next). Typical sequence: project.new (or project.open to resume a saved project) → room.rect / wall.add → pod.create/row.create → obj.add (AC/UPS/RPP/cable tray) → opening.add (doors/windows) → query.status / query.checks self-check → project.save.\n3. For change requests use obj.update/obj.updateBatch/obj.move/obj.delete/obj.rotate; when the user says \"undo\", call project.undo.\n\n## Domain rules (must follow)\n- **All units are millimeters (mm)**. Coordinate system: origin (0,0) = inner wall surface at the room's south-west corner; X axis points east, Y axis points north.\n- Standard cabinet: 600×1200×2000mm (W×D×H); 800mm-wide variant exists. Front orientation is set by rotation (0=front faces north, 90=east, 180=south, 270=west).\n- **Aisle POD rules**: cold aisle = two rows facing each other (front-to-front); hot aisle = two rows back-to-back. Cold/hot aisles always alternate inside a POD; only the aisle type selected via firstAisle is enclosed. Defaults: cold aisle 1200mm, hot aisle 900mm.\n- Naming template: `#` = sequence slot (count = minimum digits); the letter group right before `#` = row letter, e.g. `A##`→A01, `101-A##`. The row letter auto-increments after each placement.\n- Each command = one undo step (obj.updateBatch changes many objects but is still ONE undo step). Out-of-range parameters or placements outside the room return a Chinese error message (ok=false); relay `message` to the user, fix parameters, and retry.\n- Any command may include `\"shot\": true` to get a canvas screenshot (PNG dataURL) in the response, useful for showing the user.\n- Note: runtime error messages are returned in Chinese by design (relay them to the end user as-is).\n- **Omitted parameters follow the editor's last-used values** (identical to manual modelling): the `default` in a schema is the FACTORY value only. After the user changes something in the property panel, room.rect/wall.add (thickness/height/material), opening.add (width/leaf/side/swing/sill/kind), obj.add (rect sizes + props, tray width/height/kind, beam b/h/top/concrete/kind) and pod.create/row.create (cabinet electrical props, aisle props enclosed/endDoors/doorType/doorW) inherit that value. Pass the key explicitly whenever exact geometry matters (clearance / feasibility math).\n- **Room-level info (`meta`)** is written through project.save `meta` (string or number values, merged into the project and persisted). Keys: surveyor, date, site (campus/building), roomHeight (structural clear height, mm), ceilHeight (ceiling face height, mm; empty/0/>=roomHeight = open ceiling), floorHeight (raised-floor plenum height, mm), tier (A|B|C per GB 50174), powerCap (total power capacity, kW), powerModule (power module capacity, kVA), floorLoad (floor load, kg/m2), coolArch (风冷直膨|冷冻水|双冷源|其他), climate (temp/humidity requirement), remark. query.checks reads roomHeight/ceilHeight/floorHeight for the civil rules and powerCap/floorLoad for the power / floor-load rules — set them before the self-check when the survey data is known.\n- **Command names are exactly the dot-notation names in this contract's `paths`** — there is no `xxx.create` / `xxx.add` command other than `room.rect`, `wall.add`, `pod.create`, `row.create`, `obj.add` and `opening.add`. Single objects (AC/UPS/battery/extinguisher/floor vent/RPP/distribution box/cabinet) and cable trays are added with `obj.add` + `type`: object types are **values of the `type` field, not tool names** (so `ac.create`, `cabinet.create`, `空调.create` … do not exist). A name outside this list returns `code: UNKNOWN_TOOL` with the complete legal name list in the Chinese `message` — pick a name from it and re-issue; never repeat the wrong name (ok=false codes can be relayed to the model to self-repair).\n\n## props field reference (by object type, for obj.add / obj.update / obj.updateBatch / cabinetProps)\n- **Common equipment fields** (cabinet, pdu, dbox, ups, battery, ac, extinguisher, vent): top-level `z` is the equipment base elevation in signed mm above finished floor (default 0; use obj.add/obj.update/obj.updateBatch; never props.z). `props.color` accepts #rgb/#rrggbb or '' for the type default; both 2D and 3D use it. Query summaries include z and color. XY moves/rotation/copies preserve z; new equipment starts at 0. Pipe geometry retains z1/z2; architectural height/sill/top fields are unchanged.\n- **cabinet**: w, d, h, u (rack units, 42), power (kW, 4 for 600-wide / 6 for 800-wide), rpdu (count, 2), voltage (220|380), current (16|32|63), sockets: [{type, count}] where type ∈ `IEC C13` | `IEC C19` | `国标10A`=CN-standard 10A | `国标16A`=CN-standard 16A | `工业连接器16A`=industrial 16A | `工业连接器32A`=industrial 32A, wireSize (e.g. `5×10mm²`), color (cabinet color as `#rrggbb`; `''` = theme default, rendered in both 2D and 3D), remark\n- **ac** (precision AC): w(2500), d(1300), h(2800), cool (kW, 25), air (m³/h, 2800), temp (°C supply air, 18), supply ∈ `水平送风`=horizontal | `下送风`=downflow | `上送风`=upflow | `侧送风`=side, acType ∈ `房间级精密空调`=room-level | `行级（列间）空调`=in-row | `机柜级（背板）空调`=cabinet/rear-door | `远端风墙空调`=fan-wall (far end) | `近端风墙空调`=fan-wall (near end) | `其他`=other, redundancy ∈ `N+0` | `N+1` | `N+2`, ctrlMode ∈ `送风控制`=supply-air | `回风控制`=return-air, supplyRh (%RH), returnTemp (°C), remark\n- **ups** (uninterruptible power supply): w(800), d(800), h(2000), kva (rated capacity in kVA, 200), power (output power in kW, 160), voltage (220|380, default 380), current (63|100|160|250|400|630, default 400), backup (battery autonomy in minutes, 15), upsType ∈ `工频机`=line-frequency (transformer-based) | `高频机`=high-frequency | `模块化`=modular | `机架式`=rack-mounted | `其他`=other, redundancy ∈ N+0 | N+1 | N+2, remark\n- **battery** (UPS battery cabinet): w(800), d(800), h(2000), batType ∈ `阀控铅酸`=VRLA lead-acid | `胶体`=gel | `磷酸铁锂`=LiFePO4 lithium | `其他`=other, ah (single cell capacity in Ah, 100), cells (cell count, 32), voltage (string voltage in V, 384), remark\n- **extinguisher** (fire extinguisher): w(400), d(400), h(1200), extType ∈ `手提式干粉`=portable dry-powder | `手提式二氧化碳`=portable CO2 | `推车式干粉`=wheeled dry-powder | `悬挂式气体`=hanging gas | `其他`=other, kg (charge weight in kg, 5), remark\n- **pdu** (RPP / power head cabinet): w(600), d(1200), h(2000), voltage (220|380, default 380), current (63|100|160|250|400|630, default 250), outCircuits (free text, e.g. `12路40A/3P + 4路32A/1P` (12 ways 40A/3P + 4 ways 32A/1P)), remark\n- **dbox** (distribution box): w(600), d(200), h(800), boxUse ∈ `动力配电` | `照明配电` | `综合配电` | `其他` (power/lighting/general/other); mounting ∈ `壁挂明装` | `嵌入暗装` | `落地安装` (wall/recessed/floor); voltage(V,380), current(A,100), outCircuits(text), remark. No wall snapping/openings; set base z explicitly.\n- **vent** (floor outlet): w(600), d(600), kind ∈ `格栅` (grille) | `孔板` (perforated), air (m³/h, 1000), remark\n- **column**: w(800), d(800), h(3000)\n- **aisle** (auto-created by pod.create): kind ∈ cold | hot, w (aisle length), d (aisle width — changing it auto-shifts linked rows), h, enclosed (bool), endDoors ∈ both | one | none (doors at enclosed aisle ends; one = local start end only, rotate 180° to swap; none = fixed panels), doorType ∈ sliding | double | single (sliding = no swing clearance; swing doors open outward), doorW (clear door width, 0 = full aisle width; narrower openings are centered with fixed sidelights)\n- **tray**: width(300), height (above floor, 2500), bodyH(100), kind ∈ `强电`=power | `弱电`=low-voltage/data | `光纤`=fiber, structure ∈ `ABS光纤槽`=ABS-fiber-duct | `网格桥架`=wire-mesh-tray | `梯架`=ladder-rack | `金属线槽`=metal-trunking\n- **door**: width(1500), height(2700), leaf ∈ single | double, side ∈ out | in, swing ∈ left | right (single-leaf only)\n- **window**: width(1500), height(1500), sill(900)\n- **grille** (wall louver): width(2500), height(2750), sill(10), kind ∈ `送风` (supply) | `回风` (return)\n- **wall**: thickness(240), height(3000), material ∈ `砖墙`=brick | `混凝土`=concrete | `轻钢龙骨`=steel-stud | `玻璃隔断`=glass-partition\n- **beam** (frame beam drawn between columns): b (section width mm, 300), h (section height mm, 600), top (top elevation above floor mm, 3000 — defaults to the taller attached column), concrete ∈ C25|C30|C35|C40|C45|C50 (C30), kind ∈ `框架梁`=frame (default) | `次梁`=secondary | `悬挑梁`=cantilever, remark. Endpoints x1,y1 → x2,y2 snap to column centres and keep following the columns; obj.move on a beam detaches both ends.\n- **pipe** (liquid-cooling straight segment): geometry is top-level x1,y1,z1,x2,y2,z2 (signed centre elevations above finished floor; XY-coincident points = riser); systemId/circuitId/pairId are associations, NOT topology. props: nominalSize (text, e.g. `DN50`), outsideDiameter (actual outer diameter mm, 60.3 — NOT DN), wallThickness (null, or 0 < 2t < OD; 2), insulationThickness (>= 0; 0), material (text, `stainless-steel-304`), color (`#rgb`/`#rrggbb` or '' = automatic), side ∈ supply | return, loopSide ∈ primary | secondary, flowDirection ∈ forward | reverse | none, remark. One straight segment per object — no fittings, topology, hydraulics or platform pipe import.\n- **Editor pages & routing**: each editor page registers a persistent clientId via long-poll; commands are delivered ONLY to the sticky active page (last page that completed a command; fails over after ~8s offline). `status.clients` lists online pages with `active` flags.\n- **Retry semantics**: commands are executed exactly once per delivery, but they are NOT idempotent. `EXEC_TIMEOUT` means the page may have already executed the command while its result was lost — ALWAYS verify with query.objects before retrying, or you may create duplicates. `EDITOR_OFFLINE` is safe to retry freely (command never left the queue).\n- **Wall ids stay valid**: opening.add does NOT split the host wall — wall ids returned by room.rect / wall.add remain usable for any number of openings. Keep the ids from creation responses; no re-query needed.\n- Default command timeout is 60s (env AGENT_CMD_TIMEOUT, ms); keep batches sequential."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "paths": {
+    "/api/agent/status": {
+      "get": {
+        "operationId": "agentStatus",
+        "summary": "Check editor page connection (probe before sending commands)",
+        "responses": {
+          "200": {
+            "description": "connected=true means an editor page is open and ready; queued = commands waiting for the page; inflight = commands picked but not yet done; pages = online editor pages (must be 1 before a batch); clients = per-page detail {id, active, bg, agoMs}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connected": {
+                      "type": "boolean"
+                    },
+                    "queued": {
+                      "type": "integer"
+                    },
+                    "inflight": {
+                      "type": "integer"
+                    },
+                    "pages": {
+                      "type": "integer"
+                    },
+                    "clients": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "bg": {
+                            "type": "boolean"
+                          },
+                          "agoMs": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "pinned": {
+                      "type": "boolean",
+                      "description": "true = a page was explicitly claimed via POST /api/agent/claim and commands stay pinned to it until it goes offline"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.new": {
+      "post": {
+        "operationId": "projectNew",
+        "summary": "Start a new blank project (clears the canvas; guarded against wiping unsaved work)",
+        "description": "If the current project already has objects, the call fails with code NOT_EMPTY unless force=true — save first (project.save) or confirm with the user, then retry with force:true.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectNewArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.open": {
+      "post": {
+        "operationId": "projectOpen",
+        "summary": "Open a project previously saved on the server (resume after page reload)",
+        "description": "Guarded: if the current project has UNSAVED changes, fails with NOT_EMPTY unless force=true. Use project.list to discover names.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectOpenArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.list": {
+      "post": {
+        "operationId": "projectList",
+        "summary": "List projects saved on the server",
+        "responses": {
+          "200": {
+            "description": "Execution result (result.projects = name list)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.save": {
+      "post": {
+        "operationId": "projectSave",
+        "summary": "Save the project on the server (user can reopen it in the editor for manual refinement)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.export": {
+      "post": {
+        "operationId": "projectExport",
+        "summary": "Export the design as DXF drawing or CSV bill-of-quantities text (same builders as the editor UI)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectExportArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result (result.content = file text, result.filename = suggested name)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.undo": {
+      "post": {
+        "operationId": "projectUndo",
+        "summary": "Undo one step (shares the user's Ctrl+Z undo stack)",
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/project.redo": {
+      "post": {
+        "operationId": "projectRedo",
+        "summary": "Redo one step",
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/room.rect": {
+      "post": {
+        "operationId": "roomRect",
+        "summary": "Create a rectangular room (4 walls) by inner dimensions, with optional offset",
+        "description": "Wall centerlines are offset outward by half the thickness, so the inner clear size equals the input. Returns 4 wall ids (south→east→north→west) for opening.add. Use x0/y0 to place sub-areas or multiple rooms.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomRectArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/wall.add": {
+      "post": {
+        "operationId": "wallAdd",
+        "summary": "Draw a free wall segment (partition, air-wall, irregular room, aisle end-cap wall)",
+        "description": "Segment by endpoints x1,y1 → x2,y2. Combine several calls for polygon rooms; cut doors into end-cap walls with opening.add (standard practice for enclosed cold aisles).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallAddArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/pod.create": {
+      "post": {
+        "operationId": "podCreate",
+        "summary": "Batch-create a cabinet POD with aisles (cold=front-to-front, hot=back-to-back, alternating, aisle bands auto-generated)",
+        "description": "x,y = center of the first cabinet in the first row. Cold/hot aisle bands are auto-created (only the firstAisle type enclosed) with auto-incrementing names from tpl. Overlapping existing objects are pushed aside automatically. cabinetProps applies per-cabinet properties (power, voltage, sockets...) to all generated cabinets in the same undo step.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PodCreateArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/row.create": {
+      "post": {
+        "operationId": "rowCreate",
+        "summary": "Place a single row of cabinets",
+        "description": "x,y = center of the first cabinet. The row extends along the axis facing the cabinets' side (rotation=0/180 → along X, 90/270 → along Y). cabinetProps applies per-cabinet properties to the whole row.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RowCreateArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.add": {
+      "post": {
+        "operationId": "objAdd",
+        "summary": "Place one object: column / AC / UPS / battery / fire extinguisher / floor vent / RPP (pdu) / distribution box (dbox) / cabinet, or draw a cable-tray segment",
+        "description": "column/ac/ups/battery/extinguisher/vent/pdu/dbox/cabinet take center x,y; tray/beam take x1,y1,x2,y2. pipe takes top-level x1,y1,z1,x2,y2,z2 with no x/y midpoint (spec fields and props: see the **pipe** entry of the props field reference; a 4m plan + 3m rise pipe has a 5m centreline length). name works for all types.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjAddArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/opening.add": {
+      "post": {
+        "operationId": "openingAdd",
+        "summary": "Cut a door / window / grille opening into a wall",
+        "description": "wallId comes from room.rect/wall.add results; t = opening center position along the wall (0=wall start, 1=wall end). Move an existing opening later with obj.update {id, t}.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningAddArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.update": {
+      "post": {
+        "operationId": "objUpdate",
+        "summary": "Update object properties; move wall-openings along their wall via t; aisle d change auto-shifts linked rows",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjUpdateArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.updateBatch": {
+      "post": {
+        "operationId": "objUpdateBatch",
+        "summary": "Update many objects at once (by ids or selector), as ONE undo step",
+        "description": "Targets: explicit ids array OR selector {type, name} (name = prefix match, e.g. \"A\" matches A01..A12). Example: set power=6 on all cabinets via selector {type:\"cabinet\"}. Aisle width changes link row-by-row within the same undo step.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjUpdateBatchArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.move": {
+      "post": {
+        "operationId": "objMove",
+        "summary": "Move objects by delta (walls/trays move both endpoints; wall-mounted openings follow their wall; overlaps pushed aside)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjMoveArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.delete": {
+      "post": {
+        "operationId": "objDelete",
+        "summary": "Delete objects (deleting a wall cascades to its doors/windows/grilles)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.rotate": {
+      "post": {
+        "operationId": "objRotate",
+        "summary": "Rotate objects 90° (cabinet/column/ac/ups/battery/extinguisher/vent/pdu/dbox/pipe only)",
+        "description": "Rotating a pipe rotates its plan geometry 90° about its own centre (z1/z2 unchanged); beams/trays/walls/aisles are not rotatable — redraw or move them instead. Other types are rejected with NOT_FOUND and a Chinese hint listing the rotatable types.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdsArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/query.status": {
+      "post": {
+        "operationId": "queryStatus",
+        "summary": "Compliance self-check: object counts / total power / overlap scan / out-of-room check, with a Chinese report",
+        "responses": {
+          "200": {
+            "description": "Execution result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/query.checks": {
+      "post": {
+        "operationId": "queryChecks",
+        "summary": "Rule-based compliance self-check: clearance / power / cooling / fire-safety / floor-load / room-height rules → structured issue list (level, rule, cat, msg, actual vs expected, location, involved object ids). Typical loop: run after design, fix issues with obj.move/obj.update, re-run until clean.",
+        "description": "Thresholds come from the editor's persisted config; pass optional `cfg` to override for this run only, e.g. {\"cabFront\": 1000, \"disabled\": [\"density\"]}. Known numeric keys: cabFront(900), cabRear(600), cabSideWall(600), coldAisle(1200), hotAisle(900), acService(900), trayMinHeight(2200), trayAboveCab(300), upsLoadMaxPct(85), coolMinRatio(1.0), densityKW(10), densityArea(1.2), doorMinWidth(900), twoExitArea(100 m²), extRadius(15000), extGrid(500), floorLoadWarnPct(80), clearHeightMin(2400), underfloorMin(400), plus weight-estimation coefficients kgPerCabKW/kgPerUpsKVA/kgPerAhCell/kgPerAC/kgPerPDU. Unknown keys are ignored. Issue level ∈ error|warn|info; cat ∈ layout|clearance|power|cooling|fire|load|civil. Rule ids (use in cfg.disabled): acFront, aisleW, cabAB, cabFront, cabRear, cabSideWall, coolCap, density, doorW, enclosed, exits, extCover, floorLoad, height, outRoom, overlap, pduCap, pipes, pwrCap, trayH, upsLoad. Meta fields powerCap/floorLoad/roomHeight/ceilHeight/floorHeight should be set via project.save meta (power, floor-load and civil rules read them; defaults are used when absent).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cfg": {
+                    "type": "object",
+                    "description": "Optional per-run threshold overrides (numeric keys) plus disabled: string[] of rule ids to skip"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result (result.summary = {error,warn,info,total}; result.issues = up to 200 structured issues, Chinese msg)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/query.objects": {
+      "post": {
+        "operationId": "queryObjects",
+        "summary": "List objects (compact: id/type/name/position), filterable by type and name substring",
+        "description": "Use this to collect ids for update/move/delete instead of reading saved files. Returns up to 1000 entries.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryObjectsArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result (result.objects = compact list)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/obj.get": {
+      "post": {
+        "operationId": "objGet",
+        "summary": "Get one object's full data (all props)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObjGetArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result (result.object = full object)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/cmd/view.shot": {
+      "post": {
+        "operationId": "viewShot",
+        "summary": "Capture the canvas (PNG dataURL); optionally zoom to one object first via focusId",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewShotArgs"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result (result.shot = data:image/png;base64,...)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ObjSummary": {
+        "type": "object",
+        "description": "Compact object summary — the shape of result.added (objects created by a command) and result.objects (query.objects). Positions are the REAL rounded coordinates in mm after collision push-aside / numbering: never re-derive geometry from the arguments you sent.",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "name": { "type": "string" },
+          "x": { "type": "number", "description": "Centre X in mm (rectangular objects)" },
+          "y": { "type": "number", "description": "Centre Y in mm (rectangular objects)" },
+          "rotation": { "type": "number", "description": "0 = front faces north, 90 = east, 180 = south, 270 = west" },
+          "x1": { "type": "number", "description": "Start point X in mm (walls, cable trays, beams — instead of x/y/rotation)" },
+          "y1": { "type": "number", "description": "Start point Y in mm (walls, cable trays, beams)" },
+          "x2": { "type": "number", "description": "End point X in mm (walls, cable trays, beams)" },
+          "y2": { "type": "number", "description": "End point Y in mm (walls, cable trays, beams)" },
+          "z": { "type": "number", "description": "Equipment base elevation in signed mm (cabinet/pdu/dbox/ups/battery/ac/extinguisher/vent only)" },
+          "color": { "type": "string", "description": "Equipment colour `#rrggbb`; empty = type default (equipment only)" },
+          "z1": { "type": "number", "description": "Pipe start centre elevation, signed mm" },
+          "z2": { "type": "number", "description": "Pipe end centre elevation, signed mm" },
+          "systemId": { "type": "string", "description": "Pipe association (not topology)" },
+          "circuitId": { "type": "string" },
+          "pairId": { "type": "string" },
+          "length": { "type": "number", "description": "Pipe 3D centreline length in mm (includes the vertical rise)" },
+          "props": { "type": "object", "description": "Pipe spec object (nominalSize / outsideDiameter / wallThickness / insulationThickness / material / colour / side / loopSide / flowDirection / remark); full props via obj.get for other types" }
+        }
+      },
+      "Envelope": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "true = success; false = failure, see code + message (Chinese, relay to user as-is)"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "Error code: EDITOR_OFFLINE = no editor page connected; BAD_PARAM / OUT_OF_ROOM / NOT_FOUND / NOT_EMPTY / ... = parameter or state problem"
+          },
+          "message": {
+            "type": "string"
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "added": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ObjSummary"
+                },
+                "description": "Objects created by this command, with their real position (mm, rounded) — same shape as query.objects entries. Keep ids for later update/move/delete and use the coordinates for feasibility checks instead of re-deriving them from earlier arguments."
+              },
+              "hint": {
+                "type": "string",
+                "description": "Chinese execution summary"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "stats": {
+                "type": "object",
+                "description": "Project-wide stats {total, byType, powerKW}"
+              },
+              "shot": {
+                "type": "string",
+                "description": "Canvas screenshot PNG dataURL (when request had shot:true)"
+              },
+              "objects": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ObjSummary"
+                },
+                "description": "query.objects result: compact list (equipment entries carry z + color, pipes carry z1/z2/systemId/circuitId/pairId/length/props)"
+              },
+              "object": {
+                "type": "object",
+                "description": "obj.get result: full object"
+              },
+              "projects": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "project.list result"
+              },
+              "content": {
+                "type": "string",
+                "description": "project.export result: DXF/CSV file text"
+              },
+              "filename": {
+                "type": "string",
+                "description": "project.export suggested file name"
+              },
+              "name": {
+                "type": "string",
+                "description": "project.new / project.save / project.open result: the project name now in use"
+              },
+              "kind": {
+                "type": "string",
+                "description": "project.export result: exported kind (dxf | csv)"
+              },
+              "overlaps": {
+                "type": "integer",
+                "description": "query.status result: number of overlapping solid-object pairs (should be 0)"
+              },
+              "outOfRoom": {
+                "type": "integer",
+                "description": "query.status result: number of solids outside the room wall bounding box (should be 0)"
+              },
+              "summary": {
+                "type": "object",
+                "description": "query.checks result: issue count per level",
+                "properties": {
+                  "error": { "type": "integer" },
+                  "warn": { "type": "integer" },
+                  "info": { "type": "integer" },
+                  "total": { "type": "integer" }
+                }
+              },
+              "issues": {
+                "type": "array",
+                "description": "query.checks result (max 200): fix with obj.move / obj.update / obj.updateBatch, then re-run until empty",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "level": { "type": "string", "enum": ["error", "warn", "info"] },
+                    "rule": { "type": "string", "description": "Rule id, e.g. cabFront / coldAisle / floorLoad / pipes (pass it in cfg.disabled to skip that rule)" },
+                    "cat": { "type": "string", "enum": ["layout", "clearance", "power", "cooling", "fire", "load", "civil"] },
+                    "msg": { "type": "string", "description": "Chinese message with measured vs expected values (relay as-is)" },
+                    "actual": { "type": "string", "description": "Measured value as a display string" },
+                    "expect": { "type": "string", "description": "Required value as a display string" },
+                    "objectIds": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Involved objects — operate on these ids to fix the issue"
+                    },
+                    "x": { "type": "number", "description": "Location to focus on, mm" },
+                    "y": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ProjectNewArgs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New project name; defaults to the localized \"untitled\""
+          },
+          "force": {
+            "type": "boolean",
+            "default": false,
+            "description": "true = discard the current project's content even when it has objects"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProjectOpenArgs": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name on the server (see project.list)"
+          },
+          "force": {
+            "type": "boolean",
+            "default": false,
+            "description": "true = discard unsaved changes in the current project"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SaveArgs": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Project name (Chinese/English letters, digits, _ -, 1-64 chars); defaults to the current project name"
+          },
+          "meta": {
+            "type": "object",
+            "description": "Room-level info, merged into project.meta (string or number values only). Keys: surveyor, date, site, roomHeight (structural clear height mm), ceilHeight (ceiling face height mm), floorHeight (raised-floor plenum height mm), tier (A|B|C), powerCap (kW), powerModule (kVA), floorLoad (kg/m2), coolArch, climate, remark. query.checks consumes roomHeight/ceilHeight/floorHeight (civil rules) and powerCap/floorLoad (power / floor-load rules) — see the meta bullet in the domain rules."
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProjectExportArgs": {
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dxf",
+              "csv"
+            ],
+            "description": "dxf = CAD drawing (R12, 1:1 mm); csv = bill of quantities (summary + per-device detail, Chinese)"
+          }
+        }
+      },
+      "RoomRectArgs": {
+        "type": "object",
+        "required": [
+          "lenX",
+          "lenY"
+        ],
+        "properties": {
+          "lenX": {
+            "type": "number",
+            "minimum": 1000,
+            "maximum": 200000,
+            "description": "Inner length mm (east-west)"
+          },
+          "lenY": {
+            "type": "number",
+            "minimum": 1000,
+            "maximum": 200000,
+            "description": "Inner width mm (south-north)"
+          },
+          "thickness": {
+            "type": "number",
+            "minimum": 60,
+            "maximum": 1000,
+            "default": 240,
+            "description": "Wall thickness mm"
+          },
+          "height": {
+            "type": "number",
+            "minimum": 2000,
+            "maximum": 10000,
+            "default": 3000,
+            "description": "Wall height mm"
+          },
+          "material": {
+            "type": "string",
+            "enum": [
+              "砖墙",
+              "混凝土",
+              "轻钢龙骨",
+              "玻璃隔断"
+            ],
+            "default": "砖墙",
+            "description": "Wall material (Chinese data key): 砖墙=brick/panel 混凝土=concrete 轻钢龙骨=stud 玻璃隔断=glass"
+          },
+          "x0": {
+            "type": "number",
+            "default": 0,
+            "description": "X of the room's south-west inner corner (offset for sub-areas)"
+          },
+          "y0": {
+            "type": "number",
+            "default": 0,
+            "description": "Y of the room's south-west inner corner"
+          },
+          "shot": {
+            "type": "boolean",
+            "description": "true = include a canvas screenshot in the response"
+          }
+        }
+      },
+      "WallAddArgs": {
+        "type": "object",
+        "required": [
+          "x1",
+          "y1",
+          "x2",
+          "y2"
+        ],
+        "properties": {
+          "x1": {
+            "type": "number",
+            "description": "Start X mm"
+          },
+          "y1": {
+            "type": "number",
+            "description": "Start Y mm"
+          },
+          "x2": {
+            "type": "number",
+            "description": "End X mm"
+          },
+          "y2": {
+            "type": "number",
+            "description": "End Y mm"
+          },
+          "thickness": {
+            "type": "number",
+            "minimum": 60,
+            "maximum": 1000,
+            "default": 240
+          },
+          "height": {
+            "type": "number",
+            "minimum": 2000,
+            "maximum": 10000,
+            "default": 3000
+          },
+          "material": {
+            "type": "string",
+            "enum": [
+              "砖墙",
+              "混凝土",
+              "轻钢龙骨",
+              "玻璃隔断"
+            ],
+            "default": "砖墙"
+          },
+          "name": {
+            "type": "string",
+            "description": "Custom wall name (auto-assigned if omitted)"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PodCreateArgs": {
+        "type": "object",
+        "required": [
+          "rows",
+          "count",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "rows": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 26,
+            "description": "Number of cabinet rows (>=2, grouped as aisle POD)"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60,
+            "description": "Cabinets per row"
+          },
+          "cabW": {
+            "type": "number",
+            "minimum": 400,
+            "maximum": 1200,
+            "default": 600,
+            "description": "Cabinet width mm (standard 600/800)"
+          },
+          "cabD": {
+            "type": "number",
+            "minimum": 600,
+            "maximum": 1600,
+            "default": 1200,
+            "description": "Cabinet depth mm"
+          },
+          "gap": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Gap between cabinets within a row, mm"
+          },
+          "coldW": {
+            "type": "number",
+            "minimum": 600,
+            "maximum": 3000,
+            "default": 1200,
+            "description": "Cold aisle width mm"
+          },
+          "hotW": {
+            "type": "number",
+            "minimum": 600,
+            "maximum": 3000,
+            "default": 900,
+            "description": "Hot aisle width mm"
+          },
+          "firstAisle": {
+            "type": "string",
+            "enum": [
+              "cold",
+              "hot"
+            ],
+            "default": "cold",
+            "description": "Type of the first aisle (between rows 1-2); this type gets enclosed"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "x",
+              "y"
+            ],
+            "default": "x",
+            "description": "Layout axis: x = rows run east-west, stacking northward; y = the other way"
+          },
+          "x": {
+            "type": "number",
+            "description": "Center X of the first cabinet in the first row (mm from west)"
+          },
+          "y": {
+            "type": "number",
+            "description": "Center Y of the first cabinet in the first row (mm from south)"
+          },
+          "tpl": {
+            "type": "string",
+            "default": "A##",
+            "description": "Naming template: # = sequence slot, preceding letter group = row letter, e.g. A##, 101-A##"
+          },
+          "cabinetProps": {
+            "type": "object",
+            "description": "Per-cabinet props applied to ALL generated cabinets (power, voltage, current, rpdu, sockets, u, h, remark...). w/d ignored (layout-controlled). See props field reference."
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RowCreateArgs": {
+        "type": "object",
+        "required": [
+          "count",
+          "x",
+          "y"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Cabinets in this row"
+          },
+          "rotation": {
+            "type": "number",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "default": 0,
+            "description": "Cabinet front orientation (0=north 90=east 180=south 270=west)"
+          },
+          "gap": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000,
+            "default": 50
+          },
+          "cabW": {
+            "type": "number",
+            "minimum": 400,
+            "maximum": 1200,
+            "default": 600
+          },
+          "cabD": {
+            "type": "number",
+            "minimum": 600,
+            "maximum": 1600,
+            "default": 1200
+          },
+          "x": {
+            "type": "number",
+            "description": "Center X of the first cabinet (mm from west)"
+          },
+          "y": {
+            "type": "number",
+            "description": "Center Y of the first cabinet (mm from south)"
+          },
+          "tpl": {
+            "type": "string",
+            "description": "Naming template, e.g. F##; defaults to the next free row letter"
+          },
+          "cabinetProps": {
+            "type": "object",
+            "description": "Per-cabinet props applied to the whole row (w/d ignored). See props field reference."
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ObjAddArgs": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "column",
+              "ac",
+              "ups",
+              "battery",
+              "extinguisher",
+              "vent",
+              "pdu",
+              "dbox",
+              "cabinet",
+              "tray",
+              "beam",
+              "pipe"
+            ],
+            "description": "column=pillar ac=precision AC ups=uninterruptible power supply battery=battery cabinet (UPS batteries) extinguisher=fire extinguisher vent=floor outlet pdu=RPP/power head cabinet dbox=distribution box (600x200x800; use/mounting/voltage/current/outCircuits) tray=cable tray beam=frame beam between columns (endpoints snap to column centers and follow columns)"
+          },
+          "x": {
+            "type": "number",
+            "description": "Center X (not for tray)"
+          },
+          "y": {
+            "type": "number",
+            "description": "Center Y (not for tray)"
+          },
+          "z": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000,
+            "default": 0,
+            "description": "Equipment base elevation above finished floor, signed mm (cabinet/pdu/dbox/ups/battery/ac/extinguisher/vent only); not props.z"
+          },
+          "rotation": {
+            "type": "number",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "default": 0,
+            "description": "Orientation (ac = airflow direction, cabinet/pdu/dbox/ups/battery/extinguisher = front)"
+          },
+          "x1": {
+            "type": "number",
+            "description": "tray/beam start X"
+          },
+          "y1": {
+            "type": "number",
+            "description": "tray/beam start Y"
+          },
+          "x2": {
+            "type": "number",
+            "description": "tray/beam end X"
+          },
+          "y2": {
+            "type": "number",
+            "description": "tray/beam end Y"
+          },
+          "z1": { "type": "number", "description": "pipe start centre elevation (mm), signed; finished floor Z=0; required for pipe" },
+          "z2": { "type": "number", "description": "pipe end centre elevation (mm), signed; required for pipe; XY-coincident risers are valid" },
+          "systemId": { "type": "string", "description": "pipe association, not topology" },
+          "circuitId": { "type": "string" },
+          "pairId": { "type": "string", "description": "Association only, not port connectivity" },
+          "width": {
+            "type": "number",
+            "default": 300,
+            "description": "tray width mm"
+          },
+          "height": {
+            "type": "number",
+            "default": 2500,
+            "description": "tray mounting height above floor, mm"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "强电",
+              "弱电",
+              "光纤",
+              "框架梁",
+              "次梁",
+              "悬挑梁"
+            ],
+            "default": "弱电",
+            "description": "tray type: 强电=power 弱电=low-voltage/data 光纤=fiber; beam type: 框架梁(default)=frame beam 次梁=secondary beam 悬挑梁=cantilever (Chinese data keys)"
+          },
+          "b": {
+            "type": "number",
+            "default": 300,
+            "description": "beam width (section b) mm"
+          },
+          "h": {
+            "type": "number",
+            "default": 600,
+            "description": "beam section height mm"
+          },
+          "top": {
+            "type": "number",
+            "default": 3000,
+            "description": "beam top elevation above floor mm (defaults to the taller of the two attached columns)"
+          },
+          "concrete": {
+            "type": "string",
+            "enum": [
+              "C25",
+              "C30",
+              "C35",
+              "C40",
+              "C45",
+              "C50"
+            ],
+            "default": "C30",
+            "description": "beam concrete strength grade (GB 50010)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Custom name/number for ALL types including tray (auto-assigned if omitted)"
+          },
+          "props": {
+            "type": "object",
+            "description": "Property overrides — see the props field reference in API info (cabinet power/u/sockets, AC cool/supply/acType, pdu voltage/current, dbox boxUse/mounting/voltage/current/outCircuits, ups kva/backup...)"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OpeningAddArgs": {
+        "type": "object",
+        "required": [
+          "type",
+          "wallId"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "grille"
+            ],
+            "description": "door / window / grille (louvered air opening)"
+          },
+          "wallId": {
+            "type": "string",
+            "description": "Target wall id (from room.rect / wall.add result)"
+          },
+          "t": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.5,
+            "description": "Opening center along wall: 0 = wall start, 1 = wall end"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 300,
+            "maximum": 6000,
+            "description": "Opening width mm (defaults: door 1500, window 1500, grille 2500)"
+          },
+          "props": {
+            "type": "object",
+            "description": "Overrides: door leaf(single/double)/side(in/out)/swing, window sill, grille kind(送风=supply/回风=return)/height/sill"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ObjUpdateArgs": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Object id"
+          },
+          "z": { "type": "number", "minimum": -1000000, "maximum": 1000000, "description": "Equipment base elevation above finished floor (signed mm); equipment only, not props.z" },
+          "z1": { "type": "number", "description": "pipe start centre elevation, signed mm" },
+          "z2": { "type": "number", "description": "pipe end centre elevation, signed mm" },
+          "x1": { "type": "number", "description": "pipe endpoint geometry update" },
+          "y1": { "type": "number" },
+          "x2": { "type": "number" },
+          "y2": { "type": "number" },
+          "systemId": { "type": "string" },
+          "circuitId": { "type": "string" },
+          "pairId": { "type": "string" },
+          "props": {
+            "type": "object",
+            "description": "Partial property update. Pipe geometry is top-level, not props. Pipe updates/batches validate atomically before recording undo; use actual OD rather than nominal DN. Changing an aisle band's d (aisle width mm) auto-shifts the linked cabinet rows."
+          },
+          "t": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Wall-attached openings only (door/window/grille): move along the wall, 0 = wall start, 1 = wall end"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ObjUpdateBatchArgs": {
+        "type": "object",
+        "anyOf": [{ "required": ["props"] }, { "required": ["z"] }],
+        "properties": {
+          "z": { "type": "number", "minimum": -1000000, "maximum": 1000000, "description": "Set base elevation for every target (equipment only). A mixed equipment/architectural/pipe selection is rejected atomically." },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Explicit target ids (use this OR selector)"
+          },
+          "selector": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Object type, e.g. ac / ups / cabinet"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name PREFIX match, e.g. \"A\" matches A01..A12"
+              }
+            },
+            "description": "Select targets by type and/or name prefix"
+          },
+          "props": {
+            "type": "object",
+            "description": "Partial property update applied to every target. Aisle d changes link rows one by one, all in ONE undo step."
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ObjMoveArgs": {
+        "type": "object",
+        "required": [
+          "ids",
+          "dx",
+          "dy"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dx": {
+            "type": "number",
+            "description": "X shift mm (east positive)"
+          },
+          "dy": {
+            "type": "number",
+            "description": "Y shift mm (north positive)"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "IdsArgs": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Object id list"
+          },
+          "shot": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QueryObjectsArgs": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Filter by object type (wall/door/window/grille/column/beam/cabinet/aisle/tray/pipe/pdu/dbox/ac/ups/battery/extinguisher/vent)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Filter by name substring (e.g. \"A0\" matches A01..A09)"
+          }
+        }
+      },
+      "ObjGetArgs": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Object id"
+          }
+        }
+      },
+      "ViewShotArgs": {
+        "type": "object",
+        "properties": {
+          "fit": {
+            "type": "boolean",
+            "default": true,
+            "description": "true = zoom to fit all content before capturing (ignored when focusId is set)"
+          },
+          "focusId": {
+            "type": "string",
+            "description": "Object id: zoom to this object (with margin) before capturing, to verify a specific spot"
+          }
+        }
+      }
+    }
+  }
+}

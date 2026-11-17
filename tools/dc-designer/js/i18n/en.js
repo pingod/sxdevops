@@ -732,6 +732,8 @@ export const en = {
   'aip.cleared': 'Cleared',
   'aip.key.current': 'Current key: {mask}',
   'aip.source': 'Source: {src}',
+  'aip.source.aiops': 'AIOps proxy',
+  'aip.proxyNote': 'Model selection and calls are handled by AIOps; each call is written to model-invocation and operation audits.',
   'aip.source.page': 'browser localStorage',
   'aip.source.none': 'not configured',
   'aip.privacy': 'Privacy: the API key, endpoint and model live in this browser\u2019s localStorage only (nothing is written to the server, which keeps no logs of the conversation); only the conversation text, the tool contract and the execution results (structured data such as object ids and coordinates) are sent to the model; project files and surveyor/site metadata are never uploaded.',

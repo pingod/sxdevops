@@ -520,12 +520,14 @@ class AIOpsModelInvocation(models.Model):
     PURPOSE_PARAMETER_EXTRACTION = 'parameter_extraction'
     PURPOSE_MODEL_PROBE = 'model_probe'
     PURPOSE_CONNECTION_TEST = 'connection_test'
+    PURPOSE_MODELING = 'modeling'
     PURPOSE_CHOICES = [
         (PURPOSE_CHAT_PLANNING, '聊天规划'),
         (PURPOSE_ANSWER_FORMATTING, '回答整形'),
         (PURPOSE_PARAMETER_EXTRACTION, '参数抽取'),
         (PURPOSE_MODEL_PROBE, '模型探测'),
         (PURPOSE_CONNECTION_TEST, '连接测试'),
+        (PURPOSE_MODELING, '机房建模'),
     ]
 
     STATUS_SUCCESS = 'success'
