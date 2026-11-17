@@ -186,6 +186,7 @@ export const zhCN = {
   'file.png3dName': '机房全景',
   'file.png3dSuffix': '-3D全景',
   'file.csvSuffix': '-工程量清单',
+  'hint.saveNeedCabinet': '平台保存至少需要一台机柜',
   'hint.saved': '已保存：{name}',
   'hint.saveCancelled': '已取消保存',
   'hint.saveFailed': '保存失败：{msg}',

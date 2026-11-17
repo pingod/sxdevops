@@ -184,6 +184,7 @@ export const en = {
   'file.png3dName': 'IDC panorama',
   'file.png3dSuffix': '-3D-panorama',
   'file.csvSuffix': '-BOQ',
+  'hint.saveNeedCabinet': 'At least one cabinet is required to save to the project library',
   'hint.saved': 'Saved: {name}',
   'hint.saveCancelled': 'Save cancelled',
   'hint.saveFailed': 'Save failed: {msg}',

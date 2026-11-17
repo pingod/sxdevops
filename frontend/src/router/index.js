@@ -671,16 +671,6 @@ const routes = [
         },
       },
       {
-        path: 'datacenter/designer',
-        name: 'DatacenterDesigner',
-        component: () => import('@/views/DatacenterDesigner.vue'),
-        meta: {
-          title: '机房 CAD 设计',
-          icon: 'Edit',
-          permission: 'datacenter.twin.manage',
-        },
-      },
-      {
         path: 'aiops/chat',
         name: 'AIOpsChat',
         component: () => import('@/views/AIOpsChatEntry.vue'),

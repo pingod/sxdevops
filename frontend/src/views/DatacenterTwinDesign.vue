@@ -48,6 +48,7 @@
           <el-button :icon="Plus" @click="openRoomDialog">新建机房</el-button>
           <el-button :icon="DocumentAdd" @click="saveAs">另存为</el-button>
           <el-button v-if="canManage" :icon="Clock" :disabled="!currentProject" @click="openVersions">版本</el-button>
+          <el-button :icon="TopRight" @click="openStandaloneWorkbench">独立工作台</el-button>
           <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存</el-button>
           <el-button :icon="View" @click="backToViewer">查看孪生</el-button>
         </div>
@@ -58,7 +59,7 @@
           v-if="viewerBuilt"
           ref="frameRef"
           class="design-frame"
-          src="/dc-viewer-app/design.html"
+          src="/dc-designer-app/?embed=1&lang=zh-CN"
           title="三维机房设计器"
           sandbox="allow-scripts allow-same-origin allow-downloads"
           referrerpolicy="no-referrer"
@@ -66,7 +67,7 @@
         <div v-else class="design-placeholder">
           <el-icon :size="38"><EditPen /></el-icon>
           <strong>三维设计器未构建</strong>
-          <p>请在 tools/dc-viewer 执行 npm install && npm run build，产物由 /dc-viewer-app/ 托管。</p>
+          <p>请在 tools/dc-designer 执行 npm install && npm run build，产物由 /dc-designer-app/ 托管。</p>
         </div>
       </div>
     </section>
@@ -166,7 +167,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Clock, DocumentAdd, EditPen, Plus, Search, View } from '@element-plus/icons-vue'
+import { Check, Clock, DocumentAdd, EditPen, Plus, Search, TopRight, View } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { theme, THEME_CHANGE_EVENT } from '@/theme'
 import { useTwinProjects } from '@/composables/useTwinProjects'
@@ -251,7 +252,7 @@ function syncQuery(id) {
 async function loadStatus() {
   try {
     const status = await getTwinViewerStatus()
-    viewerBuilt.value = status.viewer_built !== false
+    viewerBuilt.value = status.cad_designer_built !== false
   } catch {
     viewerBuilt.value = true
   }
@@ -313,7 +314,7 @@ onMounted(async () => {
   window.addEventListener(THEME_CHANGE_EVENT, onThemeChange)
   readyTimer = setTimeout(() => {
     if (!frameReady.value) {
-      ElMessage.warning('三维设计器初始化较慢或失败，请确认浏览器已开启硬件加速（需要 WebGL2）')
+      ElMessage.warning('三维设计器初始化较慢或失败，请刷新重试；若仍失败请检查设计器构建产物')
     }
   }, 12000)
   await loadStatus()
@@ -400,6 +401,10 @@ async function createRoom() {
     height: roomDialog.height,
     floorHeight: roomDialog.floorHeight,
   })
+}
+
+function openStandaloneWorkbench() {
+  window.open('/dc-designer-app/', '_blank', 'noopener')
 }
 
 function save() {

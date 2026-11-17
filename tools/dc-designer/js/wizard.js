@@ -313,8 +313,8 @@ function genRoom() {
 /* ---------- 首次使用欢迎弹窗 ---------- */
 function maybeWelcome() {
   try {
-    const embedded = new URLSearchParams(location.search).get('embed') === '1';
-    if (embedded) return; // 平台内嵌：不弹首次使用欢迎层，避免遮挡设计区
+    const params = new URLSearchParams(location.search);
+    if (params.get('embed') === '1' || params.get('noWelcome') === '1') return; // 平台内嵌/工作台：不弹首次欢迎层
     if (localStorage.getItem('idc2d_no_welcome') === '1' || loadDraft()) return; // 已有草稿=老用户，不再弹欢迎
   } catch (e) { /* ignore */ }
   const ov = document.createElement('div');

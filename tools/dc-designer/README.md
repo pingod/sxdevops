@@ -10,7 +10,12 @@ PNG/DXF/CSV 导出、文件打开/保存与草稿恢复；内嵌 3D 查看（实
 cd tools/dc-designer
 npm install
 npm run dev          # http://127.0.0.1:5200/
+npm run dev -- --host 0.0.0.0   # 可选
 ```
+
+独立模式（本地文件/导出）：`http://127.0.0.1:5200/`
+AI 工作台模式：`http://127.0.0.1:5200/?ai=1`
+平台项目模式：`http://127.0.0.1:5200/?embed=1`（由平台 iframe 加载）
 
 `predev` 会自动构建 `tools/dc-viewer` 并复制到 `public/inspect/`（首次需要其依赖，脚本会按需
 `npm install`）。因此**无需另开查看器服务**，3D 中的“检视”即可直接使用。
@@ -38,6 +43,9 @@ npm run preview
 - AI 建模：OpenAI 兼容端点（本机 `/api/ai` 代理可选，否则浏览器直连；Key 只存本机浏览器）
 - 检视：3D 内“检视” → 嵌入只读查看器，复用巡检/步行/剖切/定位/显示/拆解
 - AI 建模：默认不在设计器加载；通过 `?ai=1` 打开，平台内入口为 AIOps → AI 机房建模
+- 平台项目模式（`?embed=1`）：postMessage 握手 `ready/dirty/save/error`，父页下发
+  `load/new-room/request-save/saved/cancel/error`；项目库、版本与乐观锁由平台负责，
+  设计器隐藏本地文件组与工勘向导。平台「三维机房设计」即使用此模式。
 
 ## 数据与 fixtures
 

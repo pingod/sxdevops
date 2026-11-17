@@ -16,7 +16,7 @@
     <section class="panel ai-modeling-stage workbench-fill-panel">
       <iframe
         class="ai-modeling-frame"
-        src="/dc-designer-app/?ai=1&embed=1&lang=zh-CN"
+        src="/dc-designer-app/?ai=1&noWelcome=1&lang=zh-CN"
         title="AI 机房建模"
         referrerpolicy="no-referrer"
         allow="clipboard-read; clipboard-write; fullscreen"

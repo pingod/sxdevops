@@ -24,7 +24,10 @@ import * as ctxmenu from './ctxmenu.js';
 import { initExportMenu } from './exportmenu.js';
 import { loadUI, patchUI, flushUI } from './uistate.js';
 import { initSidebar } from './sidebar.js';
+import { initPlatformBridge, platformRequestSave } from './platform-bridge.js';
 
+const embedded = window.parent !== window
+  && new URLSearchParams(location.search).get('embed') === '1';
 const canvas = document.getElementById('cv');
 const ctx = canvas.getContext('2d');
 const $ = id => document.getElementById(id);
@@ -127,7 +130,9 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && (e.key || '').toLowerCase() === 's') {
-    e.preventDefault(); saveProject(); return;
+    e.preventDefault();
+    if (embedded) platformRequestSave(); else saveProject();
+    return;
   }
   // 2D/3D 视图切换：数字键 3 进入 3D，数字键 2 返回 2D（与按钮等价；输入框内打字不触发）
   const typingInput = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
@@ -164,7 +169,7 @@ window.addEventListener('beforeunload', e => {
   flushDraft(); // 关闭/刷新前把最新草稿写入 localStorage
   flushLastProps(); // 属性默认值注册表一并落盘（默认值跟随上一次设置跨会话生效）
   flushUIState(); // 界面状态（面板/视图/3D 视角）一并落盘，刷新后原样恢复
-  if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
+  if (!embedded && state.dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 window.addEventListener('visibilitychange', () => { if (document.hidden) { flushDraft(); flushLastProps(); flushUIState(); } });
 
@@ -541,7 +546,7 @@ resize();
 // 恢复本地草稿：刷新页面不丢数据（草稿=未保存的修改，自动缓存于 localStorage）
 let draftRestored = false;
 const draft = loadDraft();
-if (draft && Array.isArray(draft.objects)) {
+if (!embedded && draft && Array.isArray(draft.objects)) {
   try {
     sanitize(draft);
     state.project = draft;
@@ -595,6 +600,8 @@ onLocaleChange(() => {
 
 /* 自动化/回归测试钩子：暴露页面真实模块实例（避免动态 import 因 HMR 查询串产生第二实例）。 */
 if (new URLSearchParams(location.search).get('ai') === '1') import('./agent.js');
+
+initPlatformBridge(); // 平台 iframe：握手、项目库加载/保存、脏标记
 
 window.__dcd = Object.freeze({
   state, runtime, ui, newProject, markDirty, sanitize, undoDepth, flushDraft, loadDraft,

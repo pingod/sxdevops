@@ -264,7 +264,6 @@ const menuItems = [
       { path: '/datacenter/planning', visibilityKey: 'datacenter.planning', title: 'IDC 上架布线', icon: 'OfficeBuilding', permission: 'datacenter.planning.view' },
       { path: '/datacenter/twin', visibilityKey: 'datacenter.twin', title: '数字孪生', icon: 'Box', permission: 'datacenter.twin.view' },
       { path: '/datacenter/twin-design', visibilityKey: 'datacenter.twin-design', title: '三维机房设计', icon: 'Edit', permission: 'datacenter.twin.manage' },
-      { path: '/datacenter/designer', visibilityKey: 'datacenter.designer', title: '机房 CAD 设计', icon: 'Edit', permission: 'datacenter.twin.manage' },
     ],
   },
   {
