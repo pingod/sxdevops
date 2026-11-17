@@ -420,6 +420,46 @@ function buildBattery(g, o) {
   }
 }
 
+/* ---------- 液冷管（设计器 union：真实管径圆柱，保温层计入外半径） ---------- */
+function buildPipe(g, o) {
+  const p = o.props || {};
+  const od = Math.abs(+p.outsideDiameter) || 60.3;
+  const ins = Math.max(0, +p.insulationThickness || 0);
+  const r = (od / 2 + ins) * S;
+  const a = new THREE.Vector3(o.x1 * S, (+o.z1 || 0) * S, -o.y1 * S);
+  const b = new THREE.Vector3(o.x2 * S, (+o.z2 || 0) * S, -o.y2 * S);
+  const len = a.distanceTo(b);
+  if (!(len > 1e-6)) return;
+  const color = p.color ? p.color : (p.side === 'return' ? 0xc64634 : 0x2f6fb2);
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: ins > 0 ? 0.86 : 0.34, metalness: ins > 0 ? 0.03 : 0.48,
+  });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20, 1), mat);
+  m.position.copy(a).add(b).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  m.castShadow = od + 2 * ins >= 80;
+  m.receiveShadow = true;
+  g.add(m);
+}
+
+/* ---------- 配电箱（dbox）：柜体 + 深色检修面 + 铜金标识条 ---------- */
+function buildDbox(g, o) {
+  const p = o.props || {};
+  const w = Math.abs(+p.w) || 600;
+  const d = Math.abs(+p.d) || 400;
+  const h = Math.abs(+p.h) || 1600;
+  const grp = placed(g, o);
+  lbox(grp, M.pduBody, w - 20, h - 40, d - 30, 0, 20, 0);
+  lbox(grp, M.pduBody, w - 6, 24, d - 10, 0, h - 24, 0);
+  const fz = d / 2 - 10;
+  lbox(grp, M.dark, w - 70, h - 140, 16, 0, 60, fz);
+  lbox(grp, M.pduStripe, w - 10, 34, 6, 0, h - 110, fz + 10, false);
+  lbox(grp, M.acScreen, Math.min(140, w - 160), 90, 5, 0, h - 300, fz + 11, false);
+  for (const fx of [-1, 1]) for (const fz2 of [-1, 1]) {
+    lbox(grp, M.dark, 50, 20, 50, fx * (w / 2 - 45), 0, fz2 * (d / 2 - 45), false);
+  }
+}
+
 /* ---------- 灭火器 ---------- */
 function buildExtinguisher(g, o) {
   const p = o.props;
@@ -673,6 +713,8 @@ export function buildObjectInto(g, o, ctx = {}) {
     case 'battery': buildBattery(grp, o); break;
     case 'extinguisher': buildExtinguisher(grp, o); break;
     case 'vent': buildVent(grp, o); break;
+    case 'pipe': buildPipe(grp, o); break;
+    case 'dbox': buildDbox(grp, o); break;
     case 'tray': buildTray(grp, o, ceilH); break;
     case 'aisle': buildAisle(grp, o, cabH); break;
     default:
@@ -719,9 +761,13 @@ export function buildRoom(project) {
     b.maxy = Math.max(b.maxy, y);
   };
   for (const o of objs) {
-    if (o.type === 'wall' || o.type === 'tray') {
-      ext(o.x1, o.y1);
-      ext(o.x2, o.y2);
+    if (o.type === 'wall' || o.type === 'tray' || o.type === 'pipe') {
+      const pr = o.type === 'pipe'
+        ? (Math.abs(+(o.props && o.props.outsideDiameter)) || 60.3) / 2
+          + Math.max(0, +(o.props && o.props.insulationThickness) || 0)
+        : 0;
+      ext(o.x1 - pr, o.y1 - pr);
+      ext(o.x2 + pr, o.y2 + pr);
     } else if (o.type === 'beam') {
       const e = beamEnds(o, id => objs.find(q => q.id === id) || null);
       ext(e.x1, e.y1);
