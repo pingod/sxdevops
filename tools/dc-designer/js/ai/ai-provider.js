@@ -41,7 +41,11 @@ const RETRY_DELAYS = [800, 2000]; // 429/5xx/网络错误重试 2 次
 
 // 平台 AIOps 代理模式：模型调用由父页面（AIOps 页面）带鉴权转发，服务端统一选提供商并写审计。
 const AIOPS_PROXY = (() => {
-  try { return new URLSearchParams(location.search).get('aiProxy') === '1'; } catch (e) { return false; }
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('aiProxy') === '1') return true;
+    return p.get('embed') === '1' && p.get('ai') !== '0';
+  } catch (e) { return false; }
 })();
 
 const maskKey = k => (k && k.length > 8 ? k.slice(0, 3) + '****' + k.slice(-4) : (k ? '****' : ''));
@@ -87,7 +91,7 @@ export class AiProvider {
     this.requestSeq = 0;
     if (this.aiProxy && typeof window !== 'undefined') {
       window.addEventListener('message', (event) => {
-        if (event.source !== window.parent) return;
+        if (event.source !== window.parent || event.origin !== location.origin) return;
         const data = event.data || {};
         if (data.source !== 'dc-aiops' || data.type !== 'ai-chat-result') return;
         const entry = this.pending.get(data.requestId);
@@ -223,7 +227,7 @@ export class AiProvider {
             reject(new AiError('STOPPED', '请求已中断'));
           }, { once: true });
         }
-        window.parent.postMessage({ source: 'dc-designer', type: 'ai-chat', requestId, payload }, '*');
+        window.parent.postMessage({ source: 'dc-designer', type: 'ai-chat', requestId, payload }, location.origin);
       });
     } catch (e) {
       if (e instanceof AiError) throw e;

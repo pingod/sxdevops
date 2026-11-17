@@ -681,16 +681,6 @@ const routes = [
         },
       },
       {
-        path: 'aiops/modeling',
-        name: 'AIOpsModeling',
-        component: () => import('@/views/AIOpsModeling.vue'),
-        meta: {
-          title: 'AI 机房建模',
-          icon: 'MagicStick',
-          permission: 'aiops.chat.view',
-        },
-      },
-      {
         path: 'aiops/knowledge',
         name: 'AIOpsKnowledgeGraph',
         component: () => import('@/views/AIOpsKnowledgeGraph.vue'),

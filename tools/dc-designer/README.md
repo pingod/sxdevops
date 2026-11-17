@@ -15,7 +15,7 @@ npm run dev -- --host 0.0.0.0   # 可选
 
 独立模式（本地文件/导出）：`http://127.0.0.1:5200/`
 AI 工作台模式：`http://127.0.0.1:5200/?ai=1`
-AI 代理模式：`?ai=1&aiProxy=1`（模型由父页面转发到 AIOps，服务端选提供商并写审计）
+平台内嵌：`?embed=1`（AI 面板自动启用，模型由父页面转发到 AIOps，服务端选提供商并写审计；`?ai=0` 关闭）
 平台项目模式：`http://127.0.0.1:5200/?embed=1`（由平台 iframe 加载）
 
 `predev` 会自动构建 `tools/dc-viewer` 并复制到 `public/inspect/`（首次需要其依赖，脚本会按需
@@ -41,12 +41,12 @@ npm run preview
 - 内嵌 3D：WebGPU 优先（WebGL2 回退）、real/bim 双风格、编号浮标、隔离右键菜单、
   管路视图、平滑接头（管道/桥架圆弯，含统计与风险提示）、8192px 全景 PNG
 - 语言：中文 / English（跟随浏览器，可切换并记忆）
-- AI 建模：AIOps 代理模式（`aiProxy=1`）走平台默认提供商并写模型/操作审计；独立模式保留浏览器直连或本机代理
+- AI 建模：平台内嵌（`embed=1`）走 AIOps 代理与审计；独立模式（`?ai=1`）保留浏览器直连或本机代理
 - 检视：3D 内“检视” → 嵌入只读查看器，复用巡检/步行/剖切/定位/显示/拆解
-- AI 建模：默认不在设计器加载；通过 `?ai=1` 打开，平台内入口为 AIOps → AI 机房建模
 - 平台项目模式（`?embed=1`）：postMessage 握手 `ready/dirty/save/error`，父页下发
   `load/new-room/request-save/saved/cancel/error`；项目库、版本与乐观锁由平台负责，
-  设计器隐藏本地文件组与工勘向导。平台「三维机房设计」即使用此模式。
+  设计器隐藏本地文件组与工勘向导。平台「三维机房设计」即使用此模式，AI 面板随
+  `aiops.chat.view` 权限启用，`ai-chat` 由父页转发 AIOps 代理。
 
 ## 数据与 fixtures
 

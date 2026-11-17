@@ -6,7 +6,9 @@
           <el-icon><EditPen /></el-icon>
         </span>
         <h2>三维机房设计</h2>
-        <p class="page-inline-desc">拖放机柜、画墙体与桥架，保存后即为数字孪生展示的三维机房</p>
+        <p class="page-inline-desc">
+          拖放机柜、画墙体与桥架，或用右侧 AI 建模生成；保存后即为数字孪生展示的三维机房
+        </p>
       </div>
     </section>
 
@@ -59,7 +61,7 @@
           v-if="viewerBuilt"
           ref="frameRef"
           class="design-frame"
-          src="/dc-designer-app/?embed=1&lang=zh-CN"
+          :src="designSrc"
           title="三维机房设计器"
           sandbox="allow-scripts allow-same-origin allow-downloads"
           referrerpolicy="no-referrer"
@@ -171,6 +173,7 @@ import { Check, Clock, DocumentAdd, EditPen, Plus, Search, TopRight, View } from
 import { useAuthStore } from '@/stores/auth'
 import { theme, THEME_CHANGE_EVENT } from '@/theme'
 import { useTwinProjects } from '@/composables/useTwinProjects'
+import { postAIOpsModelingChat } from '@/api/modules/aiops'
 import {
   fetchTwinProjectContent,
   getTwinViewerStatus,
@@ -185,6 +188,9 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('datacenter.twin.manage'))
+const canUseAi = computed(() => authStore.hasPermission('aiops.chat.view'))
+// AI 面板需要模型代理权限；无权限时显式 ai=0，设计器不加载 AI 模块。
+const designSrc = computed(() => `/dc-designer-app/?embed=1&lang=zh-CN${canUseAi.value ? '' : '&ai=0'}`)
 
 const {
   projects, loading: loadingList, search, selectedId, selected: currentProject,
@@ -268,11 +274,32 @@ async function pushMonitorTargets() {
   }
 }
 
+function respondAiChat(requestId, payload) {
+  post({ source: 'dc-aiops', type: 'ai-chat-result', requestId, ...payload })
+}
+
+/** AI 机房建模：设计器把模型请求交给本页，由本页带登录态调用 AIOps 代理（服务端选模型并写审计）。 */
+function forwardAiChat(data) {
+  const requestId = data.requestId
+  if (!requestId) return
+  postAIOpsModelingChat(data.payload || {})
+    .then((response) => respondAiChat(requestId, { ok: true, data: response }))
+    .catch((error) => respondAiChat(requestId, {
+      ok: false,
+      status: error?.response?.status || 0,
+      message: error?.response?.data?.detail || error?.message || 'AIOps 模型代理调用失败',
+    }))
+}
+
 function onDesignerMessage(event) {
   const frame = frameWindow()
   if (!frame || event.source !== frame) return
   const data = event.data || {}
   if (data.source !== 'dc-designer') return
+  if (data.type === 'ai-chat') {
+    forwardAiChat(data)
+    return
+  }
 
   if (data.type === 'ready') {
     clearTimeout(readyTimer)

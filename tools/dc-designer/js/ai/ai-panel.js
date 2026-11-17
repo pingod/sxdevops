@@ -30,7 +30,11 @@ import { ATTACH_LIMITS, prepareAttachment, formatBytes, attachmentChars } from '
 // AIOps 代理模式：契约随设计器静态资源发布（/dc-designer-app/api/agent/openapi.json）；
 // 独立/本机模式仍走应用基路径下的 /api/agent/openapi.json。
 const AIOPS_PROXY = (() => {
-  try { return new URLSearchParams(location.search).get('aiProxy') === '1'; } catch (e) { return false; }
+  try {
+    const p = new URLSearchParams(location.search);
+    if (p.get('aiProxy') === '1') return true;
+    return p.get('embed') === '1' && p.get('ai') !== '0';
+  } catch (e) { return false; }
 })();
 const CONTRACT_URL = AIOPS_PROXY
   ? new URL('api/agent/openapi.json', document.baseURI).href

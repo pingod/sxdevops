@@ -599,7 +599,8 @@ onLocaleChange(() => {
 });
 
 /* 自动化/回归测试钩子：暴露页面真实模块实例（避免动态 import 因 HMR 查询串产生第二实例）。 */
-if (new URLSearchParams(location.search).get('ai') === '1') import('./agent.js');
+const _aiParams = new URLSearchParams(location.search);
+if (_aiParams.get('ai') !== '0' && (_aiParams.get('ai') === '1' || _aiParams.get('embed') === '1')) import('./agent.js');
 
 initPlatformBridge(); // 平台 iframe：握手、项目库加载/保存、脏标记
 

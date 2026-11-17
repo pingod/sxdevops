@@ -146,9 +146,13 @@ function initResize() {
   });
 }
 
-const AI_ENABLED = (() => {
-  try { return new URLSearchParams(location.search).get('ai') === '1'; } catch (e) { return false; }
+// AI 建模随平台「三维机房设计」提供：embed=1 时启用；独立工作台用 ?ai=1 显式打开。
+const AI_PARAMS = (() => {
+  try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(); }
 })();
+const AI_ENABLED = AI_PARAMS.get('ai') !== '0'
+  && (AI_PARAMS.get('embed') === '1' || AI_PARAMS.get('ai') === '1');
+const AI_AUTO_OPEN = AI_PARAMS.get('ai') === '1';
 
 export function initSidebar() {
   if (initialized) return;
@@ -187,7 +191,7 @@ export function initSidebar() {
   }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   initResize();
   if (!AI_ENABLED) {
-    // AI 建模已拆到 AIOps「AI 机房建模」：普通设计器不加载/不显示 AI 入口
+    // 独立/离线模式不加载 AI：平台「三维机房设计」内嵌时启用（embed=1）
     const btn = document.getElementById('btn-ai');
     if (btn) btn.style.display = 'none';
     const tabAi = document.getElementById('tab-ai');
@@ -195,5 +199,5 @@ export function initSidebar() {
     if (tab === 'ai') tab = 'props';
   }
   render(); // 刷新恢复不广播 ai-enter，保留用户显式展开的左栏
-  if (AI_ENABLED) setTimeout(() => selectSidebarTab('ai', { focus: true }), 0);
+  if (AI_AUTO_OPEN) setTimeout(() => selectSidebarTab('ai', { focus: true }), 0);
 }

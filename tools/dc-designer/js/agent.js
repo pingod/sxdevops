@@ -801,8 +801,15 @@ async function pollLoop() {
   }
 }
 
-console.info('[agent] AI Agent 指令执行器已启动（/api/agent/*）');
-pollLoop();
+// 平台内嵌模式（embed=1）不跑外部指令长轮询：平台只托管静态资源与 AIOps 代理，
+// 没有 /api/agent/*；AI 面板直接调用页内 exec，不依赖该通道。
+const PLATFORM_EMBED = (() => {
+  try { return new URLSearchParams(location.search).get('embed') === '1'; } catch (e) { return false; }
+})();
+if (!PLATFORM_EMBED) {
+  console.info('[agent] AI Agent 指令执行器已启动（/api/agent/*）');
+  pollLoop();
+}
 
 /* 真实用户交互自动接管：可信输入（点击/按键/滚轮/触摸）= 用户正在操作本页面，
  * 自动显式接管并锁定 AI 指令路由（每事件最多 20s 一次）。Agent 自开的无头/隐藏页面
@@ -824,8 +831,10 @@ async function autoClaim() {
     }
   } catch (e) { /* 服务不可达时静默（离线编辑不受影响） */ }
 }
-for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
-  window.addEventListener(ev, () => { if (!document.hidden) autoClaim(); }, { passive: true });
+if (!PLATFORM_EMBED) {
+  for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(ev, () => { if (!document.hidden) autoClaim(); }, { passive: true });
+  }
 }
 
 /* ---------- AI 功能入口（顶栏按钮 → 内置 AI 建模(试验) 面板，见 public/js/ai/） ----------

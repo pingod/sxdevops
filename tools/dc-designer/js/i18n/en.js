@@ -710,7 +710,7 @@ export const en = {
   'ai.executed': '{n} AI command(s) executed this session',
 
   /* ---------- AI modeling (experimental) panel, built-in model service ---------- */
-  'aip.btn.t': 'AI modeling (experimental): describe a data hall in words (bring your own API key)',
+  'aip.btn.t': 'AI modeling (experimental): describe a data hall in words',
   'aip.title': 'AI modeling (experimental)',
   'aip.welcome': 'Describe the data hall in one sentence, e.g. "Build a 14×9.6 m room with 4 rows × 12 cabinets and an enclosed 1.2 m cold aisle". You can also keep chatting to revise: "widen the hot aisle to 1 m", "duplicate row A". Use 📎 to upload / paste / drop "notes, cabinet lists, CSV or a photo" — text goes straight into the context, images are sent as multimodal content to a vision-capable model.',
   'aip.placeholder': 'Describe the data hall, or type a change request… (Enter to send, Shift+Enter for a new line)',

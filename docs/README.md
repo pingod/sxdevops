@@ -50,7 +50,7 @@ vendored 子系统（原 IDCBoxLine，MPL-2.0），平台入口「数据机房 �
 | 文档 | 内容 |
 | --- | --- |
 | [AIOps 架构与运行机制](AIOps-LangGraph-试点说明.md) | LangGraph、工具、任务确认、恢复与执行审计 |
-| [AI 机房建模](AIOps-AI机房建模.md) | 自然语言建模、AIOps 模型代理、审计与常见问题 |
+| [AI 机房建模](AIOps-AI机房建模.md) | 三维机房设计内的自然语言建模、AIOps 模型代理、审计与常见问题 |
 | [问答类型与 Skills](AIOps-问答能力与Skills.md) | 六类入口、十三个内置 Skill、MCP 关联与兼容 |
 | [处置效果验证](AIOps-处置效果验证.md) | 告警基线、实际任务、观察窗口与判定边界 |
 | [前端主题](frontend-theme.md) | 三套主题、配色实现及适配验证 |
