@@ -1,9 +1,9 @@
 /**
  * API 基址解析（零依赖）——让前端在「反代子路径」部署下也能找到本机服务。
  *
- * 背景：在线版部署在 https://cloud.nvisual.com/designer/（NGINX 把 /designer/ 转发到本机
+ * 背景：在线版部署在 部署路径（NGINX 把 /designer/ 转发到本机
  * 3999 端口的 idc-2d-modeler）。若前端把接口写成绝对路径 '/api/...'，浏览器会把请求发到
- * 站点根（https://cloud.nvisual.com/api/...）→ 404 → AI 面板误判「本机服务不可用」，
+ * 站点根（https://部署域名/api/...）→ 404 → AI 面板误判「本机服务不可用」，
  * 退化成浏览器直连模型（被 CORS 拦截），并弹出 /api/ai 不可用的黄条提示。
  *
  * 解析优先级：

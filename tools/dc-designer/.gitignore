@@ -1,5 +1,6 @@
 node_modules/
 dist/
+public/inspect/
 .ref/
 test/parity/out/
 test/e2e-out/

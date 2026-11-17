@@ -693,7 +693,7 @@ async function applyEmbeddedProject(raw) {
   mountUIOnce();
   installKeysOnce();
   refresh();
-  document.title = `${project.name || ''} · DCDesigner 3D`;
+  document.title = `${project.name || ''} · 机房三维`;
   hideMsg();
 }
 
@@ -766,7 +766,7 @@ async function boot() {
     mountUI();
     applyInitialView(params);
     installKeys();
-    document.title = `${V.runtime().project.name || ''} · DCDesigner 3D`;
+    document.title = `${V.runtime().project.name || ''} · 机房三维`;
     hideMsg();
     urlCtl = { sync: syncUrl, current: capture };
     window.__dcxd = makeDebugApi();

@@ -1,5 +1,5 @@
 /**
- * AI Agent 指令执行器（页内）—— WorkBuddy 等外部 Agent 远程驱动编辑器
+ * AI Agent 指令执行器（页内）—— 外部 Agent 远程驱动编辑器
  *
  * 工作原理：长轮询服务端 /api/agent/next 领取指令 → 调用页内现有导出函数
  * （state/tools/collision/aislelink…）真实执行 → POST /api/agent/done 回传结果。

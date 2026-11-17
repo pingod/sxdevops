@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DCDesigner</title>
-<link rel="icon" type="image/x-icon" href="favicon.ico">
-<link rel="apple-touch-icon" href="logo.svg">
+<title>机房设计器</title>
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/sidebar.css">
 <link rel="stylesheet" href="css/inspect.css">
 </head>
 <body>
 <header class="tb">
-  <a class="brand" href="https://www.nvisual.com/" target="_blank" rel="noopener noreferrer" title="访问 nVisual 官网 www.nvisual.com（在新窗口打开）" data-i18n-title="app.brand.t"><img class="logo" src="logo.svg" alt="DCDesigner"><span data-i18n="app.title">DCDesigner</span></a>
+  <span class="brand"><span data-i18n="app.title">机房设计器</span></span>
   <div class="tb-menu">
   <div class="group">
     <button id="btn-new" title="新建项目" data-i18n-title="btn.new"><i data-ic="new"></i></button>
@@ -39,21 +37,18 @@
       <button id="btn-dxf" role="menuitem" title="导出 DXF 图纸（CAD 1:1 毫米图，AutoCAD/中望/浩辰可打开，按类型分图层）" data-i18n-title="btn.dxf"><i data-ic="dxf"></i><span data-i18n="exp.dxf">DXF 图纸</span><b data-i18n="exp.dxf.d">1:1 毫米 CAD 图</b></button>
       <button id="btn-csv" role="menuitem" title="导出 CSV 工程量清单（Excel/WPS 直接打开：数量汇总 + 设备明细）" data-i18n-title="btn.csv"><i data-ic="csv"></i><span data-i18n="exp.csv">CSV 清单</span><b data-i18n="exp.csv.d">汇总 + 设备明细</b></button>
     </div>
-    <!-- 提交到 nVisual Studio：把机房成果（房间/机柜/列头柜/UPS/蓄电池/空调/消防/桥架/门窗…）回传资源库，见 js/nvsubmit.js -->
-    <button id="btn-sync-nvisual" title="提交当前机房设计/工勘数据到nVisual Studio资源管理平台，实现资源统一管理、分析、仿真等业务" data-i18n-title="btn.nv.t"><i data-ic="nvisual-upload"></i><span data-i18n="btn.nv">提交nVisual Studio</span></button>
   </div>
   <div class="group">
     <button id="btn-wizard" class="active" title="显示/隐藏工勘向导" data-i18n-title="btn.wizard"><i data-ic="clipboard"></i></button>
     <button id="btn-check" title="合规自检：按规则集校验设计（净距/电力/制冷/消防/承重/土建），生成校验报告" data-i18n-title="btn.check"><i data-ic="check"></i></button>
-    <button id="btn-ai" title="AI 建模(试验)：用中文描述即可生成机房（内置 DeepSeek，需填自己的 API Key）" data-i18n-title="aip.btn.t"><i data-ic="ai"></i></button>
+    <button id="btn-ai" title="AI 建模(试验)：用中文描述即可生成机房（需填自己的 API Key）" data-i18n-title="aip.btn.t"><i data-ic="ai"></i></button>
   </div>
   </div>
   <div class="tb-right">
-    <select id="lang-sel" class="lang-sel" title="语言 / Language / اللغة / Idioma">
+    <select id="lang-sel" class="lang-sel" title="语言 / Language">
       <option value="zh-CN">中</option>
       <option value="en">EN</option>
     </select>
-    <a class="btn tb-feedback" href="https://www.nvisual.com/" target="_blank" rel="noopener noreferrer" title="问题反馈，或进一步了解资产与线缆管理解决方案，在新窗口打开" data-i18n-title="btn.feedback.t"><i data-ic="feedback"></i></a>
   </div>
 </header>
 <main>

@@ -1,7 +1,7 @@
 /**
  * 指令名纠错提示（UNKNOWN_TOOL 自纠错）—— 纯函数、零依赖，node 可直接单测
  *
- * 背景：模型（内置 AI 面板 / WorkBuddy 等外部 Agent）偶尔会按「<对象>.create」的习惯
+ * 背景：模型（内置 AI 面板 / 外部 Agent）偶尔会按「<对象>.create」的习惯
  * 编出并不存在的指令名（如 ac.create / cabinet.create / 空调.create），页内指令层只按
  * HANDLERS 白名单查表，于是回一条 UNKNOWN_TOOL。本模块把这条拒收文案变成**可照做的自纠错**：
  *   1) 由调用方传入的合法指令名单（Object.keys(HANDLERS)，唯一事实来源，不在此复制）
@@ -9,7 +9,7 @@
  *   2) 对常见误名猜出「它真正想做什么」，给一句可直接照抄的正确调用。
  *
  * **只提示、不改名转发**：纠正由调用方（模型）重新下发合法指令完成。本地不做工具名映射，
- * 避免出现第二套事实来源（见 docs/DeepSeek-文字描述建模-方案.md §4 第 4 条）。
+ * 避免出现第二套事实来源（见 内部设计文档 §4 第 4 条）。
  */
 
 /** obj.add 的 type 取值（与 public/js/agent.js 的 obj.add、契约 ObjAddArgs.type 一致） */

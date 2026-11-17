@@ -1,7 +1,7 @@
 /**
  * 项目数据清洗（3D 场景的唯一数据来源）。
  *
- * 规则与原 DCDesigner 导出一致：
+ * 规则与导出项目一致：
  *   - 丢弃缺 id/type 的对象；
  *   - 门窗/格栅随墙剔除（墙体不存在时一并移除）；
  *   - 坐标/尺寸/电气参数强制转型，非负物理量夹到 ≥0；
@@ -35,7 +35,7 @@ const NONNEG_PROPS = new Set(NUM_PROPS.filter(k => k !== 'temp' && k !== 'return
  */
 export function sanitize(p) {
   if (!p || !Array.isArray(p.objects)) {
-    throw new Error('不是有效的 DCDesigner 项目数据（缺少 objects 数组）');
+    throw new Error('不是有效的项目数据（缺少 objects 数组）');
   }
   p.objects = p.objects.filter(o => o && o.id && o.type);
   const ids = new Set(p.objects.map(o => o.id));

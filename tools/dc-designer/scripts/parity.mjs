@@ -60,7 +60,7 @@ async function boot(page, url) {
 
 async function loadFixture(page, project) {
   await page.evaluate(async (p) => {
-    const m = await import(new URL('js/state.js', document.baseURI).href);
+    const m = window.__dcd || await import(new URL('js/state.js', document.baseURI).href);
     const copy = JSON.parse(JSON.stringify(p));
     m.sanitize(copy);
     m.state.project = copy;
@@ -80,7 +80,7 @@ async function selectFirstCabinet(page) {
     const cv = document.getElementById('cv');
     const r = cv.getBoundingClientRect();
     // 通过动态 import 读取实时 state（与参考站同路径）
-    return import(new URL('js/state.js', document.baseURI).href).then(m => {
+    return Promise.resolve(window.__dcd || import(new URL('js/state.js', document.baseURI).href)).then(m => {
       const o = m.state.project.objects.find(x => x.type === 'cabinet');
       if (!o) return false;
       const v = m.state.view;
@@ -99,7 +99,7 @@ async function selectFirstCabinet(page) {
 async function applyState(page, state) {
   if (state.id === 'empty') {
     await page.evaluate(async () => {
-      const m = await import(new URL('js/state.js', document.baseURI).href);
+      const m = window.__dcd || await import(new URL('js/state.js', document.baseURI).href);
       m.newProject('未命名机房');
       m.markDirty({ dirty: false });
       m.ui.fit();
@@ -139,6 +139,14 @@ function diffPng(aPath, bPath, kind) {
   const a = PNG.sync.read(fs.readFileSync(aPath));
   const b = PNG.sync.read(fs.readFileSync(bPath));
   if (a.width !== b.width || a.height !== b.height) return { ratio: 1, reason: 'size' };
+  // 去标识化是有意差异：顶栏品牌/按钮（0–51px）不参与像素对比
+  for (const img of [a, b]) for (let y = 0; y < Math.min(51, a.height); y++) {
+    for (let x = 0; x < a.width; x++) {
+      const i = (y * a.width + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 233;
+      img.data[i + 3] = 255;
+    }
+  }
   if (kind === '3d') {
     // 屏蔽本地新增的「检视」按钮（右下角）
     const x0 = a.width - 130, y0 = a.height - 60;

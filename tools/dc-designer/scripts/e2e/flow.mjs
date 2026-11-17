@@ -26,8 +26,8 @@ const step = async (name, fn) => {
 };
 
 let projectState = null;
-const readState = () => page.evaluate(async () => {
-  const m = await import(new URL('js/state.js', document.baseURI).href);
+const readState = () => page.evaluate(() => {
+  const m = window.__dcd;
   return {
     n: m.state.project.objects.length,
     types: [...new Set(m.state.project.objects.map(o => o.type))],
@@ -48,6 +48,13 @@ try {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#cv');
     await page.waitForTimeout(800);
+    await page.waitForFunction(() => !!window.__dcd);
+    await page.evaluate(() => {
+      const m = window.__dcd;
+      m.newProject('未命名机房');
+      m.flushDraft();
+    });
+    await page.waitForTimeout(300);
     await page.evaluate(() => {
       const b = [...document.querySelectorAll('[data-m]')].find(x => x.dataset.m === 'blank');
       if (b) b.click();
@@ -55,7 +62,7 @@ try {
       s.value = 'zh-CN'; s.dispatchEvent(new Event('change', { bubbles: true }));
     });
     await page.waitForTimeout(400);
-    assert((await page.title()) === 'DCDesigner', 'title');
+    assert((await page.title()) === '机房设计器', 'title');
   });
 
   await step('wizard room (12000x9000)', async () => {
@@ -90,8 +97,8 @@ try {
   });
 
   await step('select + props + undo', async () => {
-    const pt = await page.evaluate(async () => {
-      const m = await import(new URL('js/state.js', document.baseURI).href);
+    const pt = await page.evaluate(() => {
+      const m = window.__dcd;
       const o = m.state.project.objects.find(x => x.type === 'cabinet');
       const r = document.getElementById('cv').getBoundingClientRect();
       const v = m.state.view;
@@ -100,10 +107,7 @@ try {
     await page.evaluate(() => document.querySelector('[data-tool="select"]').click());
     await page.mouse.click(pt.x, pt.y);
     await page.waitForTimeout(350);
-    const sel = await page.evaluate(async () => {
-      const m = await import(new URL('js/state.js', document.baseURI).href);
-      return m.state.selectedIds;
-    });
+    const sel = await page.evaluate(() => window.__dcd.state.selectedIds);
     assert(sel.length === 1, 'one object selected');
     const before = (await readState()).undo;
     await page.keyboard.press('r');
@@ -173,12 +177,10 @@ try {
     await page.evaluate(() => { const s = document.getElementById('lang-sel'); s.value = 'en'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page.waitForTimeout(500);
     assert((await page.evaluate(() => document.documentElement.lang)) === 'en', 'lang=en');
-    await page.evaluate(async () => {
-      const m = await import(new URL('js/state.js', document.baseURI).href);
-      m.flushDraft();
-    });
+    await page.evaluate(() => window.__dcd.flushDraft());
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#cv', { state: 'attached' });
+    await page.waitForFunction(() => !!window.__dcd);
     await page.waitForTimeout(1500);
     const s = await readState();
     assert(s.cabs === 48, `draft restored cabinets=${s.cabs}`);

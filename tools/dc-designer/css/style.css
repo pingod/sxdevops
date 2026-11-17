@@ -656,18 +656,6 @@ body:not(.mode3d) main.phide #btn-3d { right: 46px; /* 面板收起后 × 留在
 .ld-bar { width: 100%; height: 6px; background: #e9edf3; border-radius: 3px; overflow: hidden; }
 .ld-fill { height: 100%; width: 0; background: #1abc9c; border-radius: 3px; transition: width .2s ease; }
 
-/* 新版本提醒弹窗（骨架复用 .wz-overlay/.wz-modal，见 update.js） */
-.wz-modal.upd-modal { width: 570px; } /* 比欢迎弹窗宽 1.5 倍（380→570） */
-.wz-modal .upd-meta { font-size: 12px; color: #999; margin-bottom: 10px; }
-.wz-modal .upd-notes {
-  max-height: 160px; overflow: auto; margin-bottom: 12px; padding: 8px 10px;
-  background: #f7f9fa; border: 1px solid #e3e8ee; border-radius: 6px;
-  font-size: 13px; color: #444; line-height: 1.7; white-space: pre-wrap;
-}
-.wz-modal .upd-tip { font-size: 12px; color: #999; margin-bottom: 14px; }
-.wz-modal .upd-actions { display: flex; gap: 10px; }
-.wz-modal .upd-actions button { margin-bottom: 0; text-align: center; }
-
 /* AI 接入引导弹窗（骨架复用 .wz-overlay/.wz-modal，见 agent.js） */
 .wz-modal.ai-modal { width: 520px; }
 .ai-modal .ai-urlrow { display: flex; gap: 6px; margin: 4px 0 12px; }
@@ -979,72 +967,3 @@ body:not(.mode3d) main.phide #btn-3d { right: 46px; /* 面板收起后 × 留在
 .aip-step-row.fail .aip-step-ic { color: #d9534f; }
 .aip-step-row.fail .aip-step-text { color: #b3261e; }
 .aip-step-text { flex: 1; min-width: 120px; }
-
-/* 提交到 nVisual Studio 对话框（骨架复用 .wz-overlay/.wz-modal，见 js/nvsubmit.js） */
-.wz-modal.nv-modal { width: 560px; max-height: 86vh; overflow-y: auto; }
-.nv-modal h2 { display: flex; align-items: center; gap: 8px; }
-.nv-modal h2 svg.ic { width: 20px; height: 20px; color: #1abc9c; }
-.nv-form { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 2px; }
-.nv-form label { display: flex; flex-direction: column; gap: 4px; }
-.nv-form label > span { font-size: 12px; color: #5b6b78; font-weight: 600; }
-.nv-form input {
-  width: 100%; padding: 7px 9px; border: 1px solid #d5dbdb; border-radius: 6px; outline: none;
-  font-size: 13px; color: #2c3e50; background: #fff;
-  direction: ltr; text-align: left; /* 平台地址与 API Key 恒为从左到右（RTL 语言下同样可读） */
-}
-.nv-form input:focus { border-color: #1abc9c; }
-.nv-stats { background: #f7f9fb; border: 1px solid #e3e8ee; border-radius: 6px; padding: 8px 10px; margin: 10px 0; }
-.nv-stats > b { display: block; font-size: 12px; color: #5b6b78; margin-bottom: 4px; }
-.nv-srow {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-size: 12px; line-height: 1.9; color: #55606c;
-}
-.nv-srow i { font-style: normal; color: #2c3e50; font-variant-numeric: tabular-nums; text-align: right; }
-.nv-kinds {
-  border-top: 1px dashed #e0e6ed; margin-top: 5px; padding-top: 5px;
-  font-size: 11px; color: #8a97a5; line-height: 1.7;
-}
-.nv-note { font-size: 11px; color: #98a4b0; line-height: 1.7; margin-bottom: 8px; }
-.nv-err {
-  font-size: 12px; color: #c0392b; background: #fdf2f1; border: 1px solid #f2d7d5;
-  border-radius: 5px; padding: 7px 9px; margin-bottom: 8px; line-height: 1.6;
-}
-.nv-err[hidden] { display: none; }
-/* 目标视图非空（平台防覆盖守卫）：不是接口故障，用黄底说明 + 可操作办法 */
-.nv-err.nv-err-busy { color: #8a6d3b; background: #fdf9ec; border-color: #f0e0b8; }
-.nv-err .nv-busy b { display: block; margin-bottom: 4px; }
-.nv-busy p { margin: 0 0 6px; line-height: 1.7; }
-.nv-busy-raw { font-size: 11px; color: #98a4b0; line-height: 1.6; word-break: break-word; }
-/* .wz-modal button 默认 width:100%/text-align:left 是给向导列表项用的，此处按按钮语义覆盖 */
-.nv-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.nv-actions button {
-  display: inline-block; width: auto; margin-bottom: 0; padding: 9px 14px;
-  text-align: center; white-space: nowrap;
-}
-.nv-actions .nv-ghost { border-color: #d5dbdb; color: #667684; }
-.nv-actions .nv-ghost:hover:not(:disabled) { background: #f2f4f6; }
-.nv-actions .nv-primary { min-width: 96px; background: #1abc9c; border-color: #1abc9c; color: #fff; font-weight: 600; }
-.nv-actions .nv-primary:hover:not(:disabled) { background: #16a085; border-color: #16a085; }
-.nv-actions button:disabled { opacity: .5; cursor: default; }
-/* 提交中动效：省略号逐点跳动（三点依次亮起；只改透明度不改宽度，按钮不抽动） */
-.nv-dots { display: inline-block; margin-left: 1px; }
-.nv-dots i { font-style: normal; opacity: .3; animation: nv-dot 1.2s ease-in-out infinite; }
-.nv-dots i:nth-child(2) { animation-delay: .2s; }
-.nv-dots i:nth-child(3) { animation-delay: .4s; }
-@keyframes nv-dot { 0%, 65%, 100% { opacity: .3; } 30% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .nv-dots i { animation: none; opacity: 1; } }
-.nv-done { text-align: center; padding: 8px 0 2px; color: #2c3e50; }
-.nv-done svg.ic { width: 32px; height: 32px; color: #1abc9c; }
-.nv-done > p { margin: 4px 0 10px; font-weight: 600; }
-.nv-done .nv-srow { text-align: left; }
-/* 提交内容预览里的「平台暂不支持的类型」提示 */
-.nv-warn {
-  border-top: 1px dashed #e0e6ed; margin-top: 5px; padding-top: 5px;
-  font-size: 11px; color: #b9770e; line-height: 1.7;
-}
-/* 导入结果的跳过项 / 警告明细（结果区整体居中，明细左对齐便于阅读） */
-.nv-skip {
-  text-align: left; margin-top: 8px; padding-top: 6px;
-  border-top: 1px dashed #e0e6ed; font-size: 11px; color: #8a97a5; line-height: 1.7;
-}
-.nv-skip > b { display: block; color: #e67e22; font-size: 12px; margin-bottom: 2px; }

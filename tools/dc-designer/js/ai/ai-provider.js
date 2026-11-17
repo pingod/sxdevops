@@ -9,7 +9,7 @@
  * 探测本机服务用 GET /api/ai/status（只回 {proxy, timeoutMs}，不含任何凭据信息）。
  *
  * 本地只做网络层的事：超时、429/5xx/网络错误重试 2 次、错误码翻译、用量累计；
- * 不含任何业务判断（见 docs/DeepSeek-文字描述建模-方案.md §7）。
+ * 不含任何业务判断（见 内部设计文档 §7）。
  *
  * 多模态附件的降级：消息里带图片块（user 消息输入框上传/粘贴的图片，见 ai-attach.js）时，
  * 若上游以 400/422 + 图片相关文案拒绝，则判定「该模型不支持视觉」——自动去掉图片块重发一次，
@@ -33,8 +33,8 @@ const STATUS_PATH = '/api/ai/status';
 const CHAT_PATH = '/api/ai/chat';
 const LS_KEY = 'idc2d_ai_key_v1';
 const LS_CFG = 'idc2d_ai_cfg_v1';
-export const AI_DEFAULT_BASE = 'https://api.deepseek.com';
-export const AI_DEFAULT_MODEL = 'deepseek-chat';
+export const AI_DEFAULT_BASE = '';
+export const AI_DEFAULT_MODEL = '';
 const CLIENT_TIMEOUT = 130000;    // 浏览器直连超时（无服务端可参照）
 const PROBE_TIMEOUT = 3000;       // 探测本机服务；离线时别拖慢面板首屏
 const RETRY_DELAYS = [800, 2000]; // 429/5xx/网络错误重试 2 次
@@ -74,7 +74,7 @@ export class AiProvider {
     this.statusUrl = apiUrl(STATUS_PATH); // 面板黄条展示实际探测地址，便于定位反代/子路径问题
     this.timeout = CLIENT_TIMEOUT; // 转发请求超时（探测到服务端超时后取「服务端 + 10s」）
     this.jsonMode = true;     // response_format: json_object（上游不支持时自动关闭并重试）
-    this.noTemp = false;      // 部分模型（如 deepseek-reasoner）不接受 temperature：上游拒绝时自动省略
+    this.noTemp = false;      // 部分推理模型不接受 temperature：上游拒绝时自动省略
     this.noVision = false;    // 上游拒绝图片内容（模型无视觉能力）：改为只发文字，面板会提示用户
     this.lastModel = '';
   }
@@ -139,6 +139,7 @@ export class AiProvider {
       return this.normalize(r);
     }
     if (!lsGet(LS_KEY)) throw new AiError('NO_KEY', '未配置 API Key：请在设置中填写（Key 只存本机浏览器）');
+    if (!this.cfg.baseUrl || !this.cfg.model) throw new AiError('NO_CONFIG', '未配置接口地址或模型：请在设置中填写');
     // 已判定该模型不支持图片：后续请求直接把图片块降级为一行说明，不再反复触发 400
     const msgs = this.noVision ? this.withoutImages(messages) : messages;
     return this.direct ? this.chatDirect(msgs, opts) : this.chatProxy(msgs, opts);

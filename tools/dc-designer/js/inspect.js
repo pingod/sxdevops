@@ -14,14 +14,9 @@
 import { state } from './state.js';
 import { t } from './i18n.js';
 
-const BASE = (() => {
-  if (typeof window !== 'undefined' && window.__DC_INSPECT_URL__) return window.__DC_INSPECT_URL__;
-  const dev = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV;
-  if (dev) {
-    try { return `${location.protocol}//${location.hostname}:5199/`; } catch (e) { /* file:// */ }
-  }
-  return './inspect/index.html';
-})();
+const BASE = (typeof window !== 'undefined' && window.__DC_INSPECT_URL__)
+  ? window.__DC_INSPECT_URL__
+  : './inspect/index.html';
 
 let overlay = null;
 let frame = null;

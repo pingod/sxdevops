@@ -3,16 +3,18 @@
   "private": true,
   "type": "module",
   "version": "1.0.0",
-  "description": "DCDesigner 1:1 standalone clone: local-first 2D data-center editor with embedded 3D and optional services.",
+  "description": "Local-first 2D data-hall CAD editor with embedded 3D and an optional inspection viewer.",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5200",
-    "dev:inspect": "npm --prefix ../dc-viewer run dev",
-    "build": "vite build && node scripts/build-inspect.mjs",
+    "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5200",
     "fixtures": "node scripts/make-fixtures.mjs",
     "test": "node --test test/",
     "e2e": "node scripts/e2e/flow.mjs",
-    "parity": "node scripts/parity.mjs"
+    "parity": "node scripts/parity.mjs",
+    "predev": "node scripts/build-inspect.mjs",
+    "prebuild": "node scripts/build-inspect.mjs",
+    "build:inspect": "node scripts/build-inspect.mjs"
   },
   "dependencies": {
     "three": "0.185.1"

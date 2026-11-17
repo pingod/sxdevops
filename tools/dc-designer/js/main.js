@@ -2,6 +2,7 @@
 import {
   state, runtime, ui, newProject, markDirty, pushUndo,
   undo, redo, deleteObjects, loadDraft, flushDraft, flushLastProps, getObj, sanitize, isDraftSaved,
+  undoDepth,
 } from './state.js';
 import { pipeGeometry } from './pipe-geometry.js';
 import { pipeVisible } from './pipe-tools.js';
@@ -16,13 +17,11 @@ import { hydrateIcons } from './icons.js';
 import { initTooltip } from './tooltip.js';
 import { initViewer3D, is3DActive, enter3D, exit3D, exportFullPNG as exportFullPNG3D, applyView3D, view3DInfo, toggleStyle, refreshStyleI18n, toggleLabels, refreshLabelsI18n } from './3d/viewer3d.js';
 import { dismissIsolateMenu, isIsolated, clearIsolate, refreshIsolateI18n } from './3d/isolate3d.js';
-import { initUpdateCheck } from './update.js';
 import { exportDXF } from './dxf.js';
 import { exportCSV } from './csv.js';
 import { initI18n, onLocaleChange, isDefaultName, t } from './i18n.js';
 import * as ctxmenu from './ctxmenu.js';
 import { initExportMenu } from './exportmenu.js';
-import { initNvSubmit } from './nvsubmit.js';
 import { loadUI, patchUI, flushUI } from './uistate.js';
 import { initSidebar } from './sidebar.js';
 
@@ -537,7 +536,6 @@ initSidebar(); // 统一右栏：恢复属性/AI 标签、收起状态和宽度
 hydrateIcons(); // 静态工具栏/工具条图标注入 SVG
 initTooltip();  // 即时提示浮层（替代慢速的原生 title）
 initExportMenu(); // 导出合并入口：顶栏「导出」下拉菜单（PNG / DXF / CSV 三项，按钮 id 不变）
-initNvSubmit(); // 提交到 nVisual Studio：顶栏「导出」右侧按钮 + 提交对话框（见 js/nvsubmit.js）
 initViewer3D(); // 3D 查看器（右上角 2D/3D 切换）
 resize();
 // 恢复本地草稿：刷新页面不丢数据（草稿=未保存的修改，自动缓存于 localStorage）
@@ -560,7 +558,6 @@ livecheck.initLivecheck(); // 实时布局检查：编辑防抖后自动跑重�
 // 此处画布尺寸已稳定：还原用与快照一致的宽度，刷新后视野中心/缩放完全固定。
 // （页面的第一次绘制在本段同步代码之后才发生，故无需在面板初始化前先 fitView 一遍）
 if (savedView2D) { restoreView2D(savedView2D); doRender(); } else fitView();
-initUpdateCheck(); // 新版本发布提醒：延迟数秒静默检查，发现新版本才弹窗
 if (draftRestored) {
   if (isDraftSaved()) { // 草稿=已保存内容（保存/打开成功后刷新）：按干净项目静默恢复，不再误报“未保存”
     state.dirty = false;
@@ -594,6 +591,12 @@ onLocaleChange(() => {
     refreshLabelsI18n();         // 机柜编号浮标按钮文案随语言更新
   }
   doRender();                    // 画布标签（原点/通道/桥架标注等）
+});
+
+/* 自动化/回归测试钩子：暴露页面真实模块实例（避免动态 import 因 HMR 查询串产生第二实例）。 */
+window.__dcd = Object.freeze({
+  state, runtime, ui, newProject, markDirty, sanitize, undoDepth, flushDraft, loadDraft,
+  tools, render: () => doRender(),
 });
 
 // 3D 视角恢复：刷新前就在 3D 视图里 → 重新进入 3D 并回到原视角（角度/距离/目标点）。

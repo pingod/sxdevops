@@ -11,10 +11,10 @@ const values = {
 export const pipeDicts = Object.fromEntries(Object.entries(values).map(([lang, vs]) => [ lang, {
   ...Object.fromEntries(keys.map((k, i) => [ 'pipe.' + k, vs[i] ])),
   'pipe.platformWarning': {
-    'zh-CN': '平台能力未确认：液冷 pipe 的双端标高、尺寸与颜色尚未与 nVisual 渲染接口联调。原始 JSON 可随项目上传，不表示平台能显示管道；请保留本地 JSON/PNG/DXF/CSV。',
-    en: 'Platform capability unconfirmed: pipe elevations, sizes and colours have not been integrated with nVisual rendering. Uploading the original project JSON does not mean pipes can be displayed there. Keep local JSON/PNG/DXF/CSV.',
-    ar: 'دعم المنصة غير مؤكد: لم يتم ربط مناسيب الأنابيب وأبعادها وألوانها مع عرض nVisual. رفع JSON لا يعني إمكانية عرض الأنابيب. احتفظ بالملفات المحلية.',
-    es: 'Capacidad de la plataforma sin confirmar: cotas, dimensiones y colores de pipe no están integrados con nVisual. Subir JSON no garantiza su visualización. Conserve JSON/PNG/DXF/CSV locales.'
+    'zh-CN': '平台能力未确认：液冷 pipe 的双端标高、尺寸与颜色尚未与 远端渲染接口联调。原始 JSON 可随项目上传，不表示平台能显示管道；请保留本地 JSON/PNG/DXF/CSV。',
+    en: 'Platform capability unconfirmed: pipe elevations, sizes and colours have not been integrated with the remote renderer. Uploading the original project JSON does not mean pipes can be displayed there. Keep local JSON/PNG/DXF/CSV.',
+    ar: 'دعم المنصة غير مؤكد: لم يتم ربط مناسيب الأنابيب وأبعادها وألوانها مع العرض البعيد. رفع JSON لا يعني إمكانية عرض الأنابيب. احتفظ بالملفات المحلية.',
+    es: 'Capacidad de la plataforma sin confirmar: cotas, dimensiones y colores de pipe no están integrados con el renderizador remoto. Subir JSON no garantiza su visualización. Conserve JSON/PNG/DXF/CSV locales.'
   }[lang],
   'type.pipe': lang === 'zh-CN' ? '液冷管' : lang === 'ar' ? 'أنبوب سائل' : lang === 'es' ? 'Tubería' : 'Liquid pipe',
   'auto.pipe': lang === 'zh-CN' ? '液冷管' : 'LC',
