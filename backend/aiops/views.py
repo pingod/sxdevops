@@ -2018,7 +2018,7 @@ def modeling_chat(request):
             'purpose': 'ai_modeling',
             'provider': provider.name,
             'model': meta.get('resolved_model') or provider.default_model,
-            'total_tokens': usage.get('total_tokens') or 0,
+            'usage': {'total': usage.get('total_tokens') or 0},
             'status': 'success',
         },
     )

@@ -306,13 +306,13 @@ def dc_viewer_app(request, path=''):
 
 def dc_designer_app(request, path=''):
     """托管机房 CAD 设计器构建产物（含 inspect/ 检视子应用）。"""
-    rel = (path or '').strip('/')
-    if not rel:
-        rel = 'index.html'
-    elif rel.endswith('/') or (DESIGNER_DIST_DIR / rel).is_dir():
-        rel = rel.rstrip('/') + '/index.html'
     if not (DESIGNER_DIST_DIR / 'index.html').is_file():
         raise Http404('机房设计器未构建：请在 tools/dc-designer 执行 npm install && npm run build')
+    rel = (path or '').strip('/')
+    if not rel:
+        return _viewer_file('index.html', 'no-cache, no-store, must-revalidate', DESIGNER_DIST_DIR)
+    if rel.endswith('/') or (DESIGNER_DIST_DIR / rel).is_dir():
+        rel = rel.rstrip('/') + '/index.html'
     suffix = Path(rel).suffix.lower()
     cache_control = 'public, max-age=31536000, immutable' if suffix in IMMUTABLE_SUFFIXES else 'no-cache'
     return _viewer_file(rel, cache_control, DESIGNER_DIST_DIR)

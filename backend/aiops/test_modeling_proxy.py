@@ -48,7 +48,7 @@ class AIOpsModelingProxyTests(TestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.metadata.get('purpose'), 'ai_modeling')
         self.assertEqual(event.metadata.get('provider'), 'modeling-provider')
-        self.assertEqual(event.metadata.get('total_tokens'), 3)
+        self.assertEqual(event.metadata.get('usage', {}).get('total'), 3)
 
     def test_proxy_failure_is_audited_as_failed(self):
         with mock.patch('aiops.views.run_modeling_chat', side_effect=AIOpsModelCallError('模型未配置')):
