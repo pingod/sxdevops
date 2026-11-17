@@ -20,3 +20,10 @@ Python 包附带的许可文件由 pip 安装在对应 `.dist-info` 目录，发
 ## Vendored 子系统：IDC 上架布线引擎（planning/）
 
 `planning/` 目录整体引入自 NetMon-Agent-Platform（原独立项目 IDCBoxLine），遵循 **MPL-2.0**（文件级 copyleft），与项目其余部分的 MIT 许可互不影响。上游仓库未附 LICENSE 文件，`planning/LICENSE` 为 MPL-2.0 官方标准文本，依据上游 README 的许可声明适用。本地修改（认证接入、主题联动、构建配置）逐文件记录在 `planning/NOTICE.md`；对外分发时这些文件须以源码形式提供（MPL-2.0 §3），本仓库随源码分发即满足该要求。引擎 Python 依赖（FastAPI、SQLAlchemy、openpyxl 等）按 `planning/backend/pyproject.toml` 钉版安装，各自许可随 `.dist-info` 保留。
+
+
+## 参考前端与素材（tools/dc-designer）
+
+`tools/dc-designer` 是按用户要求对公开数据中心设计器前端进行的独立复刻，随包保留其界面文案、图标、几何常量、样例项目与 AI 指令 OpenAPI 契约，用于行为对照和本地/离线设计。该目录的素材与文案权利归原提供方；对外分发前须自行确认授权。复刻代码不改用其服务端，模型调用在平台内走 AIOps 代理。
+
+`tools/dc-designer/lib/three` 为 three.js r185 的 MIT 许可构建，许可文本见上游 <https://github.com/mrdoob/three.js>；`tools/dc-viewer` 通过 npm 依赖使用同一库。
