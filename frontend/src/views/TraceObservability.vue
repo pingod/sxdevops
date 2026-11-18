@@ -600,6 +600,8 @@ import echarts from '@/lib/echarts'
 import { getObservabilityOverview, getTraceDetail, getTracingCatalog, getTracingDataSources, resolveTraceToGrafana, resolveTraceToLogs, searchTracing } from '@/api/modules/ops'
 import { useAuthStore } from '@/stores/auth'
 import { openRouteInNewTab } from '@/utils/router'
+import { safeHttpUrl } from '@/utils/safe-url'
+import { ElMessage } from 'element-plus'
 import ObservabilityRouteTabs from '@/components/observability/ObservabilityRouteTabs.vue'
 import TracingDataSources from './TracingDataSources.vue'
 
@@ -1672,7 +1674,13 @@ async function refreshAll() {
 
 function openTracingUi() {
   const url = selectedProviderMeta.value?.ui_url || selectedProviderMeta.value?.query_url || selectedProviderMeta.value?.oap_url
-  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+  if (!url) return
+  const safe = safeHttpUrl(url, window.location.origin)
+  if (!safe) {
+    ElMessage.warning('数据源地址无效')
+    return
+  }
+  window.open(safe, '_blank', 'noopener,noreferrer')
 }
 
 async function changeProvider(provider) {

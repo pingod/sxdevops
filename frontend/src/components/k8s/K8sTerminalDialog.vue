@@ -38,6 +38,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { copyText } from '@/utils/clipboard'
+import { fetchWebSocketTicket } from '@/api/modules/rbac'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps({ modelValue: Boolean, kind: { type: String, default: 'pod' }, cluster: { type: Object, required: true }, pod: { type: Object, default: () => ({}) } })
@@ -108,14 +109,23 @@ function disconnect() {
   status.value = 'disconnected'
 }
 
-function reconnect() {
+async function reconnect() {
   if (!props.modelValue) return
   init()
   disconnect()
   terminal?.reset()
   error.value = ''
   status.value = 'connecting'
-  const params = new URLSearchParams({ token: localStorage.getItem('sxdevops_token') || '' })
+  // 每次连接前取一次性短票据：长期 Token 不进入 WS 查询串和访问日志。
+  let ticket = ''
+  try {
+    ticket = (await fetchWebSocketTicket()).ticket || ''
+  } catch {
+    status.value = 'error'
+    error.value = '获取终端票据失败，请重新登录后重试'
+    return
+  }
+  const params = new URLSearchParams({ ticket })
   if (props.kind === 'pod') {
     params.set('pod_name', props.pod.name)
     params.set('namespace', props.pod.namespace || 'default')

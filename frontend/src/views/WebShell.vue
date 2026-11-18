@@ -25,10 +25,10 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { getHost } from '@/api/modules/ops'
+import { fetchWebSocketTicket } from '@/api/modules/rbac'
 
 const route = useRoute()
 const hostId = route.params.hostId
-const token = localStorage.getItem('sxdevops_token') || ''
 const terminalRef = ref(null)
 const hostInfo = ref(null)
 const wsStatus = ref('connecting')
@@ -109,9 +109,18 @@ function initTerminal() {
   resizeObserver.observe(terminalRef.value)
 }
 
-function connectWebSocket() {
+async function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/ws/ssh/${hostId}/?token=${encodeURIComponent(token)}`
+  // 每次连接前取一次性短票据：长期 Token 不进入 WS 查询串和访问日志。
+  let ticket = ''
+  try {
+    ticket = (await fetchWebSocketTicket()).ticket || ''
+  } catch {
+    wsStatus.value = 'error'
+    statusText.value = '获取终端票据失败，请重新登录后重试'
+    return
+  }
+  const wsUrl = `${protocol}//${window.location.host}/ws/ssh/${hostId}/?ticket=${encodeURIComponent(ticket)}`
 
   ws = new WebSocket(wsUrl)
 

@@ -407,6 +407,8 @@ import { ArrowDown, ArrowRight, Coin, DataAnalysis, Finished, List, RefreshRight
 import echarts from '@/lib/echarts'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { scopedCacheKey } from '@/utils/session'
 import {
   getCITypes,
   getConfigItem,
@@ -446,9 +448,15 @@ const taskStatusFilter = ref('')
 const progressForm = reactive({ status: 'in_progress', progress_percent: 0, actual_monthly_saving: undefined, note: '' })
 const costOverviewChartRef = ref(null)
 let costOverviewChart = null
-const costDataCache = new Map()
+const appStore = useAppStore()
+const costDataCache = appStore.costDataCache
 const COST_CACHE_TTL = 5 * 60 * 1000
-const COST_CACHE_PREFIX = 'cmdb-cost-summary:v4:'
+const COST_CACHE_NAME = 'cost-summary:v4'
+
+// 缓存按用户隔离：换账号后不能看到上一个用户的成本数字。
+function costCacheKey(month) {
+  return scopedCacheKey(`${COST_CACHE_NAME}:${month}`, authStore.currentUser?.id)
+}
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const filters = reactive({
   month: currentMonth(),
@@ -556,7 +564,7 @@ function readCostCache(month) {
   const memoryEntry = costDataCache.get(month)
   if (memoryEntry && Date.now() - memoryEntry.cachedAt < COST_CACHE_TTL) return memoryEntry
   try {
-    const entry = JSON.parse(sessionStorage.getItem(`${COST_CACHE_PREFIX}${month}`) || 'null')
+    const entry = JSON.parse(sessionStorage.getItem(costCacheKey(month)) || 'null')
     if (entry && Date.now() - entry.cachedAt < COST_CACHE_TTL) {
       costDataCache.set(month, entry)
       return entry
@@ -568,7 +576,7 @@ function readCostCache(month) {
 function writeCostCache(month, entry) {
   costDataCache.set(month, entry)
   try {
-    sessionStorage.setItem(`${COST_CACHE_PREFIX}${month}`, JSON.stringify(entry))
+    sessionStorage.setItem(costCacheKey(month), JSON.stringify(entry))
   } catch {}
 }
 

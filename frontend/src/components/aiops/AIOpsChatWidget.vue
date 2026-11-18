@@ -731,6 +731,7 @@ import {
 } from '@/api/modules/aiops'
 import botAvatar from '@/assets/aiops-bot.svg'
 import { useAuthStore } from '@/stores/auth'
+import { scopedCacheKey } from '@/utils/session'
 import AIOpsQuestionScope from './AIOpsQuestionScope.vue'
 import AIOpsRemediationVerification from './AIOpsRemediationVerification.vue'
 import { buildQuestionCategories, getQuestionCategory, normalizeQuestionCategory } from '@/utils/aiopsQuestionScope'
@@ -746,7 +747,11 @@ const props = defineProps({
   },
 })
 
-const STORAGE_SESSION_KEY = 'sxdevops_aiops_current_session'
+// 会话 id / 草稿按用户隔离，避免换账号后串到别人的会话。
+function userScopedKey(name) {
+  return scopedCacheKey(name, authStore.currentUser?.id)
+}
+const STORAGE_SESSION_KEY = () => userScopedKey('sxdevops_aiops_current_session')
 const STORAGE_VISIBLE_KEY = 'sxdevops_aiops_visible'
 const STORAGE_ANALYSIS_KEY = 'sxdevops_aiops_analysis_only'
 const STORAGE_QUESTION_CATEGORY_KEY = 'sxdevops_aiops_question_category'
@@ -773,7 +778,7 @@ const bootstrap = ref({ permissions: {}, suggested_questions: [], runtime: {} })
 const sessions = ref([])
 const messages = ref([])
 const composer = ref('')
-const currentSessionId = ref(Number(localStorage.getItem(STORAGE_SESSION_KEY) || '') || null)
+const currentSessionId = ref(Number(localStorage.getItem(STORAGE_SESSION_KEY()) || '') || null)
 const loading = ref({ bootstrap: false, sessions: false, messages: false, send: false, poll: false, deleteSession: null, renameSession: false })
 const pendingAssistantMessage = ref(null)
 const messageListRef = ref(null)
@@ -1816,7 +1821,7 @@ function buildQuestionPayload(raw) {
 }
 
 function getDraftStorageKey(sessionId = currentSessionId.value) {
-  return `${STORAGE_DRAFT_PREFIX}${sessionId || 'default'}`
+  return scopedCacheKey(`${STORAGE_DRAFT_PREFIX}${sessionId || 'default'}`, authStore.currentUser?.id)
 }
 
 function persistDraft(sessionId = currentSessionId.value, value = composer.value) {
@@ -2053,7 +2058,7 @@ function clearCurrentSessionIfMatches(sessionId) {
   if (!sessionId || currentSessionId.value === sessionId) {
     stopMessagePolling()
     currentSessionId.value = null
-    localStorage.removeItem(STORAGE_SESSION_KEY)
+    localStorage.removeItem(STORAGE_SESSION_KEY())
     messages.value = []
     loadDraft(null)
     syncQuestionEnvironment()
@@ -2248,7 +2253,7 @@ async function selectSession(sessionId) {
   cancelSessionTitleEdit()
   currentSessionId.value = sessionId
   syncQuestionEnvironment()
-  localStorage.setItem(STORAGE_SESSION_KEY, String(sessionId))
+  localStorage.setItem(STORAGE_SESSION_KEY(), String(sessionId))
   mobileSessionVisible.value = false
   loading.value.messages = true
   try {
@@ -2292,7 +2297,7 @@ async function ensureSession() {
   const session = await createAIOpsSession({ title: '' })
   sessions.value.unshift(session)
   currentSessionId.value = session.id
-  localStorage.setItem(STORAGE_SESSION_KEY, String(session.id))
+  localStorage.setItem(STORAGE_SESSION_KEY(), String(session.id))
   messages.value = []
   return session.id
 }
@@ -2448,7 +2453,7 @@ async function handleDeleteSession(session) {
     if (currentSessionId.value === session.id) {
       stopMessagePolling()
       currentSessionId.value = null
-      localStorage.removeItem(STORAGE_SESSION_KEY)
+      localStorage.removeItem(STORAGE_SESSION_KEY())
       messages.value = []
       loadDraft(null)
     }

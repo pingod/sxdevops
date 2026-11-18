@@ -1,9 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getCurrentUser, getModuleSettings, login as loginApi, logout as logoutApi } from '@/api/modules/rbac'
-
-const TOKEN_KEY = 'sxdevops_token'
-const USER_KEY = 'sxdevops_user'
+import { TOKEN_KEY, USER_KEY, clearUserCaches } from '@/utils/session'
+import { useAppStore } from '@/stores/app'
 
 function loadStoredUser() {
   try {
@@ -62,6 +61,13 @@ export const useAuthStore = defineStore('auth', () => {
     persistUser(null)
     moduleSettings.value = []
     moduleSettingsLoaded.value = false
+    // 换账号后不能看到上一个用户缓存的成本/日志/草稿数据。
+    clearUserCaches()
+    try {
+      useAppStore().clearCaches()
+    } catch {
+      // store 未就绪时忽略：storage 级缓存已清空。
+    }
   }
 
   async function bootstrap() {

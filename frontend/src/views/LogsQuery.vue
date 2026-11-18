@@ -389,14 +389,19 @@ import echarts from '@/lib/echarts'
 import { ElMessage } from 'element-plus'
 import { getLogDataSources, getLogProviderCatalog, queryLogs, resolveLogToGrafana, resolveLogToTrace } from '@/api/modules/ops'
 import { useAuthStore } from '@/stores/auth'
+import { scopedCacheKey } from '@/utils/session'
 import { openRouteInNewTab } from '@/utils/router'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const LAST_DATASOURCE_KEY = 'logs:last-datasource-id'
-const QUERY_HISTORY_KEY = 'logs:query-history'
-const QUERY_FAVORITES_KEY = 'logs:query-favorites'
+// 按用户隔离：换账号后不能看到上一个用户的查询历史/收藏/默认数据源。
+function userScopedKey(name) {
+  return scopedCacheKey(name, authStore.currentUser?.id)
+}
+const LAST_DATASOURCE_KEY = () => userScopedKey('logs:last-datasource-id')
+const QUERY_HISTORY_KEY = () => userScopedKey('logs:query-history')
+const QUERY_FAVORITES_KEY = () => userScopedKey('logs:query-favorites')
 const DEFAULT_DATASOURCE_NAME = 'SLS 演示（上海）'
 const MAX_HISTORY_ITEMS = 12
 const MAX_FAVORITE_ITEMS = 8
@@ -719,7 +724,7 @@ function formatTimeRangeSummary(range) {
 function getPreferredDatasourceId() {
   const defaultSource = dataSources.value.find((item) => item.is_default)
   if (defaultSource) return defaultSource.id
-  const saved = Number(localStorage.getItem(LAST_DATASOURCE_KEY))
+  const saved = Number(localStorage.getItem(LAST_DATASOURCE_KEY()))
   if (saved && dataSources.value.some((item) => item.id === saved)) return saved
   const shanghai = dataSources.value.find((item) => item.name === DEFAULT_DATASOURCE_NAME)
   if (shanghai) return shanghai.id
@@ -742,26 +747,26 @@ function getDatasourceById(id) {
 }
 
 function persistDatasource(id) {
-  if (id) localStorage.setItem(LAST_DATASOURCE_KEY, String(id))
+  if (id) localStorage.setItem(LAST_DATASOURCE_KEY(), String(id))
 }
 
 function loadSavedQueries() {
   try {
-    historyItems.value = JSON.parse(localStorage.getItem(QUERY_HISTORY_KEY) || '[]')
+    historyItems.value = JSON.parse(localStorage.getItem(QUERY_HISTORY_KEY()) || '[]')
   } catch {
     historyItems.value = []
   }
 
   try {
-    favoriteItems.value = JSON.parse(localStorage.getItem(QUERY_FAVORITES_KEY) || '[]')
+    favoriteItems.value = JSON.parse(localStorage.getItem(QUERY_FAVORITES_KEY()) || '[]')
   } catch {
     favoriteItems.value = []
   }
 }
 
 function persistSavedQueries() {
-  localStorage.setItem(QUERY_HISTORY_KEY, JSON.stringify(historyItems.value))
-  localStorage.setItem(QUERY_FAVORITES_KEY, JSON.stringify(favoriteItems.value))
+  localStorage.setItem(QUERY_HISTORY_KEY(), JSON.stringify(historyItems.value))
+  localStorage.setItem(QUERY_FAVORITES_KEY(), JSON.stringify(favoriteItems.value))
 }
 
 function datasourceNameById(id) {

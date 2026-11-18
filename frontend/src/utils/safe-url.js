@@ -1,12 +1,14 @@
 // Keep navigation and embedded content away from executable URL schemes.
+const CONTROL_CHARS = /[\\\u0000-\u0020\u007f]/
+
 export function safeHttpUrl(value, origin) {
   if (typeof value !== 'string') return ''
   const raw = value.trim()
-  if (!raw || /[\\\u0000-\u0020\u007f]/.test(raw)) return ''
+  if (!raw || CONTROL_CHARS.test(raw)) return ''
   try {
     if (raw.startsWith('/')) {
       const path = decodeURIComponent(raw.split(/[?#]/, 1)[0])
-      if (/[\\\u0000-\u0020\u007f]/.test(path) || path.startsWith('//')) return ''
+      if (CONTROL_CHARS.test(path) || path.startsWith('//')) return ''
     } else if (!/^https?:\/\//i.test(raw)) {
       return ''
     }
@@ -31,7 +33,13 @@ export function safeGrafanaUrl(value, origin) {
   const safe = safeHttpUrl(value, origin)
   if (!safe) return ''
   const parsed = new URL(safe)
-  const current = new URL(origin)
+  // origin 来自配置或调用方，非法时不能让整个页面抛错。
+  let current
+  try {
+    current = new URL(origin)
+  } catch {
+    return ''
+  }
   const path = parsed.pathname
   const grafanaPath = path === '/' || ['/d/', '/dashboard/', '/explore', '/public/', '/api/'].some(prefix => path.startsWith(prefix))
   const alreadyProxied = parsed.origin === current.origin && path.startsWith('/grafana/')

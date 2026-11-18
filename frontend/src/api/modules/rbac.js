@@ -3,6 +3,7 @@
 export const login = (data) => request.post('/auth/login/', data)
 export const logout = () => request.post('/auth/logout/')
 export const getCurrentUser = () => request.get('/auth/me/')
+export const fetchWebSocketTicket = () => request.post('/auth/ws-ticket/')
 export const syncPermissions = () => request.post('/auth/sync/')
 export const getAssignmentOptions = () => request.get('/auth/assignment-options/')
 export const getUserOptions = (params) => request.get('/users/options/', { params })

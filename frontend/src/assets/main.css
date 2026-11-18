@@ -2294,3 +2294,8 @@ section.hero.panel .hero-actions .el-button:not(.is-link) {
   padding: 0 14px !important;
   border-radius: 10px !important;
 }
+
+/* 多行纯文本确认框：保留换行但不解析 HTML。 */
+.el-message-box.pre-line-message .el-message-box__message {
+  white-space: pre-line;
+}

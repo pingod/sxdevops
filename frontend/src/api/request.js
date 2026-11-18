@@ -1,8 +1,8 @@
 ﻿import axios from 'axios'
 import { ElMessage } from 'element-plus/es/components/message/index'
-
-const TOKEN_KEY = 'sxdevops_token'
-const USER_KEY = 'sxdevops_user'
+import { pinia } from '@/stores'
+import { useAuthStore } from '@/stores/auth'
+import { TOKEN_KEY, USER_KEY } from '@/utils/session'
 const PREVIEW_MESSAGE = '访客体验模式：可浏览页面和表单，暂不支持提交或执行操作。'
 const PREVIEW_POST_PATHS = [
     /^\/auth\/(login|logout)\/$/,
@@ -81,11 +81,14 @@ async function extractErrorMessage(error) {
     const htmlMessage = htmlErrorMessage(data, response?.status)
     if (htmlMessage) return htmlMessage
 
-    const messages = flattenErrorPayload(data)
+    const messages = flattenErrorPayload(data).filter(Boolean)
     if (messages.length) {
         return messages.join('；')
     }
 
+    if (response?.status) {
+        return error.message || `请求失败（HTTP ${response.status}）`
+    }
     return error.message || '请求失败'
 }
 
@@ -102,8 +105,14 @@ function redirectToLogin() {
 }
 
 function handleSessionExpired() {
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
+    // 先清 Pinia 再清 localStorage：否则页面仍认为自己是已登录状态。
+    try {
+        useAuthStore(pinia).clearSession()
+    } catch {
+        // Pinia 未就绪时退回直接清理存储。
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(USER_KEY)
+    }
 
     // 公开页面（产品介绍 / 网站说明）不需要登录；残留的过期 token 不应把访客强制踢到登录页。
     if (isPublicPath(window.location.pathname)) return
@@ -164,6 +173,14 @@ request.interceptors.response.use(
 
         if (status === 401 && !isProfileRequest) {
             handleSessionExpired()
+        } else if (status === 403 && /权限|permission/i.test(msg)) {
+            // 权限刚被调整过：静默刷新一次档案，避免界面继续按旧权限渲染。
+            try {
+                await useAuthStore(pinia).reloadProfile({ silent: true })
+            } catch {
+                // 刷新失败时保留原错误提示。
+            }
+            if (!skipErrorMessage) ElMessage.error(msg)
         } else if (!(status === 401 && isProfileRequest) && !skipErrorMessage) {
             ElMessage.error(msg)
         }

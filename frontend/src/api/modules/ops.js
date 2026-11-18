@@ -151,7 +151,8 @@ export const getLokiSeries = (params) => request.get('/loki/series/', { params }
 
 export const getLogProviders = () => request.get('/log/providers/')
 export const getLogProviderCatalog = (provider, data) => request.post(`/log/providers/${provider}/catalog/`, data)
-export const queryLogs = (data) => request.post('/log/query/', data)
+// 日志/指标/链路查询可能扫大时间窗，单独放宽超时到 120 秒。
+export const queryLogs = (data) => request.post('/log/query/', data, { timeout: 120000 })
 
 export const getLogDataSources = (params) => request.get('/log/datasources/', { params })
 export const createLogDataSource = (data) => request.post('/log/datasources/', data)
@@ -183,9 +184,9 @@ export const resolveGrafanaToLogs = (data, config = {}) => request.post('/observ
 export const resolveGrafanaToTrace = (data, config = {}) => request.post('/observability/datasource-links/resolve_grafana_to_trace/', data, config)
 export const getGrafanaConfig = () => request.get('/observability/grafana/config/')
 export const updateGrafanaConfig = (data) => request.put('/observability/grafana/config/', data)
-export const queryGrafanaPromQL = (data) => request.post('/observability/grafana/promql/query/', data)
-export const queryGrafanaPanel = (data) => request.post('/observability/grafana/panel/query/', data)
-export const queryMetrics = (data) => request.post('/observability/metrics/query/', data)
+export const queryGrafanaPromQL = (data) => request.post('/observability/grafana/promql/query/', data, { timeout: 120000 })
+export const queryGrafanaPanel = (data) => request.post('/observability/grafana/panel/query/', data, { timeout: 120000 })
+export const queryMetrics = (data) => request.post('/observability/metrics/query/', data, { timeout: 120000 })
 export const getMetricSeriesNames = (params) => request.get('/observability/metrics/series-names/', { params })
 export const getMetricDataSources = (params, config = {}) => request.get('/observability/metric/datasources/', { ...config, params })
 export const createMetricDataSource = (data) => request.post('/observability/metric/datasources/', data)
@@ -199,5 +200,5 @@ export const updateTracingDataSource = (id, data) => request.put(`/observability
 export const deleteTracingDataSource = (id) => request.delete(`/observability/tracing/datasources/${id}/`)
 export const testTracingDataSource = (id) => request.post(`/observability/tracing/datasources/${id}/test_connection/`)
 export const getTracingCatalog = (params) => request.get('/observability/tracing/catalog/', { params })
-export const searchTracing = (data) => request.post('/observability/tracing/search/', data)
+export const searchTracing = (data) => request.post('/observability/tracing/search/', data, { timeout: 120000 })
 export const getTraceDetail = (traceId, params) => request.get(`/observability/tracing/traces/${traceId}/`, { params })

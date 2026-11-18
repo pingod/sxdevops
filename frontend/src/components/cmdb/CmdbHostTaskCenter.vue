@@ -2180,7 +2180,13 @@ async function submitTask() {
   if (taskForm.value.task_type === 'run_command') confirmLines.push(ui.runCommandConfirm)
   if (effectiveHostTargetRefs.value.length > 20) confirmLines.push(ui.overLimitConfirm)
   try {
-    await ElMessageBox.confirm(confirmLines.join('<br>'), ui.confirmExecuteTitle, { type: 'warning', dangerouslyUseHTMLString: true, confirmButtonText: ui.confirmExecute, cancelButtonText: ui.cancel })
+    // 确认内容全是用户可控的纯文本，绝不能按 HTML 渲染（任务名里可注入标签）。
+    await ElMessageBox.confirm(confirmLines.join('\n'), ui.confirmExecuteTitle, {
+      type: 'warning',
+      confirmButtonText: ui.confirmExecute,
+      cancelButtonText: ui.cancel,
+      customClass: 'pre-line-message',
+    })
   } catch (error) { return }
   submitting.value = true
   try {
