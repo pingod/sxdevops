@@ -123,3 +123,21 @@ class K8sClusterGrant(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['access', 'cluster'], name='rbac_unique_k8s_cluster_grant')]
+
+
+class WebSocketTicket(models.Model):
+    """WebSocket 一次性短票据：避免把长期 DRF Token 放进 WS 查询串。"""
+
+    key = models.CharField('票据', max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ws_tickets')
+    expires_at = models.DateTimeField('过期时间')
+    used_at = models.DateTimeField('使用时间', null=True, blank=True)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'WebSocket 票据'
+        verbose_name_plural = 'WebSocket 票据'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user_id} @ {self.expires_at}'

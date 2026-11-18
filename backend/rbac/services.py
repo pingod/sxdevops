@@ -1,7 +1,10 @@
 import os
+import sys
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from sxdevops.features import filter_feature_permissions, permission_feature_enabled
 
@@ -206,9 +209,59 @@ def get_user_group_roles(user):
     return Role.objects.filter(user_groups__users=user).prefetch_related('permissions').distinct()
 
 
+def _permission_cache_enabled():
+    """测试里禁用缓存：TestCase 回滚不会触发 m2m 信号，缓存会跨用例串味。"""
+    return 'test' not in sys.argv
+
+
+def _permission_cache_key(user):
+    # 预览身份会改变有效权限集合，必须进 key，否则切换预览配置后读到旧结果。
+    scope = 'preview' if is_preview_user(user) else 'normal'
+    return f'rbac:perms:{user.pk}:{getattr(user, "username", "")}:{scope}'
+
+
+def invalidate_user_permissions(user):
+    """权限变更后立刻失效缓存；找不到用户时按 pk 前缀清理。"""
+    if user is None:
+        return
+    if getattr(user, 'pk', None) is None:
+        return
+    cache.delete(_permission_cache_key(user))
+
+
+def invalidate_identity_permissions(instance):
+    """角色/用户组/用户任一变更后，清理受影响用户的权限缓存。"""
+    if instance is None:
+        return
+    if isinstance(instance, User):
+        invalidate_user_permissions(instance)
+        return
+    if isinstance(instance, Role):
+        users = User.objects.filter(Q(rbac_roles=instance) | Q(rbac_groups__roles=instance)).distinct()
+    elif isinstance(instance, UserGroup):
+        users = User.objects.filter(rbac_groups=instance).distinct()
+    else:
+        return
+    for user in users.only('id', 'username'):
+        invalidate_user_permissions(user)
+
+
 def get_user_effective_permissions(user):
     if not getattr(user, 'is_authenticated', False) or not getattr(user, 'is_active', False):
         return set()
+    if not _permission_cache_enabled():
+        return _compute_user_effective_permissions(user)
+    cache_key = _permission_cache_key(user)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return set(cached)
+    permissions = _compute_user_effective_permissions(user)
+    # 终端每帧都会读权限；缓存 60 秒，权限变更走 invalidate_user_permissions 主动失效。
+    cache.set(cache_key, set(permissions), 60)
+    return permissions
+
+
+def _compute_user_effective_permissions(user):
     if is_preview_user(user):
         return set(filter_feature_permissions([
             code for code, *_ in PERMISSION_DEFINITIONS if is_preview_read_permission(code)

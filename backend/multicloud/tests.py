@@ -18,7 +18,7 @@ class MultiCloudTests(TestCase):
         self.client = APIClient()
         self.user = get_user_model().objects.create_superuser('multicloud-admin', 'multicloud@example.com', 'Admin@123456')
         self.client.force_authenticate(self.user)
-        self.credential = CloudCredential.objects.create(
+        self.credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='aliyun-demo',
             account_id='100001',
@@ -90,7 +90,7 @@ class MultiCloudTests(TestCase):
         self.assertEqual(response.json()['result']['count'], 2)
 
     def test_vsphere_credential_sync_all_creates_default_environment(self):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='vmware-prod',
             account_id='vcsa.prod.local',
@@ -125,7 +125,7 @@ class MultiCloudTests(TestCase):
     def test_vsphere_adapter_normalizes_url_endpoint(self):
         from multicloud.sdk_adapters import VSphereCloudAdapter
 
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='example-vsphere',
             account_id='https://10.197.0.10/',
@@ -145,7 +145,7 @@ class MultiCloudTests(TestCase):
     def test_vsphere_adapter_reports_invalid_login_as_cloud_adapter_error(self):
         from multicloud.sdk_adapters import CloudAdapterError, VSphereCloudAdapter
 
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='example-vsphere',
             account_id='https://10.197.0.10/',
@@ -240,7 +240,7 @@ class MultiCloudTests(TestCase):
         self.assertEqual(row['asset_count'], 1)
 
     def test_credential_list_excludes_internal_provider_summary_assets(self):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='vcenter-prod',
             account_id='vcenter.example.com',
@@ -310,7 +310,7 @@ class MultiCloudTests(TestCase):
         self.assertTrue(ConfigItem.objects.filter(attributes__cmdb_source='multicloud').exists())
 
     def test_vsphere_cmdb_sync_maps_ecs_assets_to_virtual_machine(self):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='example-vsphere',
             account_id='vcsa.example.local',

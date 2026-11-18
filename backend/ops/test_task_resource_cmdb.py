@@ -215,7 +215,10 @@ class TaskResourceCmdbTests(TestCase):
         self.assertEqual(resource.ip_address, '10.30.40.50')
         self.assertEqual(resource.owner, '本地补充')
         self.assertEqual(resource.ssh_user, 'runner')
-        self.assertEqual(resource.ssh_password, 'local-secret')
+        # 口令在库内是密文；读取方统一用 credentials.decrypt_password 还原。
+        from ops.credentials import decrypt_password, password_is_encrypted
+        self.assertTrue(password_is_encrypted(resource.ssh_password))
+        self.assertEqual(decrypt_password(resource.ssh_password), 'local-secret')
 
     def test_duplicate_link_and_incompatible_asset_are_rejected(self):
         config_item = self.asset()

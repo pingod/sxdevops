@@ -2,6 +2,7 @@ import json
 import ipaddress
 import math
 import os
+import re
 import socket
 import ssl
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,19 @@ from importlib import import_module
 from urllib.parse import urlparse
 
 from .prometheus_metrics import enrich_cloud_vm_metrics, enrich_vsphere_vm_metrics
+
+
+# 采集凭据只能从受控前缀的环境变量读取，避免 auth_ref 被用作任意环境变量读取器。
+RUNTIME_SECRET_ENV_PREFIX = 'SXDEVOPS_COLLECTOR_'
+RUNTIME_SECRET_ALLOWED_NAMES = {
+    'USERNAME',
+    'PASSWORD',
+    'ACCESS_KEY_ID',
+    'ACCESS_KEY_SECRET',
+    'SECRET_KEY',
+    'PROJECT_ID',
+}
+_RUNTIME_SECRET_REF_PATTERN = re.compile(r'^[A-Z][A-Z0-9_]{0,63}$')
 
 
 def _optional_import(module_name, install_hint):
@@ -78,7 +92,11 @@ def _runtime_secret_from_ref(config, name):
     ref = str((config or {}).get('auth_ref') or '').strip()
     if not ref:
         return ''
-    env_name = f'{ref}_{name}'.upper()
+    if name not in RUNTIME_SECRET_ALLOWED_NAMES:
+        raise ValueError(f'不支持的采集凭据字段: {name}')
+    if not _RUNTIME_SECRET_REF_PATTERN.match(ref):
+        raise ValueError('auth_ref 必须是大写字母/数字/下划线组成的环境变量前缀')
+    env_name = f'{RUNTIME_SECRET_ENV_PREFIX}{ref}_{name}'
     return os.environ.get(env_name, '')
 
 
@@ -175,7 +193,10 @@ def _runtime_collection_config(config, request_data=None):
         'project_id': 'PROJECT_ID',
     }.items():
         if not merged.get(key):
-            value = _runtime_secret_from_ref(merged, env_name)
+            try:
+                value = _runtime_secret_from_ref(merged, env_name)
+            except ValueError as exc:
+                raise ValueError(f'采集凭据不可用：{exc}') from exc
             if value:
                 merged[key] = value
     return merged

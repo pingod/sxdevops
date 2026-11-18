@@ -5,14 +5,12 @@ from .models import DataSource, SqlOrder, QueryOrder, SqlCheckResult
 class DataSourceSerializer(serializers.ModelSerializer):
     status_label = serializers.SerializerMethodField()
     db_type_display = serializers.CharField(source='get_db_type_display', read_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = DataSource
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
-        extra_kwargs = {
-            'password': {'write_only': True, 'allow_blank': True},
-        }
 
     def get_status_label(self, obj):
         return '启用' if obj.is_active else '停用'
@@ -25,11 +23,21 @@ class DataSourceSerializer(serializers.ModelSerializer):
                 attrs.setdefault('port', 5432)
         return attrs
 
+    def create(self, validated_data):
+        password = validated_data.pop('password', '')
+        instance = super().create(validated_data)
+        instance.password = password
+        instance.save(update_fields=['password_encrypted'])
+        return instance
+
     def update(self, instance, validated_data):
         # 空串代表"不修改已存密码"
-        if not validated_data.get('password'):
-            validated_data.pop('password', None)
-        return super().update(instance, validated_data)
+        password = validated_data.pop('password', '')
+        instance = super().update(instance, validated_data)
+        if password:
+            instance.password = password
+            instance.save(update_fields=['password_encrypted'])
+        return instance
 
 
 class SqlCheckResultSerializer(serializers.ModelSerializer):

@@ -15,6 +15,8 @@ from eventwall.models import EventRecord
 from eventwall.services import build_resource, record_event
 from rbac.permissions import RBACPermissionMixin
 
+from . import ssh_known_hosts
+from .credentials import decrypt_password
 from .models import NginxCertificate, NginxDomain, NginxEnvironment, NginxRoute
 from .nginx_conf_generator import generate_domain_conf
 from .serializers import (
@@ -55,12 +57,12 @@ def _parse_certificate(cert_data):
 
 def _get_ssh_client(env):
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(ssh_known_hosts.policy())
     client.connect(
         hostname=env.ip_address,
         port=env.ssh_port or 22,
         username=env.ssh_user or 'root',
-        password=env.ssh_password or None,
+        password=decrypt_password(env.ssh_password) or None,
         timeout=10,
     )
     return client

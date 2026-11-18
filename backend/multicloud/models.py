@@ -1,5 +1,16 @@
 from django.db import models
 
+from sxdevops import secrets as platform_secrets
+
+
+class CloudCredentialQuerySet(models.QuerySet):
+    def create_with_credentials(self, access_key_secret='', **kwargs):
+        """用明文 AK/SK 创建账号：口令经属性 setter 加密后再落库。"""
+        instance = self.model(**kwargs)
+        instance.access_key_secret = access_key_secret
+        instance.save()
+        return instance
+
 
 class CloudCredential(models.Model):
     PROVIDER_CHOICES = [
@@ -29,7 +40,7 @@ class CloudCredential(models.Model):
     account_name = models.CharField('账号别名', max_length=128, blank=True, default='')
     auth_mode = models.CharField('认证方式', max_length=16, choices=AUTH_MODE_CHOICES, default='aksk')
     access_key_id = models.CharField('Access Key ID', max_length=255, blank=True, default='')
-    access_key_secret = models.CharField('Access Key Secret', max_length=255, blank=True, default='')
+    access_key_secret_encrypted = models.CharField('Access Key Secret 密文', max_length=512, blank=True, default='')
     project_id = models.CharField('项目 / 租户', max_length=128, blank=True, default='')
     verify_ssl = models.BooleanField('校验 TLS 证书', default=True)
     role_arn = models.CharField('角色 ARN', max_length=255, blank=True, default='')
@@ -48,6 +59,15 @@ class CloudCredential(models.Model):
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
 
+    objects = CloudCredentialQuerySet.as_manager()
+
+    def __init__(self, *args, **kwargs):
+        # 允许 CloudCredential(access_key_secret='...') 这类明文构造，值经 setter 加密。
+        secret = kwargs.pop('access_key_secret', None)
+        super().__init__(*args, **kwargs)
+        if secret is not None:
+            self.access_key_secret = secret
+
     class Meta:
         ordering = ['provider', 'name']
         verbose_name = '云账号'
@@ -55,6 +75,21 @@ class CloudCredential(models.Model):
 
     def __str__(self):
         return f'{self.get_provider_display()} / {self.name}'
+
+    @property
+    def access_key_secret(self):
+        return platform_secrets.decrypt(self.access_key_secret_encrypted)
+
+    @access_key_secret.setter
+    def access_key_secret(self, value):
+        self.access_key_secret_encrypted = platform_secrets.encrypt((value or '').strip())
+
+    def secret_length(self):
+        """掩码用长度：避免把明文内容带进序列化结果。"""
+        try:
+            return len(self.access_key_secret or '')
+        except platform_secrets.SecretError:
+            return 0
 
 
 class CloudEnvironment(models.Model):

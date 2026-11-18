@@ -18,13 +18,15 @@ except ImportError:
     pty = None
 
 from channels.generic.websocket import WebsocketConsumer
-from rest_framework.authtoken.models import Token
 
 from ops.k8s_views import _is_demo, _prepare_kubeconfig
 from ops.k8s_shell import interactive_shell_command
 from ops.webshell_guard import WebShellGuard, handle_guard_events, load_rules
+from eventwall.models import EventRecord
+from eventwall.services import record_event
 from ops.models import K8sCluster
 from rbac.services import user_has_permissions
+from rbac.websocket import resolve_terminal_user
 from rbac.k8s_access import can_access_k8s
 
 logger = logging.getLogger(__name__)
@@ -42,12 +44,15 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
 
     def connect(self):
         self.cluster_id = self.scope['url_route']['kwargs']['cluster_id']
-        token_key = parse_qs(self.scope.get('query_string', b'').decode('utf-8')).get('token', [''])[0]
-        token = Token.objects.filter(key=token_key).select_related('user').first()
-        if not token or not token.user.is_active:
+        query = parse_qs(self.scope.get('query_string', b'').decode('utf-8', errors='replace'))
+        user = resolve_terminal_user(
+            ticket_key=query.get('ticket', [''])[0],
+            legacy_token_key=query.get('token', [''])[0],
+        )
+        if not user or not user.is_active:
             self.close(code=4401)
             return
-        if not user_has_permissions(token.user, ['ops.k8s.terminal']):
+        if not user_has_permissions(user, ['ops.k8s.terminal']):
             self.close(code=4403)
             return
 
@@ -57,7 +62,7 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             self.close(code=4404)
             return
 
-        if not can_access_k8s(token.user, self.cluster_id, shell=True):
+        if not can_access_k8s(user, self.cluster_id, shell=True):
             self.close(code=4403)
             return
         if _is_demo(self.cluster):
@@ -69,15 +74,32 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             }))
             self.close(code=4400)
             return
-        self.user = token.user
+        self.user = user
+        if self._sandbox_ids() is None:
+            logger.warning('K8s 集群终端未降权运行：未找到可用沙箱账号')
+            record_event(
+                module='ops',
+                category='security',
+                action='k8s_terminal_no_sandbox',
+                title='K8s 集群终端未降权运行',
+                summary=f'集群 {self.cluster.name} 的终端以平台进程身份运行',
+                severity=EventRecord.SEVERITY_WARNING,
+                actor_username=user.username,
+                resource_type='k8s_cluster',
+                resource_id=str(self.cluster_id),
+                resource_name=self.cluster.name,
+            )
         self.guard = WebShellGuard(load_rules())
         self.accept()
         try:
             self._start_shell()
         except Exception as exc:
             logger.exception('K8s cluster terminal connection failed for cluster %s', self.cluster_id)
-            self.send(text_data=json.dumps({'type': 'error', 'message': f'集群终端连接失败: {exc}'}))
-            self.close()
+            try:
+                self.send(text_data=json.dumps({'type': 'error', 'message': f'集群终端连接失败: {exc}'}))
+            except Exception:
+                pass
+            self.close(code=4500)
 
     def disconnect(self, close_code):
         self._reading = False
@@ -140,15 +162,16 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             return 65534, 65534
 
     def _sandbox_preexec(self):
-        uid_gid = getattr(self, '_sandbox_uid_gid', None)
+        """只收紧资源上限；降权由 Popen(user=/group=) 完成，失败会直接让子进程创建失败。"""
 
         def apply():
             try:
                 import resource
 
+                # NPROC 限制的是“该 uid 全系统进程数”，不是本会话；设上限会让
+                # 已有较多进程的机器上 bash 直接 fork 失败，因此这里不再限制它。
                 limits = (
                     (resource.RLIMIT_NOFILE, 512),
-                    (resource.RLIMIT_NPROC, 128),
                     (resource.RLIMIT_CPU, K8S_CLUSTER_TERMINAL_MAX_SECONDS + 60),
                     (resource.RLIMIT_FSIZE, 32 * 1024 * 1024),
                 )
@@ -159,14 +182,6 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
                         continue
             except ImportError:
                 pass
-            if uid_gid is not None:
-                uid, gid = uid_gid
-                try:
-                    os.setgroups([])
-                    os.setgid(gid)
-                    os.setuid(uid)
-                except OSError:
-                    pass
 
         return apply
 
@@ -198,16 +213,38 @@ class K8sClusterTerminalConsumer(WebsocketConsumer):
             'HISTFILE': '/dev/null',
         }
         shell_command = interactive_shell_command(shutil.which('bash') or '/bin/sh')
-        self.process = subprocess.Popen(
-            [sys.executable, '-c', 'import os, sys, fcntl, termios; os.setsid(); fcntl.ioctl(0, termios.TIOCSCTTY, 0); os.execv(sys.argv[1], sys.argv[1:])', *shell_command],
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            cwd=self.temp_dir,
-            env=env,
-            close_fds=True,
-            preexec_fn=self._sandbox_preexec(),
-        )
+        privilege_kwargs = {}
+        if self._sandbox_uid_gid is not None:
+            uid, gid = self._sandbox_uid_gid
+            # 降权失败必须让连接失败，否则用户拿到的是持有集群凭据的 root shell。
+            privilege_kwargs = {'user': uid, 'group': gid, 'extra_groups': []}
+        try:
+            self.process = subprocess.Popen(
+                [sys.executable, '-c', 'import os, sys, fcntl, termios; os.setsid(); fcntl.ioctl(0, termios.TIOCSCTTY, 0); os.execv(sys.argv[1], sys.argv[1:])', *shell_command],
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                cwd=self.temp_dir,
+                env=env,
+                close_fds=True,
+                # 前导脚本自己 os.setsid() + TIOCSCTTY 建立控制终端；不要再加
+                # start_new_session（子进程已成为会话首进程，setsid 会失败）。
+                # 资源限制改由 rlimit 前置包装执行，避免 preexec_fn 与降权参数冲突。
+                preexec_fn=self._sandbox_preexec(),
+                **privilege_kwargs,
+            )
+        except Exception as exc:
+            self.master_fd = None
+            for fd in (master_fd, slave_fd):
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+            if self.temp_dir:
+                shutil.rmtree(self.temp_dir, ignore_errors=True)
+                self.temp_dir = None
+            self.close(code=4500)
+            raise RuntimeError(f'终端沙箱降权失败：{exc}') from exc
         os.close(slave_fd)
         self._resize(120, 36)
         self._reading = True

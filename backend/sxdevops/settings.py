@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import json
 import os
 import secrets
+import warnings
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -399,6 +400,8 @@ ALLOWED_HOSTS = [
     for host in os.getenv('ALLOWED_HOSTS', '*' if DEBUG else 'localhost,127.0.0.1').split(',')
     if host.strip()
 ]
+if not DEBUG and '*' in ALLOWED_HOSTS:
+    warnings.warn('ALLOWED_HOSTS 包含 *，公网部署请显式收敛', RuntimeWarning)
 
 X_FRAME_OPTIONS = os.getenv('X_FRAME_OPTIONS', 'SAMEORIGIN')
 SECURE_PROXY_SSL_HEADER = (
@@ -545,6 +548,12 @@ REST_FRAMEWORK = {
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
     ],
+    'DEFAULT_THROTTLE_CLASSES': ['rbac.throttles.ScopedUserThrottle'],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '600/min',
+        'expensive': '30/min',
+        'cmdb_password_reveal': '10/min',
+    },
 }
 
 # Loki
@@ -633,6 +642,13 @@ CACHES = _build_cache_config()
 # Only these reverse proxies may supply client IP forwarding headers.
 LOGIN_TRUSTED_PROXIES = [value.strip() for value in os.getenv('SXDEVOPS_TRUSTED_PROXIES', '').split(',') if value.strip()]
 WEBSOCKET_AUTH_RECHECK_SECONDS = 5
+
+# SSH 主机密钥校验：首次连接记录，之后拒绝变更（见 ops/ssh_known_hosts.py）。
+SXDEVOPS_SSH_KNOWN_HOSTS = os.getenv('SXDEVOPS_SSH_KNOWN_HOSTS', str(BASE_DIR / 'runtime' / 'known_hosts'))
+SXDEVOPS_SSH_STRICT_HOST_KEY = _bool_value(os.getenv('SXDEVOPS_SSH_STRICT_HOST_KEY'), True)
+
+# 邮件外发超时：告警通知不能无限阻塞 worker。
+EMAIL_TIMEOUT = _int_value(os.getenv('EMAIL_TIMEOUT'), 'EMAIL_TIMEOUT', 10)
 
 
 def _build_channel_layers():

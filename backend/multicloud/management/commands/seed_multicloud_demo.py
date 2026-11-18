@@ -29,7 +29,13 @@ class Command(BaseCommand):
         CloudCredential.objects.all().delete()
 
         self.stdout.write('创建云账号...')
-        credential_map = {item['name']: CloudCredential.objects.create(created_by='seed', updated_by='seed', **item) for item in DEMO_CREDENTIALS}
+        credential_map = {}
+        for item in DEMO_CREDENTIALS:
+            payload = dict(item)
+            secret = payload.pop('access_key_secret', '')
+            credential_map[payload['name']] = CloudCredential.objects.create_with_credentials(
+                access_key_secret=secret, created_by='seed', updated_by='seed', **payload,
+            )
 
         self.stdout.write('创建云环境...')
         environments = []

@@ -438,3 +438,53 @@ class K8sWorkbenchTests(TestCase):
         self.assertEqual(call['dry_run'], 'All')
         self.assertEqual(call['body']['metadata']['resourceVersion'], '23')
         self.assertEqual(call['namespace'], 'production')
+
+
+class K8sTerminalSandboxTests(TestCase):
+    """降权失败必须中止连接，不能把 root shell 交给用户。"""
+
+    def _consumer(self):
+        from django.test import RequestFactory
+
+        cluster = K8sCluster.objects.create(name='live-terminal', kubeconfig='apiVersion: v1', status='connected')
+        consumer = K8sClusterTerminalConsumer()
+        consumer.scope = {'url_route': {'kwargs': {'cluster_id': cluster.pk}}}
+        consumer.cluster = cluster
+        consumer.cluster_id = cluster.pk
+        consumer.user = get_user_model().objects.create_user('terminal-sandbox', password='Test@123456')
+        consumer.send = MagicMock()
+        consumer.close = MagicMock()
+        consumer.accept = MagicMock()
+        return consumer
+
+    def test_start_shell_aborts_when_privilege_drop_fails(self):
+        consumer = self._consumer()
+        with patch.object(K8sClusterTerminalConsumer, '_sandbox_ids', return_value=(65534, 65534)), \
+                patch('ops.k8s_terminal_consumer.subprocess.Popen', side_effect=OSError('setuid failed')), \
+                patch('ops.k8s_terminal_consumer.pty.openpty', return_value=(11, 12)), \
+                patch('ops.k8s_terminal_consumer.os.chown'), \
+                patch('ops.k8s_terminal_consumer.os.close'), \
+                patch.object(K8sClusterTerminalConsumer, '_resize'):
+            with self.assertRaisesMessage(RuntimeError, '终端沙箱降权失败'):
+                consumer._start_shell()
+        consumer.close.assert_called_with(code=4500)
+        self.assertIsNone(consumer.temp_dir)
+
+    def test_popen_gets_explicit_uid_gid_instead_of_preexec(self):
+        consumer = self._consumer()
+        with patch.object(K8sClusterTerminalConsumer, '_sandbox_ids', return_value=(65534, 65534)), \
+                patch('ops.k8s_terminal_consumer.subprocess.Popen') as popen, \
+                patch('ops.k8s_terminal_consumer.pty.openpty', return_value=(11, 12)), \
+                patch('ops.k8s_terminal_consumer.os.chown'), \
+                patch('ops.k8s_terminal_consumer.os.close'), \
+                patch('ops.k8s_terminal_consumer.threading.Thread'), \
+                patch('ops.k8s_terminal_consumer.threading.Timer'), \
+                patch.object(K8sClusterTerminalConsumer, '_resize'):
+            consumer._start_shell()
+        kwargs = popen.call_args.kwargs
+        self.assertEqual(kwargs['user'], 65534)
+        self.assertEqual(kwargs['group'], 65534)
+        self.assertEqual(kwargs['extra_groups'], [])
+        # 控制终端由子进程前导脚本 os.setsid()+TIOCSCTTY 建立，不能再传 start_new_session。
+        self.assertNotIn('start_new_session', kwargs)
+        self.assertIn('TIOCSCTTY', ' '.join(kwargs and popen.call_args.args[0]))

@@ -915,9 +915,9 @@ HUAWEICLOUD_ACCOUNT_HINT = {
 }
 
 VSPHERE_ACCOUNT_HINT = {
-    'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
-    'account_setup_note': 'host/username 可写入任务配置，密码通过运行环境变量 SXDEVOPS_VSPHERE_PROD_PASSWORD 提供。',
-    'required_env_vars': ['SXDEVOPS_VSPHERE_PROD_PASSWORD'],
+    'auth_ref': 'VSPHERE_PROD',
+    'account_setup_note': 'host/username 可写入任务配置，密码通过运行环境变量 SXDEVOPS_COLLECTOR_VSPHERE_PROD_PASSWORD 提供。',
+    'required_env_vars': ['SXDEVOPS_COLLECTOR_VSPHERE_PROD_PASSWORD'],
 }
 
 

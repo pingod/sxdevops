@@ -13,7 +13,7 @@ class PartialUpdateTests(TestCase):
         user = get_user_model().objects.create_superuser(username='patcher', password='x', email='')
         client = APIClient()
         client.force_authenticate(user=user)
-        credential = CloudCredential.objects.create(provider='aliyun', name='生产账号', owner='old-owner')
+        credential = CloudCredential.objects.create_with_credentials(provider='aliyun', name='生产账号', owner='old-owner')
 
         response = client.patch(f'/api/multicloud/credentials/{credential.pk}/', {'owner': 'new-owner'}, format='json')
 
@@ -51,5 +51,8 @@ class MaskedSecretRegressionTests(SimpleTestCase):
         from .serializers import CloudCredentialSerializer
 
         serializer = CloudCredentialSerializer()
-        self.assertEqual(serializer.get_masked_secret(SimpleNamespace(access_key_secret='abcd')), '********')
-        self.assertEqual(serializer.get_masked_secret(SimpleNamespace(access_key_secret='abcdefghijkl')), 'ab******kl')
+        # 掩码只按长度生成，绝不回显明文片段。
+        self.assertEqual(serializer.get_masked_secret(SimpleNamespace(access_key_secret='abcd')), '****')
+        masked = serializer.get_masked_secret(SimpleNamespace(access_key_secret='abcdefghijkl'))
+        self.assertEqual(set(masked), {'*'})
+        self.assertLessEqual(len(masked), 12)

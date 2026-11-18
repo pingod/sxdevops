@@ -1,5 +1,7 @@
 ﻿from django.db import models
 
+from sxdevops import secrets as platform_secrets
+
 
 class DataSource(models.Model):
     """数据库数据源"""
@@ -14,11 +16,12 @@ class DataSource(models.Model):
     host = models.CharField('主机地址', max_length=256)
     port = models.PositiveIntegerField('端口', default=3306)
     user = models.CharField('用户名', max_length=128)
-    password = models.CharField('密码', max_length=512)
+    password_encrypted = models.CharField('密码密文', max_length=1024, blank=True, default='')
     database = models.CharField('连接数据库', max_length=128, blank=True, default='')
     charset = models.CharField('字符集', max_length=32, default='utf8mb4')
     remark = models.TextField('备注', blank=True, default='')
     is_active = models.BooleanField('启用', default=True)
+    is_demo = models.BooleanField('演示数据源', default=False)
     created_at = models.DateTimeField('创建时间', auto_now_add=True)
     updated_at = models.DateTimeField('更新时间', auto_now=True)
 
@@ -29,6 +32,21 @@ class DataSource(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.host}:{self.port})'
+
+    def __init__(self, *args, **kwargs):
+        # 允许 DataSource(password='...') 构造，值经 setter 加密。
+        secret = kwargs.pop('password', None)
+        super().__init__(*args, **kwargs)
+        if secret is not None:
+            self.password = secret
+
+    @property
+    def password(self):
+        return platform_secrets.decrypt(self.password_encrypted)
+
+    @password.setter
+    def password(self, value):
+        self.password_encrypted = platform_secrets.encrypt((value or '').strip())
 
 
 class SqlOrder(models.Model):

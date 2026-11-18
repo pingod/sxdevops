@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import select
 import shlex
 import shutil
 import subprocess
@@ -17,6 +18,8 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 
+from . import ssh_known_hosts
+from .credentials import decrypt_password
 from .models import Host, HostTask, HostTaskExecution, K8sCluster, TaskResource
 from .task_resources import cmdb_resource_defaults
 
@@ -76,7 +79,7 @@ class TaskResourceHostTarget:
         self.status = 'online' if resource.status == TaskResource.STATUS_ACTIVE and not resource.execution_blocked_reason else 'offline'
         self.ssh_port = resource.ssh_port or 22
         self.ssh_user = resource.ssh_user or 'root'
-        self.ssh_password = resource.ssh_password or ''
+        self.ssh_password = decrypt_password(resource.ssh_password)
         self.admin_user = resource.owner or ''
 
     def save(self, update_fields=None):
@@ -258,12 +261,66 @@ def allow_ansible_fallback_to_ssh():
     return bool(getattr(settings, 'DEBUG', False))
 
 
-def _ansible_ssh_common_args():
-    return getattr(
-        settings,
-        'HOST_TASK_ANSIBLE_SSH_COMMON_ARGS',
-        '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null',
+def _run_captured(command, timeout, env=None, encoding='utf-8'):
+    """Popen + 分块读取，单流上限 1 MB；超限终止进程并标记截断。"""
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
     )
+    stdout_chunks, stderr_chunks = [], []
+    sizes = {'stdout': 0, 'stderr': 0}
+    truncated = False
+    deadline = time.monotonic() + max(float(timeout or 1), 1)
+    try:
+        while True:
+            drained = False
+            for name, stream, chunks in (('stdout', process.stdout, stdout_chunks),
+                                         ('stderr', process.stderr, stderr_chunks)):
+                if stream is None:
+                    continue
+                ready = select.select([stream], [], [], 0)[0]
+                if not ready:
+                    continue
+                data = os.read(stream.fileno(), 65536)
+                if not data:
+                    continue
+                drained = True
+                sizes[name] += len(data)
+                if sizes[name] <= MAX_COMMAND_OUTPUT_BYTES:
+                    chunks.append(data)
+                else:
+                    truncated = True
+            if process.poll() is not None:
+                break
+            if time.monotonic() > deadline:
+                process.kill()
+                process.wait(timeout=5)
+                raise subprocess.TimeoutExpired(command, timeout)
+            if not drained:
+                time.sleep(0.02)
+            if truncated and sizes['stdout'] > MAX_COMMAND_OUTPUT_BYTES and sizes['stderr'] > MAX_COMMAND_OUTPUT_BYTES:
+                process.kill()
+                process.wait(timeout=5)
+                break
+    finally:
+        for stream in (process.stdout, process.stderr):
+            try:
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass
+    stdout = b''.join(stdout_chunks).decode(encoding, errors='replace')
+    stderr = b''.join(stderr_chunks).decode(encoding, errors='replace')
+    if truncated:
+        stderr = f'{stderr}\n{OUTPUT_TRUNCATED_NOTICE}'.strip()
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _ansible_ssh_common_args():
+    configured = getattr(settings, 'HOST_TASK_ANSIBLE_SSH_COMMON_ARGS', '')
+    return configured or ssh_known_hosts.common_args()
 
 
 def _ansible_inventory_alias(host):
@@ -273,28 +330,91 @@ def _ansible_inventory_alias(host):
 def open_ssh_client(host, timeout_seconds):
     _ensure_task_resource_available(host)
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(ssh_known_hosts.policy())
     client.connect(
         hostname=host.ip_address,
         port=host.ssh_port or 22,
         username=host.ssh_user or 'root',
-        password=host.ssh_password or None,
+        password=decrypt_password(getattr(host, 'ssh_password', '') or '') or None,
         timeout=timeout_seconds,
     )
     return client
 
 
+MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024
+OUTPUT_TRUNCATED_NOTICE = '输出超过 1 MB，已截断'
+
+
 def execute_remote_command(client, command, timeout_seconds):
+    """非阻塞双读 stdout/stderr，输出上限 1 MB，避免大输出把 worker 拖死。
+
+    退出状态就绪后再做一次收尾读取，把仍在管道里的尾部输出取完。
+    """
     stdin, stdout, stderr = client.exec_command(command, timeout=timeout_seconds)
     channel = stdout.channel
+    stdout_chunks, stderr_chunks = [], []
+    stdout_size = stderr_size = 0
+    deadline = time.monotonic() + max(int(timeout_seconds or 1), 1)
+    truncated = False
     try:
-        # 先读管道再取退出码：recv_exit_status 自身没有超时，只有 socket 超时能约束它
-        output = stdout.read().decode('utf-8', errors='replace').strip()
-        error_output = stderr.read().decode('utf-8', errors='replace').strip()
+        while True:
+            if channel.recv_ready():
+                data = channel.recv(65536)
+                if data:
+                    stdout_size += len(data)
+                    if stdout_size <= MAX_COMMAND_OUTPUT_BYTES:
+                        stdout_chunks.append(data)
+                    else:
+                        truncated = True
+            if channel.recv_stderr_ready():
+                data = channel.recv_stderr(65536)
+                if data:
+                    stderr_size += len(data)
+                    if stderr_size <= MAX_COMMAND_OUTPUT_BYTES:
+                        stderr_chunks.append(data)
+                    else:
+                        truncated = True
+            if truncated and stdout_size > MAX_COMMAND_OUTPUT_BYTES and stderr_size > MAX_COMMAND_OUTPUT_BYTES:
+                break
+            if channel.exit_status_ready():
+                # 进程已退出：把管道里剩余的数据读干净后结束。
+                while channel.recv_ready():
+                    data = channel.recv(65536)
+                    if not data:
+                        break
+                    stdout_size += len(data)
+                    if stdout_size <= MAX_COMMAND_OUTPUT_BYTES:
+                        stdout_chunks.append(data)
+                    else:
+                        truncated = True
+                while channel.recv_stderr_ready():
+                    data = channel.recv_stderr(65536)
+                    if not data:
+                        break
+                    stderr_size += len(data)
+                    if stderr_size <= MAX_COMMAND_OUTPUT_BYTES:
+                        stderr_chunks.append(data)
+                    else:
+                        truncated = True
+                break
+            if time.monotonic() > deadline:
+                channel.close()
+                raise TimeoutError(f'命令执行超时（{timeout_seconds} 秒）')
+            time.sleep(0.02)
         exit_status = channel.recv_exit_status()
     except TimeoutError:
         channel.close()
-        raise TimeoutError(f'命令执行超时（{timeout_seconds} 秒）')
+        raise
+    finally:
+        if truncated:
+            try:
+                channel.close()
+            except Exception:
+                pass
+    output = b''.join(stdout_chunks).decode('utf-8', errors='replace').strip()
+    error_output = b''.join(stderr_chunks).decode('utf-8', errors='replace').strip()
+    if truncated:
+        error_output = f'{error_output}\n{OUTPUT_TRUNCATED_NOTICE}'.strip()
     return exit_status, output, error_output
 
 
@@ -443,9 +563,37 @@ def _build_ansible_extra_vars(host):
     common_args = _ansible_ssh_common_args()
     if common_args:
         extra_vars['ansible_ssh_common_args'] = common_args
-    if host.ssh_password:
-        extra_vars['ansible_password'] = host.ssh_password
     return extra_vars
+
+
+# argv 里只出现模板变量名，口令经环境变量传递，避免进入 /proc/<pid>/cmdline。
+ANSIBLE_PASSWORD_LOOKUP = "{{ lookup('env', 'ANSIBLE_PASSWORD') }}"
+
+
+def _ansible_password_extra_vars(host):
+    # Host 表里存的是密文，必须解密后再注入环境变量。
+    password = decrypt_password(getattr(host, 'ssh_password', '') or '')
+    if not password:
+        return {}
+    return {'ansible_password': ANSIBLE_PASSWORD_LOOKUP}
+
+
+def _ansible_auth_process_env(host):
+    password = decrypt_password(getattr(host, 'ssh_password', '') or '')
+    if not password:
+        return {}
+    return {'ANSIBLE_PASSWORD': password}
+
+
+def _ansible_extra_vars_for_process(host, extra_vars=None):
+    """合并口令模板变量；调用方自定义 ansible_password 也会被覆盖，防止绕过。"""
+    merged = dict(extra_vars or {})
+    password_vars = _ansible_password_extra_vars(host)
+    if password_vars:
+        merged.update(password_vars)
+    else:
+        merged.pop('ansible_password', None)
+    return merged
 
 
 def _ensure_task_resource_available(host):
@@ -457,10 +605,15 @@ def _ensure_task_resource_available(host):
             raise ValueError(resource.execution_blocked_reason)
 
 
-def _build_ansible_process_env():
+def _build_ansible_process_env(host=None):
     env = dict(**getattr(settings, 'HOST_TASK_ANSIBLE_ENV', {}))
     process_env = dict(os.environ)
-    process_env.update({'ANSIBLE_HOST_KEY_CHECKING': 'False', 'PYTHONIOENCODING': 'utf-8'})
+    process_env.update({
+        'ANSIBLE_HOST_KEY_CHECKING': 'True' if ssh_known_hosts.strict_enabled() else 'False',
+        'PYTHONIOENCODING': 'utf-8',
+    })
+    if host is not None:
+        process_env.update(_ansible_auth_process_env(host))
     process_env.update(env)
     return process_env
 
@@ -498,8 +651,8 @@ def execute_ansible_command(host, command_text, timeout_seconds):
         raise AnsibleControllerError('未检测到 Ansible 控制端环境：后端运行环境未找到 ansible 命令，请安装 ansible-core 或配置 HOST_TASK_ANSIBLE_BINARY。')
 
     alias = _ansible_inventory_alias(host)
-    extra_vars = _build_ansible_extra_vars(host)
-    process_env = _build_ansible_process_env()
+    extra_vars = _ansible_extra_vars_for_process(host, _build_ansible_extra_vars(host))
+    process_env = _build_ansible_process_env(host)
 
     with tempfile.TemporaryDirectory(prefix='sxdevops_ansible_') as tmpdir:
         inventory_path = Path(tmpdir) / 'inventory.ini'
@@ -519,10 +672,8 @@ def execute_ansible_command(host, command_text, timeout_seconds):
             json.dumps(extra_vars, ensure_ascii=False),
         ]
         try:
-            result = subprocess.run(
+            result = _run_captured(
                 command,
-                capture_output=True,
-                text=True,
                 timeout=max(timeout_seconds + 20, 30),
                 env=process_env,
             )
@@ -551,7 +702,8 @@ def execute_ansible_playbook(host, playbook_content, timeout_seconds, playbook_n
     merged_extra_vars = _build_ansible_extra_vars(host)
     if isinstance(extra_vars, dict):
         merged_extra_vars.update(extra_vars)
-    process_env = _build_ansible_process_env()
+    merged_extra_vars = _ansible_extra_vars_for_process(host, merged_extra_vars)
+    process_env = _build_ansible_process_env(host)
 
     with tempfile.TemporaryDirectory(prefix='sxdevops_playbook_') as tmpdir:
         inventory_path = Path(tmpdir) / 'inventory.ini'
@@ -569,10 +721,8 @@ def execute_ansible_playbook(host, playbook_content, timeout_seconds, playbook_n
             json.dumps(merged_extra_vars, ensure_ascii=False),
         ]
         try:
-            result = subprocess.run(
+            result = _run_captured(
                 command,
-                capture_output=True,
-                text=True,
                 timeout=max(timeout_seconds + 20, 30),
                 env=process_env,
             )
@@ -800,17 +950,33 @@ def record_task_center_event(task, action, title, summary='', request=None, acto
     )
 
 
+def _stale_threshold_seconds(task, max_running_seconds):
+    """阈值随批量规模放大：200 台 × 15 秒的合法批量远超过 30 分钟。"""
+    if task is None:
+        return max_running_seconds
+    per_target = int(getattr(task, 'timeout_seconds', 0) or 60)
+    targets = max(int(getattr(task, 'target_count', 0) or 1), 1)
+    return max(max_running_seconds, per_target * targets * 2)
+
+
 def mark_stale_running_host_tasks(max_running_seconds=1800):
-    threshold = timezone.now() - timezone.timedelta(seconds=max_running_seconds)
-    stale_tasks = list(HostTask.objects.filter(status=HostTask.STATUS_RUNNING, started_at__lt=threshold)[:100])
+    now = timezone.now()
+    stale_tasks = []
+    for task in HostTask.objects.filter(status=HostTask.STATUS_RUNNING).order_by('started_at')[:100]:
+        started_at = task.started_at or task.created_at
+        if started_at is None:
+            continue
+        threshold = now - timezone.timedelta(seconds=_stale_threshold_seconds(task, max_running_seconds))
+        if started_at < threshold:
+            stale_tasks.append(task)
     if not stale_tasks:
         return 0
-    now = timezone.now()
+    threshold = now - timezone.timedelta(seconds=max_running_seconds)
     for task in stale_tasks:
         for execution in task.executions.filter(status='running'):
             started_at = execution.started_at or task.started_at or threshold
             execution.status = 'failed'
-            execution.error_message = '执行超时：任务执行中状态持续超过 30 分钟，系统已自动标记失败。'
+            execution.error_message = '执行超时：任务执行中状态持续超过预期时长，系统已自动标记失败。'
             execution.finished_at = now
             execution.duration_ms = max(int((now - started_at).total_seconds() * 1000), 0)
             execution.save(update_fields=['status', 'error_message', 'finished_at', 'duration_ms'])
@@ -822,7 +988,7 @@ def mark_stale_running_host_tasks(max_running_seconds=1800):
         task.status = HostTask.STATUS_FAILED
         task.lifecycle_status = HostTask.LIFECYCLE_FAILED
         task.finished_at = now
-        task.summary = '执行超时：任务执行中状态持续超过 30 分钟，系统已自动标记失败。'
+        task.summary = '执行超时：任务执行中状态持续超过预期时长，系统已自动标记失败。'
         task.save(update_fields=['status', 'lifecycle_status', 'success_count', 'failed_count', 'skipped_count', 'finished_at', 'summary'])
     return len(stale_tasks)
 
@@ -924,8 +1090,51 @@ def build_k8s_target_snapshot(targets):
     return snapshot
 
 
-def _strip_kubectl_binary(args):
-    return args[1:] if args and args[0] == 'kubectl' else args
+def _ensure_kubectl_prefix(command):
+    text = str(command or '').strip()
+    return text if text.startswith('kubectl') else f'kubectl {text}'
+
+
+# 任务中心支持从 payload/heredoc 提供 manifest（`-f -`）。控制台屏蔽 -f 是为了禁止读
+# 服务器本地文件；这里的 `-` 表示 stdin，内容由平台写入临时文件，因此先摘掉再补回。
+_STDIN_MANIFEST_FLAGS = ('-f', '--filename')
+
+
+def _split_stdin_manifest_args(tokens):
+    """返回 (过闸门用的 tokens, 是否使用 stdin manifest)。
+
+    使用 stdin manifest 时 `-f` 本身也必须从 tokens 里摘掉，否则控制台的 -f
+    黑名单仍会拒绝这条命令。
+    """
+    filtered = []
+    uses_stdin = False
+    expect_value = False
+    for token in tokens:
+        if expect_value:
+            expect_value = False
+            if token == '-':
+                uses_stdin = True
+                if filtered and filtered[-1] in _STDIN_MANIFEST_FLAGS:
+                    filtered.pop()
+                continue
+        if token.startswith('--filename=') and token[len('--filename='):] == '-':
+            uses_stdin = True
+            continue
+        filtered.append(token)
+        expect_value = token in _STDIN_MANIFEST_FLAGS
+    return filtered, uses_stdin
+
+
+def _kubectl_step_args(command):
+    """任务中心复用控制台的参数闸门，避免绕过 -f/--server 等禁用项。"""
+    from . import k8s_views
+
+    tokens = shlex.split(_ensure_kubectl_prefix(command))
+    filtered, uses_stdin = _split_stdin_manifest_args(tokens)
+    args = k8s_views.parse_kubectl_args(shlex.join(filtered))
+    if uses_stdin:
+        args = [*args, '-f', '-']
+    return args
 
 
 def _replace_kubectl_stdin_manifest_arg(args, manifest_path):
@@ -974,32 +1183,32 @@ def _kubectl_command_steps(command, payload=None):
     heredoc_command, heredoc_manifest, tail_lines = _extract_kubectl_heredoc(command)
     if heredoc_command:
         steps = [{
-            'args': _strip_kubectl_binary(shlex.split(heredoc_command)),
+            'args': _kubectl_step_args(heredoc_command),
             'manifest': manifest_from_payload or heredoc_manifest,
         }]
         for line in tail_lines:
             line = line.strip()
             if line:
-                steps.append({'args': _strip_kubectl_binary(shlex.split(line))})
+                steps.append({'args': _kubectl_step_args(line)})
         return steps
 
     lines = [line.strip() for line in command.splitlines() if line.strip()]
     if manifest_from_payload and lines and 'kubectl apply' in lines[0] and ' -f -' in f' {lines[0]} ':
-        steps = [{'args': _strip_kubectl_binary(shlex.split(lines[0])), 'manifest': manifest_from_payload}]
-        steps.extend({'args': _strip_kubectl_binary(shlex.split(line))} for line in lines[1:])
+        steps = [{'args': _kubectl_step_args(lines[0]), 'manifest': manifest_from_payload}]
+        steps.extend({'args': _kubectl_step_args(line)} for line in lines[1:])
         return steps
 
     # 多行命令逐行执行；合并成一个 argv 会让 kubectl 把后续命令当成参数。
     if len(lines) > 1:
-        return [{'args': _strip_kubectl_binary(shlex.split(line))} for line in lines]
-    return [{'args': _strip_kubectl_binary(shlex.split(command))}]
+        return [{'args': _kubectl_step_args(line)} for line in lines]
+    return [{'args': _kubectl_step_args(command)}]
 
 
 def _run_k8s_cluster_command(task, cluster):
     from . import k8s_views
 
     payload = task.payload or {}
-    command = (payload.get('command') or '').strip() or 'kubectl get pods -A | head -20'
+    command = (payload.get('command') or '').strip() or 'kubectl get pods -A'
     rendered_command = command if command.startswith('kubectl') else f'kubectl {command}'
     if k8s_views._is_demo(cluster):
         return '\n'.join([
@@ -1026,12 +1235,8 @@ def _run_k8s_cluster_command(task, cluster):
                     manifest_path = manifest_file.name
                 temporary_paths.append(manifest_path)
                 kubectl_args = _replace_kubectl_stdin_manifest_arg(kubectl_args, manifest_path)
-            process = subprocess.run(
+            process = _run_captured(
                 ['kubectl', '--kubeconfig', kubeconfig_path, *kubectl_args],
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
                 timeout=max(int(task.timeout_seconds or 30), 5),
             )
             output = (process.stdout or '').strip()
@@ -1115,22 +1320,14 @@ def _run_k8s_helm_release(task, cluster):
         repo_name = str(payload.get('repo_name') or payload.get('helm_repo_name') or '').strip()
         repo_url = str(payload.get('repo_url') or payload.get('helm_repo_url') or '').strip()
         if repo_name and repo_url:
-            repo_process = subprocess.run(
+            repo_process = _run_captured(
                 [helm_bin, 'repo', 'add', repo_name, repo_url],
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
                 timeout=max(int(task.timeout_seconds or 30), 10),
             )
             if repo_process.returncode != 0:
                 raise RuntimeError((repo_process.stderr or repo_process.stdout or '').strip() or 'helm repo add failed')
-            update_process = subprocess.run(
+            update_process = _run_captured(
                 [helm_bin, 'repo', 'update'],
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
                 timeout=max(int(task.timeout_seconds or 30), 10),
             )
             if update_process.returncode != 0:
@@ -1150,12 +1347,8 @@ def _run_k8s_helm_release(task, cluster):
         for item in payload.get('set_values') or []:
             if item:
                 args.extend(['--set', str(item)])
-        process = subprocess.run(
+        process = _run_captured(
             args,
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
             timeout=max(int(task.timeout_seconds or 180), 30),
         )
         output = (process.stdout or '').strip()

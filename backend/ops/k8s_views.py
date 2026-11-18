@@ -190,6 +190,11 @@ def _parse_kubectl_command(command):
     return args[1:]
 
 
+def parse_kubectl_args(command):
+    """供任务中心复用同一套参数闸门。返回去掉 kubectl 前缀后的 argv。"""
+    return _parse_kubectl_command(command)
+
+
 def _run_kubectl_command(cluster, command):
     args = _parse_kubectl_command(command)
     if _is_demo(cluster):

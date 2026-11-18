@@ -18,6 +18,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 
+from . import ssh_known_hosts
+from .credentials import decrypt_password
+
 from eventwall.services import record_event
 
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
@@ -36,13 +39,13 @@ DOCKER_DEMO_HOST_IPS = {'192.168.1.120', '192.168.1.121', '192.168.1.122'}
 
 def _get_ssh_client_from_docker_host(docker_host):
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(ssh_known_hosts.policy())
     try:
         client.connect(
             hostname=docker_host.ip_address,
             port=docker_host.ssh_port or 22,
             username=docker_host.ssh_user or 'root',
-            password=docker_host.ssh_password or None,
+            password=decrypt_password(docker_host.ssh_password) or None,
             timeout=8, banner_timeout=8, auth_timeout=8,
         )
     except Exception:

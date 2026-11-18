@@ -3,6 +3,8 @@ from decimal import Decimal
 from django.db.models import Q
 from rest_framework import serializers
 
+from sxdevops.secrets import SecretError
+
 from .models import CloudAsset, CloudCredential, CloudEnvironment, CloudSyncTask
 from .services import PROVIDER_CATALOG
 
@@ -24,6 +26,7 @@ class CloudCredentialSerializer(serializers.ModelSerializer):
     environment_count = serializers.SerializerMethodField()
     asset_count = serializers.SerializerMethodField()
     masked_secret = serializers.SerializerMethodField()
+    access_key_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = CloudCredential
@@ -52,7 +55,12 @@ class CloudCredentialSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'demo_mode': 'Demo 模式已下线，请配置真实账号凭据。'})
         if provider == 'huawei' and not demo_mode and auth_mode != 'demo':
             access_key_id = attrs.get('access_key_id', getattr(self.instance, 'access_key_id', ''))
-            access_key_secret = attrs.get('access_key_secret', getattr(self.instance, 'access_key_secret', ''))
+            access_key_secret = attrs.get('access_key_secret')
+            if access_key_secret is None:
+                try:
+                    access_key_secret = getattr(self.instance, 'access_key_secret', '') if self.instance else ''
+                except SecretError:
+                    access_key_secret = ''
             project_id = attrs.get('project_id', getattr(self.instance, 'project_id', ''))
             errors = {}
             if not str(access_key_id or '').strip():
@@ -123,12 +131,26 @@ class CloudCredentialSerializer(serializers.ModelSerializer):
         return len(ci_ids) if ci_ids else inventory_count
 
     def get_masked_secret(self, obj):
-        if not obj.access_key_secret:
+        # 只按长度生成掩码，不回显任何明文字符。
+        length = obj.secret_length() if hasattr(obj, 'secret_length') else len(getattr(obj, 'access_key_secret', '') or '')
+        if not length:
             return ''
-        # 短密钥首尾各取 2 位会等于泄露全部内容，短于 12 位一律完全遮蔽。
-        if len(obj.access_key_secret) < 12:
-            return '********'
-        return f'{obj.access_key_secret[:2]}******{obj.access_key_secret[-2:]}'
+        return '*' * min(length, 12)
+
+    def create(self, validated_data):
+        secret = validated_data.pop('access_key_secret', '')
+        instance = super().create(validated_data)
+        instance.access_key_secret = secret
+        instance.save(update_fields=['access_key_secret_encrypted'])
+        return instance
+
+    def update(self, instance, validated_data):
+        secret = validated_data.pop('access_key_secret', '')
+        instance = super().update(instance, validated_data)
+        if secret:
+            instance.access_key_secret = secret
+            instance.save(update_fields=['access_key_secret_encrypted'])
+        return instance
 
 
 class CloudEnvironmentSerializer(serializers.ModelSerializer):

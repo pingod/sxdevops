@@ -95,14 +95,47 @@ class HostTaskApiTests(TestCase):
         self.assertTrue(EventRecord.objects.filter(environment='ecommerce-task-prod').exists())
 
     def _mock_client(self, outputs):
+        """模拟 paramiko 的非阻塞通道语义：先吐数据，再报退出码。
+
+        生产代码用 recv_ready()/recv() 双读，只有真实的“数据→就绪→退出”
+        状态机能跑通，MagicMock 的默认真值会让循环空转，所以这里显式建模。
+        """
         client = MagicMock()
 
         def exec_command(command, timeout=None):
+            entry = outputs[command]
+            # 空输出就不要放进队列：recv_*_ready() 的语义是“有没有待读数据”。
+            stdout_data = entry.get('stdout', '').encode('utf-8')
+            stderr_data = entry.get('stderr', '').encode('utf-8')
+            pending = [stdout_data] if stdout_data else []
+            pending_err = [stderr_data] if stderr_data else []
+            channel = MagicMock()
+            exit_status = entry['exit_status']
+
+            def recv_ready():
+                return any(pending)
+
+            def recv(size=65536):
+                return pending.pop(0) if pending else b''
+
+            def recv_stderr_ready():
+                return any(pending_err)
+
+            def recv_stderr(size=65536):
+                return pending_err.pop(0) if pending_err else b''
+
+            channel.recv_ready.side_effect = recv_ready
+            channel.recv.side_effect = recv
+            channel.recv_stderr_ready.side_effect = recv_stderr_ready
+            channel.recv_stderr.side_effect = recv_stderr
+            channel.exit_status_ready.side_effect = lambda: not pending and not pending_err
+            channel.recv_exit_status.side_effect = lambda: exit_status
+
             stdout = MagicMock()
+            stdout.channel = channel
+            stdout.read.side_effect = lambda: entry.get('stdout', '').encode('utf-8')
             stderr = MagicMock()
-            stdout.channel.recv_exit_status.return_value = outputs[command]['exit_status']
-            stdout.read.return_value = outputs[command].get('stdout', '').encode('utf-8')
-            stderr.read.return_value = outputs[command].get('stderr', '').encode('utf-8')
+            stderr.read.side_effect = lambda: entry.get('stderr', '').encode('utf-8')
             return None, stdout, stderr
 
         client.exec_command.side_effect = exec_command
@@ -665,7 +698,7 @@ class HostTaskApiTests(TestCase):
         self.assertEqual(payload['executions'][0]['target_kind'], 'cluster')
         self.assertEqual(payload['executions'][0]['target_name'], cluster.name)
 
-    @patch('ops.host_tasks.subprocess.run')
+    @patch('ops.host_tasks._run_captured')
     def test_k8s_apply_heredoc_uses_manifest_file_for_real_cluster(self, mocked_run):
         cluster = K8sCluster.objects.create(
             name='real-k8s-apply',
@@ -690,6 +723,7 @@ class HostTaskApiTests(TestCase):
             "kubectl rollout status deployment/xxl-job-admin -n default --timeout=120s\n"
             "kubectl get deploy,svc -n default -l app.kubernetes.io/instance=xxl-job-admin"
         )
+        # kubectl 现在走 _run_captured（Popen + 分块读取，输出上限 1 MB）。
         mocked_run.return_value.returncode = 0
         mocked_run.return_value.stdout = 'ok'
         mocked_run.return_value.stderr = ''
@@ -1170,3 +1204,33 @@ class HostTaskApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         template.refresh_from_db()
         self.assertEqual(template.name, 'builtin-template')
+
+
+class AnsibleCredentialHygieneTests(TestCase):
+    """口令只能经环境变量传给 ansible，绝不能出现在 argv 里。"""
+
+    def test_ansible_password_not_in_command_argv(self):
+        from unittest.mock import patch
+
+        from ops.credentials import encrypt_password
+        from ops.host_tasks import execute_ansible_command
+        from ops.models import Host
+
+        host = Host.objects.create(
+            hostname='argv-host',
+            ip_address='10.1.2.3',
+            ssh_password=encrypt_password('s3cret'),
+        )
+        with patch('ops.host_tasks.subprocess.Popen') as popen, \
+                patch('ops.host_tasks.is_ansible_available', return_value=True), \
+                patch('ops.host_tasks.get_ansible_binary', return_value='ansible'):
+            popen.return_value.stdout = None
+            popen.return_value.stderr = None
+            popen.return_value.returncode = 0
+            popen.return_value.poll.return_value = 0
+            execute_ansible_command(host, 'uptime', 30)
+        command = popen.call_args.args[0]
+        env = popen.call_args.kwargs['env']
+        self.assertNotIn('s3cret', ' '.join(command))
+        self.assertIn('ANSIBLE_PASSWORD', ' '.join(command))
+        self.assertEqual(env['ANSIBLE_PASSWORD'], 's3cret')

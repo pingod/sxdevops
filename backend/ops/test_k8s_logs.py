@@ -215,6 +215,13 @@ class K8sLogAccessTests(TestCase):
         self.assertIs(k8s.CoreV1Api.return_value.read_namespaced_pod_log.call_args.kwargs['timestamps'], False)
 
 
+def _passthrough_guard():
+    """SimpleTestCase 不能查库，用一个直接放行输入的守卫替身。"""
+    guard = MagicMock()
+    guard.process.side_effect = lambda text: (text, [])
+    return guard
+
+
 @skipUnless(pty is not None, '需要 Linux PTY')
 class K8sClusterShellTests(SimpleTestCase):
     @skipUnless(shutil.which('bash') and shutil.which('kubectl'), '需要 Bash 和 kubectl')
@@ -236,6 +243,7 @@ class K8sClusterShellTests(SimpleTestCase):
 
         consumer.send = receive
         consumer.close = MagicMock()
+        consumer.guard = _passthrough_guard()
         self.addCleanup(consumer.disconnect, 1000)
         consumer._start_shell()
         consumer.receive(json.dumps({'type': 'input', 'data': 'printf "SX_READY_%s\\n" DONE\r'}))
@@ -251,6 +259,7 @@ class K8sClusterShellTests(SimpleTestCase):
         finished = threading.Event()
         consumer.send = lambda text_data: received.append(json.loads(text_data))
         consumer.close = lambda **kwargs: finished.set()
+        consumer.guard = _passthrough_guard()
         self.addCleanup(consumer.disconnect, 1000)
         consumer._start_shell()
         consumer.receive(json.dumps({'type': 'input', 'data': 'stty size; printf "\\344\\270\\255\\346\\226\\207"; exit\r'}))

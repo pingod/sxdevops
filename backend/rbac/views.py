@@ -1,5 +1,6 @@
 ﻿from django.contrib.auth import authenticate, get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import filters, status, viewsets
 from rest_framework.authentication import TokenAuthentication
@@ -28,6 +29,7 @@ from .serializers import (
     UserGroupSerializer,
     UserSerializer,
 )
+from .ws_tickets import issue_websocket_ticket
 from .services import (
     DEFAULT_SYSTEM_MODULE_CODE,
     SYSTEM_MODULE_CATALOG,
@@ -37,6 +39,7 @@ from .services import (
     get_system_module_settings,
     user_has_permissions,
     get_user_effective_permissions,
+    invalidate_user_permissions,
 )
 from .security import (
     group_permission_codes, require_delegable_permissions, require_manageable_role, require_manageable_user,
@@ -54,6 +57,7 @@ class IdentityWriteMixin:
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
+        # 权限缓存由 rbac.apps 的 post_save/m2m_changed 信号失效，这里不重复处理。
         return super().create(request, *args, **kwargs)
 
     @transaction.atomic
@@ -67,8 +71,23 @@ class IdentityWriteMixin:
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        self.authorization_before = self.authorization_snapshot(self.get_object())
-        return super().destroy(request, *args, **kwargs)
+        instance = self.get_object()
+        self.authorization_before = self.authorization_snapshot(instance)
+        affected_users = self._affected_users(instance)
+        response = super().destroy(request, *args, **kwargs)
+        for user in affected_users:
+            invalidate_user_permissions(user)
+        return response
+
+    def _affected_users(self, instance):
+        """删除前先记下受影响用户，删除后就查不到关联了。"""
+        if isinstance(instance, User):
+            return [instance]
+        if isinstance(instance, Role):
+            return list(User.objects.filter(Q(rbac_roles=instance) | Q(rbac_groups__roles=instance)).distinct())
+        if isinstance(instance, UserGroup):
+            return list(User.objects.filter(rbac_groups=instance).distinct())
+        return []
 
     def authorization_snapshot(self, instance):
         if isinstance(instance, User):
@@ -406,6 +425,14 @@ def logout_view(request):
     from django.contrib.auth import logout
     logout(request)
     return Response({'success': True})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def websocket_ticket_view(request):
+    """签发一次性 WebSocket 短票据，避免把长期 Token 放进 WS 查询串。"""
+    ticket = issue_websocket_ticket(request.user, ttl_seconds=30)
+    return Response({'ticket': ticket.key, 'expires_in': 30})
 
 
 @api_view(['GET'])

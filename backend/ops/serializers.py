@@ -10,6 +10,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from cmdb.models import CIRelation, ConfigItem, ResourceNode
 
+from .credentials import encrypt_password
 from .host_task_schedules import compute_next_run, preview_next_runs, validate_cron_expression
 from .grafana_urls import validate_grafana_url
 from .models import (
@@ -286,6 +287,13 @@ class HostSerializer(serializers.ModelSerializer):
     def get_environment_display(self, obj):
         return obj.get_environment_display() if obj.environment else ''
 
+    def to_internal_value(self, data):
+        validated = super().to_internal_value(data)
+        password = validated.get('ssh_password')
+        if password:
+            validated['ssh_password'] = encrypt_password(password)
+        return validated
+
     def update(self, instance, validated_data):
         # 空串代表"不修改已存密码"，避免前端编辑其它字段时清空 SSH 凭证
         if self.instance is not None and not validated_data.get('ssh_password'):
@@ -499,7 +507,11 @@ class TaskResourceSerializer(serializers.ModelSerializer):
         if data.get('resource_type') == TaskResource.RESOURCE_K8S and data.get('ip_address') in ('', None):
             data = data.copy()
             data['ip_address'] = None
-        return super().to_internal_value(data)
+        validated = super().to_internal_value(data)
+        password = validated.get('ssh_password')
+        if password:
+            validated['ssh_password'] = encrypt_password(password)
+        return validated
 
     def get_endpoint(self, obj):
         if obj.resource_type == TaskResource.RESOURCE_K8S:
@@ -1542,7 +1554,7 @@ class DeploymentSerializer(serializers.ModelSerializer):
             ip_address=host.ip_address,
             ssh_port=getattr(host, 'ssh_port', 22) or 22,
             ssh_user=getattr(host, 'ssh_user', 'root') or 'root',
-            ssh_password=getattr(host, 'ssh_password', '') or '',
+            ssh_password=getattr(host, 'ssh_password', '') or '',  # 已是密文，直接搬运
             status=status_map.get(getattr(host, 'status', ''), 'disconnected'),
             description='由应用发布主机目标自动映射',
         )
@@ -2397,6 +2409,13 @@ class DockerHostSerializer(serializers.ModelSerializer):
             'ssh_password': {'write_only': True},
         }
 
+    def to_internal_value(self, data):
+        validated = super().to_internal_value(data)
+        password = validated.get('ssh_password')
+        if password:
+            validated['ssh_password'] = encrypt_password(password)
+        return validated
+
 
 class NginxEnvironmentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -2407,6 +2426,13 @@ class NginxEnvironmentSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'ssh_password': {'write_only': True},
         }
+
+    def to_internal_value(self, data):
+        validated = super().to_internal_value(data)
+        password = validated.get('ssh_password')
+        if password:
+            validated['ssh_password'] = encrypt_password(password)
+        return validated
 
 
 class NginxCertificateSerializer(serializers.ModelSerializer):

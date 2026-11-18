@@ -16,6 +16,8 @@ from kubernetes.client.exceptions import ApiException
 from cmdb.models import CIType, CIRelation, ConfigItem
 from eventwall.models import EventRecord
 from eventwall.services import build_resource, record_event
+from ops import ssh_known_hosts
+from ops.credentials import decrypt_password
 from ops.k8s_views import _get_k8s_client, _is_demo
 
 from .models import Deployment
@@ -278,12 +280,12 @@ def sync_current_deployments_to_cmdb():
 
 def _get_ssh_client(host):
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(ssh_known_hosts.policy())
     client.connect(
         hostname=host.ip_address,
         port=getattr(host, 'ssh_port', 22) or 22,
         username=getattr(host, 'ssh_user', 'root') or 'root',
-        password=getattr(host, 'ssh_password', '') or None,
+        password=decrypt_password(getattr(host, 'ssh_password', '')) or None,
         timeout=15,
     )
     return client

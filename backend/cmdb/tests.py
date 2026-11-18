@@ -968,7 +968,7 @@ class AliyunCostSyncTests(AuthenticatedTestCase):
         super().setUp()
         from multicloud.models import CloudCredential
 
-        self.credential = CloudCredential.objects.create(
+        self.credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='aliyun-production',
             account_id='1234567890',
@@ -1812,7 +1812,7 @@ class CmdbResourceRequestTests(AuthenticatedTestCase):
         self.assertEqual(delivered_row['delivered_ci']['sync_status'], 'success')
 
     def test_provisioning_options_only_return_enabled_sanitized_supported_accounts(self):
-        enabled = CloudCredential.objects.create(
+        enabled = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='生产阿里云账号',
             account_id='10001',
@@ -1822,7 +1822,7 @@ class CmdbResourceRequestTests(AuthenticatedTestCase):
             default_region='cn-hangzhou',
             is_enabled=True,
         )
-        CloudCredential.objects.create(
+        CloudCredential.objects.create_with_credentials(
             provider='huawei',
             name='停用华为云账号',
             access_key_id='test-ak',
@@ -1844,7 +1844,7 @@ class CmdbResourceRequestTests(AuthenticatedTestCase):
 
     @patch('cmdb.views.provision_resource_request')
     def test_cloud_provisioning_creates_cmdb_asset_without_waiting_for_ip(self, mock_provision):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='huawei',
             name='华为云生产账号',
             access_key_id='test-ak',
@@ -1914,7 +1914,7 @@ class CmdbResourceRequestTests(AuthenticatedTestCase):
 
     @patch('cmdb.views.provision_resource_request', side_effect=RuntimeError('云平台配额不足'))
     def test_cloud_provisioning_failure_is_recorded_for_retry(self, _mock_provision):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='阿里云生产账号',
             access_key_id='test-ak',
@@ -5132,7 +5132,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
             source_region='cn-hangzhou',
             source_unique_id='sg-legacy-001',
         )
-        credential = CloudCredential.objects.create(provider='aliyun', name='prod-aliyun')
+        credential = CloudCredential.objects.create_with_credentials(provider='aliyun', name='prod-aliyun')
         environment = CloudEnvironment.objects.create(
             credential=credential,
             name='prod',
@@ -6808,7 +6808,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
         from unittest.mock import patch
         from multicloud.models import CloudCredential
 
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='阿里云-权限不足账号',
             account_id='100001',
@@ -8908,7 +8908,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
         from multicloud.models import CloudCredential
 
         ensure_builtin_cmdb()
-        aliyun_account = CloudCredential.objects.create(
+        aliyun_account = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='阿里云生产账号',
             account_name='prod-aliyun',
@@ -8916,7 +8916,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
             access_key_secret='sk-test',
             default_region='cn-hangzhou',
         )
-        huawei_account = CloudCredential.objects.create(
+        huawei_account = CloudCredential.objects.create_with_credentials(
             provider='huawei',
             name='华为云生产账号',
             account_name='prod-huawei',
@@ -8956,7 +8956,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
                     'source_account': 'vcenter-prod',
                     'host': 'vcenter.example.com',
                     'username': 'administrator@vsphere.local',
-                    'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
+                    'auth_ref': 'VSPHERE_PROD',
                 },
             ),
             CISyncJob.objects.create(
@@ -9243,7 +9243,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
         from multicloud.models import CloudCredential
 
         ensure_builtin_cmdb()
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='阿里云-交易系统生产主账号',
             account_name='trade-prod',
@@ -9456,7 +9456,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
                 'source_account': 'vcenter-prod',
                 'host': 'vcenter.example.com',
                 'username': 'administrator@vsphere.local',
-                'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
+                'auth_ref': 'VSPHERE_PROD',
             },
         )
         captured_config = {}
@@ -9714,7 +9714,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
             config={'query_url': 'http://account.prometheus.internal:9090'},
             is_enabled=True,
         )
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='public-cloud-account',
             account_id='1234567890',
@@ -9817,7 +9817,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
                 'source_account': 'example-vsphere',
                 'host': 'vcenter.example.com',
                 'username': 'administrator@vsphere.local',
-                'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
+                'auth_ref': 'VSPHERE_PROD',
             },
         )
 
@@ -9966,7 +9966,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
                 'source_account': 'vcenter-prod',
                 'host': 'vcenter.example.com',
                 'username': 'administrator@vsphere.local',
-                'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
+                'auth_ref': 'VSPHERE_PROD',
             },
         )
 
@@ -10040,7 +10040,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
                 'source_account': 'example-vsphere',
                 'host': 'vcenter.example.com',
                 'username': 'administrator@vsphere.local',
-                'auth_ref': 'SXDEVOPS_VSPHERE_PROD',
+                'auth_ref': 'VSPHERE_PROD',
             },
         )
 
@@ -10113,7 +10113,7 @@ class CmdbPhaseOneMetadataTests(AuthenticatedTestCase):
         from multicloud.models import CloudCredential
         from cmdb.collectors import _runtime_collection_config
 
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='vsphere',
             name='example-vsphere',
             account_id='https://10.197.0.10/',

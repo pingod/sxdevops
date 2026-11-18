@@ -36,7 +36,7 @@ class CloudCredentialViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, vi
     event_resource_type = 'cloud_credential'
     event_resource_label = '云账号'
     event_resource_name_fields = ('name', 'account_name')
-    event_exclude_fields = ('access_key_id', 'access_key_secret', 'external_id', 'role_arn')
+    event_exclude_fields = ('access_key_id', 'access_key_secret', 'access_key_secret_encrypted', 'external_id', 'role_arn')
     rbac_permissions = {
         'list': ['ops.multicloud.view'],
         'retrieve': ['ops.multicloud.view'],

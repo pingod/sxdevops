@@ -49,7 +49,7 @@ class WafServiceTests(TestCase):
         self.assertEqual(normalize_region(''), 'cn-hangzhou')
 
     def test_credential_must_be_enabled_aliyun_aksk(self):
-        credential = CloudCredential.objects.create(
+        credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='aliyun-waf-prod',
             access_key_id='test-ak',

@@ -4,7 +4,7 @@ import logging
 import time
 
 from django.conf import settings
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle, UserRateThrottle
 
 logger = logging.getLogger(__name__)
 
@@ -70,3 +70,20 @@ class LoginAccountThrottle(AtomicLoginThrottle):
         username = str(data.get('username', '')).strip().casefold()
         ident = hashlib.sha256(username.encode('utf-8')).hexdigest()
         return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class ScopedUserThrottle(UserRateThrottle):
+    """全局用户级限流；视图用 throttle_scope 切到更严的 expensive 档。"""
+    scope = 'user'
+
+    def get_rate(self):
+        try:
+            return super().get_rate()
+        except Exception:
+            logger.exception('User throttle rate configuration invalid')
+            return None
+
+
+class ExpensiveEndpointThrottle(ScopedRateThrottle):
+    """昂贵的查询/执行接口：按视图 throttle_scope 取速率（如 expensive、cmdb_password_reveal）。"""
+    scope_attr = 'throttle_scope'

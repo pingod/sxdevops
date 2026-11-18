@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 from collections import Counter
 from datetime import timedelta
@@ -8,6 +9,9 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from multicloud.models import CloudCredential
+from sxdevops.secrets import SecretError
+
+logger = logging.getLogger(__name__)
 
 
 WAF_REGIONS = {
@@ -40,6 +44,15 @@ class WafConfigurationError(WafServiceError):
     pass
 
 
+def _has_usable_secret(credential):
+    """解密失败（密钥缺失/密文损坏）时按未配置处理，不向上抛异常。"""
+    try:
+        return bool(credential.access_key_secret)
+    except SecretError:
+        logger.warning('云账号 %s 的 Access Key Secret 无法解密', credential.pk)
+        return False
+
+
 def list_waf_accounts():
     return [
         {
@@ -49,7 +62,7 @@ def list_waf_accounts():
             'account_name': item.account_name,
             'default_region': normalize_region(item.default_region),
             'owner': item.owner,
-            'configured': bool(item.access_key_id and item.access_key_secret and item.is_enabled),
+            'configured': bool(item.access_key_id and _has_usable_secret(item) and item.is_enabled),
         }
         for item in CloudCredential.objects.filter(provider='aliyun', is_enabled=True).order_by('name')
     ]
@@ -76,7 +89,7 @@ def get_waf_credential(credential_id):
     credential = queryset.order_by('name').first()
     if credential is None:
         raise WafConfigurationError('未找到已启用的阿里云账号，请先在多云管理中配置账号凭据。')
-    if credential.auth_mode != 'aksk' or not credential.access_key_id or not credential.access_key_secret:
+    if credential.auth_mode != 'aksk' or not credential.access_key_id or not _has_usable_secret(credential):
         raise WafConfigurationError(f'阿里云账号“{credential.name}”未配置可用的 AK/SK 凭据。')
     return credential
 

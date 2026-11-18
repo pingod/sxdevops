@@ -16,6 +16,8 @@ from eventwall.services import build_json_preview, build_resource, record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
 
 from . import deployer
+from . import ssh_known_hosts
+from .credentials import decrypt_password
 from .task_resources import (
     cmdb_resource_defaults, cmdb_resource_group_names, cmdb_resource_kind, cmdb_resource_options,
     filter_resource_business_scope, resource_business_tree, scope_task_resources, visible_cmdb_resources,
@@ -243,12 +245,12 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
         client = None
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.set_missing_host_key_policy(ssh_known_hosts.policy())
             client.connect(
                 hostname=host.ip_address,
                 port=host.ssh_port or 22,
                 username=host.ssh_user or 'root',
-                password=host.ssh_password or None,
+                password=decrypt_password(host.ssh_password) or None,
                 timeout=10,
             )
             stdin, stdout, stderr = client.exec_command('uname -a', timeout=5)
@@ -298,12 +300,12 @@ class HostViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.Mode
         client = None
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.set_missing_host_key_policy(ssh_known_hosts.policy())
             client.connect(
                 hostname=host.ip_address,
                 port=host.ssh_port or 22,
                 username=host.ssh_user or 'root',
-                password=host.ssh_password or None,
+                password=decrypt_password(host.ssh_password) or None,
                 timeout=10,
             )
 

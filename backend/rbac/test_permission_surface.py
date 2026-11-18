@@ -231,7 +231,12 @@ class PermissionSurfaceTests(TestCase):
             for secret in secrets:
                 self.assertNotIn(secret, str(response.data))
         self.grant('aiops.config.manage', 'ops.alert.config.manage')
-        self.assertEqual(self.client.get(f'/api/aiops/admin/mcp-servers/{mcp.pk}/').data['auth_config'], mcp.auth_config)
+        # 管理员可以看到端点（含查询参数），但鉴权配置库内只存密文，任何权限等级都不回显。
+        managed = self.client.get(f'/api/aiops/admin/mcp-servers/{mcp.pk}/').data
+        self.assertIn('mcp.example.test', managed['endpoint_or_command'])
+        self.assertEqual(managed['auth_config'], {'configured': True, 'allow_write': False})
+        for secret in ('private-mcp', 'private-env'):
+            self.assertNotIn(secret, str(managed))
         self.assertEqual(self.client.get(f'/api/alert-integrations/{integration.pk}/').data['token'], integration.token)
         self.assertEqual(self.client.get(f'/api/alert-notification-channels/{channel.pk}/').data['config'], channel.config)
 

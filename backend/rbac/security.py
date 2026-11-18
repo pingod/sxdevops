@@ -76,6 +76,8 @@ def require_k8s_subset(ceiling, grants):
 
 def revoke_user_credentials(user):
     Token.objects.filter(user=user).delete()
+    from .services import invalidate_user_permissions
+    invalidate_user_permissions(user)
     store = SessionStore()
     keys = [session.pk for session in Session.objects.only('session_key', 'session_data').iterator()
             if str(store.decode(session.session_data).get(SESSION_KEY)) == str(user.pk)]
