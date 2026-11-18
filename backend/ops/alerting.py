@@ -1032,7 +1032,8 @@ def dispatch_alert_notifications(alert, action='fire', request=None, force=False
     return logs
 
 
-def apply_escalation_policy(alert, request=None):
+def apply_escalation_policy(alert, request=None, dispatch=True):
+    """计算升级级别并落库；dispatch=False 时只写状态，网络外发由调用方在事务提交后做。"""
     if alert.status not in {Alert.STATUS_ACTIVE, Alert.STATUS_MUTED}:
         return False
     # 屏蔽/静默中的告警不应升级，也不应绕过 suppression 强制发通知。
@@ -1068,7 +1069,8 @@ def apply_escalation_policy(alert, request=None):
         note=f'命中升级策略 {policy.name}',
         metadata={'policy_id': policy.id, 'level': matched_level or {}, 'duration_minutes': duration_minutes},
     )
-    dispatch_alert_notifications(alert, action='escalation', request=request)
+    if dispatch:
+        dispatch_alert_notifications(alert, action='escalation', request=request)
     return True
 
 
@@ -1079,6 +1081,7 @@ def ingest_webhook(provider, payload, integration=None, request=None):
     updated_count = 0
     alerts = []
     notification_actions = []
+    escalated_alerts = []
     with transaction.atomic():
         if integration:
             integration.last_received_at = timezone.now()
@@ -1086,15 +1089,29 @@ def ingest_webhook(provider, payload, integration=None, request=None):
         for item in normalized_alerts:
             alert, created = upsert_alert(item, integration=integration, actor=provider)
             apply_alert_suppression(alert)
-            apply_escalation_policy(alert, request=request)
+            # 事务内只算升级级别；外发请求留到提交后，避免端点卡住时长时间持有行锁。
+            if apply_escalation_policy(alert, request=request, dispatch=False):
+                escalated_alerts.append(alert)
             action = 'resolved' if alert.status == Alert.STATUS_RESOLVED else 'fire'
             notification_actions.append((alert, action))
             created_count += 1 if created else 0
             updated_count += 0 if created else 1
             alerts.append(alert)
-    for alert, action in notification_actions:
-        dispatch_alert_notifications(alert, action=action, request=request)
+        transaction.on_commit(lambda: _dispatch_after_commit(notification_actions, escalated_alerts, request))
     return {'created': created_count, 'updated': updated_count, 'alerts': alerts}
+
+
+def _dispatch_after_commit(notification_actions, escalated_alerts, request=None):
+    for alert in escalated_alerts:
+        try:
+            dispatch_alert_notifications(alert, action='escalation', request=request)
+        except Exception:
+            logger.exception('escalation dispatch failed for alert %s', alert.pk)
+    for alert, action in notification_actions:
+        try:
+            dispatch_alert_notifications(alert, action=action, request=request)
+        except Exception:
+            logger.exception('alert notification dispatch failed for alert %s', alert.pk)
 
 
 def apply_alert_action(alert, action, actor='', note='', metadata=None, request=None, mute_minutes=60):
@@ -1182,12 +1199,34 @@ def handle_interaction_token(token_value, request=None):
         return False, '交互令牌不存在', None
     if not token.is_available:
         return False, '交互令牌已过期或已使用', token.alert
+    # 条件更新消费令牌：重复点击/重复投递只会有一次真正执行动作。
+    claimed = AlertInteractionToken.objects.filter(pk=token.pk, used_at__isnull=True).update(used_at=timezone.now())
+    if not claimed:
+        return False, '交互令牌已过期或已使用', token.alert
     actor = f'card:{token.provider or "unknown"}'
     note = '卡片按钮操作'
     apply_alert_action(token.alert, token.action, actor=actor, note=note, metadata={'token': str(token.token)}, request=request)
-    token.used_at = timezone.now()
-    token.save(update_fields=['used_at'])
     return True, '告警操作已处理', token.alert
+
+
+def escalate_due_alerts(limit=200):
+    """扫描已到升级时间但尚未升级的告警，供周期任务调用。"""
+    now = timezone.now()
+    escalated = 0
+    candidates = (
+        Alert.objects.filter(status__in=[Alert.STATUS_ACTIVE, Alert.STATUS_MUTED], is_suppressed=False)
+        .exclude(status=Alert.STATUS_MUTED)
+        .order_by('starts_at', 'id')[:limit]
+    )
+    for alert in candidates:
+        if now < (alert.starts_at or alert.created_at or now):
+            continue
+        try:
+            if apply_escalation_policy(alert, dispatch=True):
+                escalated += 1
+        except Exception:
+            logger.exception('alert escalation failed for alert %s', alert.pk)
+    return escalated
 
 
 def alert_group_summary(queryset, group_by=None, limit=5000):

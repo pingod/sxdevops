@@ -551,6 +551,14 @@ class CostRecord(models.Model):
     provider = models.CharField("云厂商", max_length=50, blank=True)
     computed_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ci', 'month', 'provider'],
+                name='cmdb_cost_record_unique_ci_month_provider',
+            ),
+        ]
+
 
 class CostOptimizationTask(models.Model):
     STATUS_CHOICES = [

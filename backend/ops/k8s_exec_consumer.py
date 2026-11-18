@@ -7,7 +7,6 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import WebsocketConsumer
 from kubernetes.stream import stream
 from kubernetes.stream.ws_client import RESIZE_CHANNEL
-from rest_framework.authtoken.models import Token
 
 from ops.models import K8sCluster
 from ops.k8s_views import _get_k8s_client, _is_demo
@@ -15,6 +14,7 @@ from ops.k8s_shell import interactive_shell_command
 from ops.webshell_guard import WebShellGuard, handle_guard_events, load_rules
 from rbac.services import user_has_console_access, user_has_permissions
 from rbac.k8s_access import can_access_k8s
+from rbac.websocket import resolve_terminal_user
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +23,25 @@ class K8sExecConsumer(WebsocketConsumer):
     channel_layer_alias = None
     exec_stream = None
     _reading = False
+    _write_lock = None
     _demo_buffer = ''
     _demo_cwd = '/app'
 
     def connect(self):
         self.cluster_id = self.scope['url_route']['kwargs']['cluster_id']
         query = parse_qs(self.scope.get('query_string', b'').decode('utf-8'))
-        token_key = query.get('token', [''])[0]
+        ticket_key = query.get('ticket', [''])[0]
+        legacy_token_key = query.get('token', [''])[0]
         self.pod_name = query.get('pod_name', [''])[0]
         self.namespace = query.get('namespace', ['default'])[0] or 'default'
         self.container = query.get('container', [''])[0]
         self.shell = query.get('shell', ['auto'])[0] or 'auto'
 
-        token = Token.objects.filter(key=token_key).select_related('user').first()
-        if not token or not token.user.is_active:
+        user = resolve_terminal_user(ticket_key=ticket_key, legacy_token_key=legacy_token_key)
+        if not user or not user.is_active:
             self.close(code=4401)
             return
-        if not user_has_console_access(token.user, ['ops.k8s.exec']):
+        if not user_has_console_access(user, ['ops.k8s.exec']):
             self.close(code=4403)
             return
         if not self.pod_name:
@@ -52,7 +54,7 @@ class K8sExecConsumer(WebsocketConsumer):
             self.close(code=4404)
             return
 
-        self.user = token.user
+        self.user = user
         if not can_access_k8s(self.user, self.cluster_id, self.namespace, execute=True):
             self.close(code=4403)
             return
@@ -93,6 +95,8 @@ class K8sExecConsumer(WebsocketConsumer):
                 kwargs['container'] = self.container
 
             self.exec_stream = stream(v1.connect_get_namespaced_pod_exec, **kwargs)
+            # 写 stdin 与读线程的 update/close 会并发访问同一条 websocket，需要同一把锁。
+            self._write_lock = threading.Lock()
             self._reading = True
             self.send(text_data=json.dumps({
                 'type': 'connected',
@@ -110,9 +114,14 @@ class K8sExecConsumer(WebsocketConsumer):
 
     def disconnect(self, close_code):
         self._reading = False
+        lock = self._write_lock
         if self.exec_stream:
             try:
-                self.exec_stream.close()
+                if lock is not None:
+                    with lock:
+                        self.exec_stream.close()
+                else:
+                    self.exec_stream.close()
             except Exception:
                 pass
             self.exec_stream = None
@@ -138,7 +147,12 @@ class K8sExecConsumer(WebsocketConsumer):
             if msg_type == 'input':
                 forward, events = self.guard.process(str(data.get('data', '')))
                 if forward:
-                    self.exec_stream.write_stdin(forward)
+                    lock = self._write_lock
+                    if lock is not None:
+                        with lock:
+                            self.exec_stream.write_stdin(forward)
+                    else:
+                        self.exec_stream.write_stdin(forward)
                 if events:
                     handle_guard_events(
                         events, user=self.user, resource_type='k8s_pod',
@@ -149,18 +163,26 @@ class K8sExecConsumer(WebsocketConsumer):
             elif msg_type == 'resize':
                 cols = min(500, max(20, int(data.get('cols', 120) or 120)))
                 rows = min(300, max(5, int(data.get('rows', 40) or 40)))
-                self.exec_stream.write_channel(
-                    RESIZE_CHANNEL,
-                    json.dumps({'Width': cols, 'Height': rows}),
-                )
+                lock = self._write_lock
+                payload = json.dumps({'Width': cols, 'Height': rows})
+                if lock is not None:
+                    with lock:
+                        self.exec_stream.write_channel(RESIZE_CHANNEL, payload)
+                else:
+                    self.exec_stream.write_channel(RESIZE_CHANNEL, payload)
         except Exception as exc:
             logger.error('K8s exec input error: %s', exc)
 
     def _read_exec_output(self):
         connection = self.exec_stream
+        lock = self._write_lock
         while self._reading and connection and connection.is_open():
             try:
-                connection.update(timeout=1)
+                if lock is not None:
+                    with lock:
+                        connection.update(timeout=1)
+                else:
+                    connection.update(timeout=1)
                 output = ''
                 if connection.peek_stdout():
                     output += connection.read_stdout()
@@ -183,7 +205,14 @@ class K8sExecConsumer(WebsocketConsumer):
         if self._reading:
             self._reading = False
             if connection:
-                connection.close()
+                try:
+                    if lock is not None:
+                        with lock:
+                            connection.close()
+                    else:
+                        connection.close()
+                except Exception:
+                    pass
             self.close()
 
     def _handle_demo_input(self, incoming):

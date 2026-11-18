@@ -133,7 +133,8 @@ class ProxyTests(TestCase):
         args, kwargs = upstream.call_args
         self.assertEqual(args[0], 'GET')
         self.assertEqual(args[1], 'http://127.0.0.1:18001/api/cables')
-        self.assertEqual(kwargs['params'], 'limit=50&channel=2')
+        # 查询串解析成键值对传给 requests，避免把原始串当不透明参数导致重复编码。
+        self.assertEqual(kwargs['params'], [('limit', '50'), ('channel', '2')])
         self.assertNotIn('Authorization', kwargs['headers'])
 
     def test_viewer_cannot_write(self):

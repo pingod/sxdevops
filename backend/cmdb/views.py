@@ -7,6 +7,7 @@ import hashlib
 import io
 import ipaddress
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -92,6 +93,7 @@ from .passwords import ConfigItemPasswordDecryptionError, decrypt_config_item_pa
 from .provisioning import ALIYUN_RESOURCE_TYPE_MAP, build_provisioning_options, provision_resource_request, provider_label
 from ops.models import Host
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.throttles import ExpensiveEndpointThrottle
 from rbac.services import user_has_permissions
 from .sync import (
     ensure_host_ci_type,
@@ -101,6 +103,8 @@ from .sync import (
     normalize_ci_type_name,
     resolve_config_item_type_meta,
 )
+
+logger = logging.getLogger(__name__)
 
 
 SEVERITY_ORDER = {'danger': 3, 'warning': 2, 'info': 1}
@@ -289,6 +293,13 @@ def _subnet_address_snapshot(subnet, user=None):
     addresses = _usable_subnet_addresses(subnet)
     records = {row.address: row for row in subnet.addresses.select_related('ci').all()}
     cmdb_index = _cmdb_ip_index(network, user=user)
+    # 越权 CI 的名称不能通过 IPAM 视图泄露；只保留已授权的 CI 关联。
+    if user is not None:
+        allowed_ci_ids = set(
+            _apply_ci_authorization_scope(ConfigItem.objects.all(), user).values_list('id', flat=True)
+        )
+    else:
+        allowed_ci_ids = None
     excluded = {str(item) for item in (subnet.excluded_addresses or [])}
     rows = []
     counts = defaultdict(int)
@@ -307,14 +318,21 @@ def _subnet_address_snapshot(subnet, user=None):
         else:
             status_value = 'available'
         reachability = record.reachability if record else 'unknown'
+        linked_ci_id = linked_cis[0].id if linked_cis else (record.ci_id if record else None)
+        ci_name = linked_names[0] if linked_names else (record.ci.name if record and record.ci else '')
+        stored_names = record.linked_ci_names if record else []
+        if allowed_ci_ids is not None and linked_ci_id and linked_ci_id not in allowed_ci_ids:
+            ci_name = ''
+            linked_names = []
+            stored_names = []
         rows.append({
             'id': record.id if record else None,
             'address': address,
             'status': status_value,
             'reachability': reachability,
-            'ci_id': linked_cis[0].id if linked_cis else (record.ci_id if record else None),
-            'ci_name': linked_names[0] if linked_names else (record.ci.name if record and record.ci else ''),
-            'linked_ci_names': linked_names or (record.linked_ci_names if record else []),
+            'ci_id': linked_ci_id,
+            'ci_name': ci_name,
+            'linked_ci_names': linked_names or stored_names,
             'note': record.note if record else '',
             'last_scanned_at': record.last_scanned_at if record else None,
         })
@@ -1956,7 +1974,14 @@ def _capacity_request_snapshot(request_obj):
 
 
 def _capacity_request_lookup(scoped_ci_ids):
-    scoped_id_set = {int(item) for item in scoped_ci_ids}
+    # 入参既可能是 id 列表，也可能是 values('id') 的 queryset（元素是 dict）。
+    scoped_id_set = set()
+    for item in scoped_ci_ids:
+        value = item.get('id') if isinstance(item, dict) else item
+        try:
+            scoped_id_set.add(int(value))
+        except (TypeError, ValueError):
+            continue
     if not scoped_id_set:
         return {}
     status_rank = {
@@ -3952,7 +3977,30 @@ def _build_collection_summary(user=None):
     }
 
 
+STALE_COLLECTION_SECONDS = 7200
+
+
+def _claim_collection_job(job):
+    """原子领取采集任务：并发/多入口下只有一方能真正执行。"""
+    return CISyncJob.objects.filter(pk=job.pk).exclude(status='running').update(
+        status='running',
+        started_at=timezone.now(),
+        finished_at=None,
+        error_message='',
+    )
+
+
+def _recover_stale_collection_jobs():
+    cutoff = timezone.now() - timedelta(seconds=STALE_COLLECTION_SECONDS)
+    return CISyncJob.objects.filter(status='running', started_at__lt=cutoff).update(
+        status='failed',
+        error_message='采集进程中断，已自动回收',
+        finished_at=timezone.now(),
+    )
+
+
 def _due_collection_jobs():
+    _recover_stale_collection_jobs()
     now = timezone.now()
     due_jobs = []
     seen_job_keys = set()
@@ -3990,8 +4038,11 @@ def run_due_collection_jobs(*, limit=50, operator='system-scheduler', user=None)
     total_summary = defaultdict(int)
     for job in due_jobs:
         batch_id = uuid.uuid4().hex
+        if not _claim_collection_job(job):
+            logger.info('采集任务已在运行，跳过 job=%s', job.pk)
+            continue
+        job.refresh_from_db(fields=['status', 'started_at', 'finished_at', 'error_message'])
         try:
-            _mark_sync_job_collection_running(job)
             items = _items_for_sync_job(job, {})
             result = _run_sync_items(job, items, operator=operator, user=user, batch_id=batch_id)
             summary = result['summary']
@@ -5590,7 +5641,24 @@ class IPSubnetViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             rows = [row for row in rows if row['status'] == status_filter]
         if search:
             rows = [row for row in rows if search in row['address'] or search in row['ci_name'].lower()]
-        return Response({'subnet': IPSubnetSerializer(subnet).data, 'summary': summary, 'items': rows})
+        try:
+            page = max(int(request.query_params.get('page') or 1), 1)
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = min(max(int(request.query_params.get('page_size') or 200), 1), 500)
+        except (TypeError, ValueError):
+            page_size = 200
+        total = len(rows)
+        start = (page - 1) * page_size
+        return Response({
+            'subnet': IPSubnetSerializer(subnet).data,
+            'summary': summary,
+            'items': rows[start:start + page_size],
+            'count': total,
+            'page': page,
+            'page_size': page_size,
+        })
 
     @action(detail=True, methods=['post'])
     def scan(self, request, pk=None):
@@ -5622,6 +5690,12 @@ class IPAddressViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         'destroy': ['cmdb.ipam.manage'],
         'reserve': ['cmdb.ipam.manage'],
     }
+
+    def get_queryset(self):
+        """越权资产名不返回，且越权的 ci 关联不出现在 IPAM 列表里。"""
+        queryset = super().get_queryset()
+        scoped_ids = _apply_ci_authorization_scope(ConfigItem.objects.all(), self.request.user).values('id')
+        return queryset.filter(Q(ci__isnull=True) | Q(ci_id__in=scoped_ids))
 
     def perform_create(self, serializer):
         serializer.save(created_by=getattr(self.request.user, 'username', ''))
@@ -6656,7 +6730,7 @@ class ConfigItemViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
 class ConfigItemPasswordViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):
     queryset = ConfigItemPassword.objects.select_related('config_item', 'config_item__ci_type').all()
     serializer_class = ConfigItemPasswordSerializer
-    pagination_class = None
+    # 打开分页：凭据列表随资产规模增长，不能一次性全量返回。
     filterset_fields = ['config_item']
     search_fields = ['config_item__name', 'username', 'remark']
     event_module = 'cmdb'
@@ -6712,12 +6786,37 @@ class ConfigItemPasswordViewSet(EventWallModelViewSetMixin, RBACPermissionMixin,
     def eventwall_metadata(self, instance, action, before=None, after=None):
         return {'config_item_id': instance.config_item_id, 'has_password': bool(instance.password_ciphertext)}
 
+    def get_throttles(self):
+        # 查看资产明文密码成本高且敏感，单独按更严的速率限流。
+        if getattr(self, 'action', None) == 'reveal':
+            throttle = ExpensiveEndpointThrottle()
+            throttle.rate = '10/min'
+            return [throttle]
+        return super().get_throttles()
+
     @action(detail=True, methods=['post'])
     def reveal(self, request, pk=None):
         item = self.get_object()
         verification = ConfigItemPasswordRevealSerializer(data=request.data)
         verification.is_valid(raise_exception=True)
         if not request.user.check_password(verification.validated_data['current_password']):
+            record_event(
+                request=request,
+                module='cmdb',
+                category='security',
+                action='reveal_password_failed',
+                title='资产密码查看失败',
+                summary=f'查看资产 {item.config_item.name} 登录密码时登录口令校验失败',
+                result=EventRecord.RESULT_FAILED,
+                severity=EventRecord.SEVERITY_WARNING,
+                resource_type='config_item_password',
+                resource_id=item.id,
+                resource_name=item.config_item.name,
+                business_line=item.config_item.business_line,
+                environment=item.config_item.environment,
+                correlation_id=f'config-item-password:{item.id}',
+                metadata={'config_item_id': item.config_item_id},
+            )
             raise ValidationError({'current_password': '当前登录密码不正确。'})
 
         try:
@@ -7623,7 +7722,9 @@ class CISyncJobViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     def run(self, request, pk=None):
         job = self.get_object()
         batch_id = uuid.uuid4().hex
-        _mark_sync_job_collection_running(job)
+        if not _claim_collection_job(job):
+            return Response({'detail': '该采集任务正在运行，请稍后重试'}, status=409)
+        job.refresh_from_db(fields=['status', 'started_at', 'finished_at', 'error_message'])
         try:
             items = _items_for_sync_job(job, request.data)
         except ValueError as exc:
@@ -7658,8 +7759,11 @@ class CISyncJobViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         total_summary = defaultdict(int)
         for job in due_jobs:
             batch_id = uuid.uuid4().hex
+            if not _claim_collection_job(job):
+                logger.info('采集任务已在运行，跳过 job=%s', job.pk)
+                continue
+            job.refresh_from_db(fields=['status', 'started_at', 'finished_at', 'error_message'])
             try:
-                _mark_sync_job_collection_running(job)
                 items = _items_for_sync_job(job, {})
                 result = _run_sync_items(job, items, operator=getattr(request.user, 'username', ''), user=request.user, batch_id=batch_id)
                 summary = result['summary']
@@ -11072,7 +11176,7 @@ def _build_governance_risk_payload(scoped_items):
     scoped_ci_ids = scoped_items.values('id')
     scoped_id_set = set(scoped_items.values_list('id', flat=True))
     policy_lookup = _capacity_policy_lookup()
-    capacity_request_lookup = _capacity_request_lookup(scoped_id_set)
+    capacity_request_lookup = _capacity_request_lookup(scoped_ci_ids)
     metric_status_counts = defaultdict(int)
     metric_items = []
     snapshots = _latest_capacity_metric_snapshots(scoped_ci_ids)
@@ -11195,8 +11299,7 @@ def cmdb_dashboard(request):
     for item in ci_by_type:
         item['color'] = item.get('color') or '#9c27b0'
     ci_by_env = list(scoped_items.values('environment').annotate(count=Count('id')).order_by('-count'))
-    scoped_id_set = set(scoped_items.values_list('id', flat=True))
-    cost_rows = [row for row in _cost_rows_for_month(month) if row['ci'].id in scoped_id_set]
+    cost_rows = _cost_rows_for_month(month, ci_queryset=scoped_items)
     business_totals = defaultdict(lambda: {'count': 0, 'total_cost': Decimal('0')})
     for row in cost_rows:
         ci = row['ci']
@@ -11243,7 +11346,7 @@ def cmdb_dashboard(request):
     metric_status_counts = defaultdict(int)
     metric_items = []
     capacity_policy_lookup = _capacity_policy_lookup()
-    capacity_request_lookup = _capacity_request_lookup(scoped_id_set)
+    capacity_request_lookup = _capacity_request_lookup(scoped_ci_ids)
     for snapshot in _latest_capacity_metric_snapshots(scoped_ci_ids):
         key = (snapshot.ci_id, snapshot.metric)
         usage_percent = _to_float(snapshot.usage_percent)

@@ -22,6 +22,7 @@ class SqlAuditSupportTests(TestCase):
             user='audit_reader',
             password='secret',
             charset='UTF8',
+            is_demo=True,
         )
 
         success, message = db_executor.test_connection(datasource)
@@ -40,6 +41,7 @@ class SqlAuditSupportTests(TestCase):
             user='staging_auditor',
             password='secret',
             charset='utf8mb4',
+            is_demo=True,
         )
 
         success, columns, rows, count, duration, error = db_executor.execute_query(

@@ -10,7 +10,7 @@ from urllib.parse import quote
 import requests as http_requests
 from django.conf import settings
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -20,6 +20,7 @@ from eventwall.services import record_event
 from .models import LogDataSource
 from .serializers import LogDataSourceSerializer
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.throttles import ExpensiveEndpointThrottle
 from rbac.services import user_has_permissions
 
 
@@ -1576,6 +1577,7 @@ def log_provider_catalog(request, provider):
 
 
 @api_view(['POST'])
+@throttle_classes([ExpensiveEndpointThrottle])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.log.query')])
 def log_query(request):
     try:

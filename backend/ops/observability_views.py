@@ -15,7 +15,7 @@ from django.db import OperationalError
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -23,6 +23,7 @@ from eventwall.mixins import EventWallModelViewSetMixin
 from eventwall.models import EventRecord
 from eventwall.services import record_event
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.throttles import ExpensiveEndpointThrottle
 from rbac.services import user_has_permissions
 from .alerting import _has_claimants
 from .grafana_urls import validate_grafana_url
@@ -4718,6 +4719,7 @@ def grafana_setting_view(request):
 
 
 @api_view(['POST'])
+@throttle_classes([ExpensiveEndpointThrottle])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.metric.query')])
 def metrics_promql_query(request):
     query = request.data.get('query') or request.data.get('promql') or ''
@@ -4782,6 +4784,7 @@ def metrics_series_names(request):
 
 
 @api_view(['POST'])
+@throttle_classes([ExpensiveEndpointThrottle])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.grafana.view')])
 def grafana_promql_query(request):
     query = request.data.get('query') or request.data.get('promql') or ''
@@ -4812,6 +4815,7 @@ def grafana_promql_query(request):
 
 
 @api_view(['POST'])
+@throttle_classes([ExpensiveEndpointThrottle])
 @permission_classes([IsAuthenticated, build_rbac_permission('ops.grafana.view')])
 def grafana_panel_query(request):
     try:
@@ -5170,6 +5174,7 @@ def observability_tracing_catalog(request):
 
 
 @api_view(['POST'])
+@throttle_classes([ExpensiveEndpointThrottle])
 @permission_classes([IsAuthenticated])
 def observability_tracing_search(request):
     denied = _deny_if_missing_any(request, ['ops.trace.view'])

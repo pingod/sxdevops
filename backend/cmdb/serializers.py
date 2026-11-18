@@ -344,12 +344,17 @@ def validate_config_item_attributes_by_metadata(ci_type, attributes, *, instance
 
         normalized_value = normalized.get(field.code)
         if field.unique and normalized_value not in (None, ''):
-            duplicate_qs = ConfigItem.objects.filter(ci_type=ci_type)
-            if instance is not None:
-                duplicate_qs = duplicate_qs.exclude(pk=instance.pk)
+            # 在 SQL 侧按 JSONField key 过滤候选，再比对规范化值，避免把同类型资产全部载入内存。
+            duplicate_qs = ConfigItem.objects.filter(ci_type=ci_type).exclude(pk=getattr(instance, 'pk', None))
+            lookup_values = {str(normalized_value)}
+            if not isinstance(normalized_value, str):
+                lookup_values.add(normalized_value)
+            candidates = duplicate_qs.filter(
+                **{f'attributes__{field.code}__in': list(lookup_values)}
+            ).only('id', 'attributes')
             if any(
                 _field_values_equal(field, (item.attributes or {}).get(field.code), normalized_value)
-                for item in duplicate_qs.only('id', 'attributes')
+                for item in candidates
             ):
                 errors[field.code] = [f'{field.name} 必须唯一']
 

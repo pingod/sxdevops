@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -17,6 +18,20 @@ from .serializers import (
 from . import sql_checker
 from . import db_executor
 from rbac.permissions import RBACPermissionMixin, build_rbac_permission
+from rbac.throttles import ExpensiveEndpointThrottle
+
+# 执行中的工单超过这个时长仍未回写，视为执行进程已中断。
+STALE_EXECUTING_MINUTES = 30
+STALE_EXECUTING_LOG = '执行中断：平台未收到执行结果，请人工核对数据库实际状态'
+
+
+def _mark_stale_executing_orders():
+    """把长时间停留在 executing 的工单标记失败，避免永久卡死。"""
+    cutoff = timezone.now() - timezone.timedelta(minutes=STALE_EXECUTING_MINUTES)
+    stale = SqlOrder.objects.filter(status='executing', executed_at__isnull=True, created_at__lt=cutoff)
+    if not stale.exists():
+        return 0
+    return stale.update(status='failed', execute_log=STALE_EXECUTING_LOG)
 
 
 class DataSourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):
@@ -28,7 +43,7 @@ class DataSourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewset
     event_resource_type = 'sql_datasource'
     event_resource_label = 'SQL 数据源'
     event_resource_name_fields = ('name',)
-    event_exclude_fields = ('password',)
+    event_exclude_fields = ('password', 'password_encrypted')
     rbac_permissions = {
         'list': ['sqlaudit.datasource.view'],
         'retrieve': ['sqlaudit.datasource.view'],
@@ -87,6 +102,7 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
     }
 
     def get_queryset(self):
+        _mark_stale_executing_orders()
         queryset = super().get_queryset()
         status_value = self.request.query_params.get('status')
         if status_value in dict(SqlOrder.STATUS_CHOICES):
@@ -200,8 +216,17 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        order.status = 'executing'
-        order.save()
+        # 条件更新领取执行权：并发点击只会有一次真正落库，避免 DDL/DML 重复执行。
+        claimed = SqlOrder.objects.filter(pk=order.pk, status='approved').update(
+            status='executing',
+            executed_at=None,
+        )
+        if not claimed:
+            return Response(
+                {'error': '工单已被执行或状态已变更，请刷新后重试'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        order.refresh_from_db()
 
         # 工单提交时生成的检查结果可能已过期；执行前重新检查，error 级规则必须阻断，
         # 否则“审计通过”只是展示，DROP/无 WHERE 更新等风险仍会真正落库。
@@ -212,10 +237,12 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         )
         blocking_errors = [item for item in check_results if item.level == 'error']
         if blocking_errors:
-            order.status = 'failed'
-            order.execute_log = '\n'.join(item.message for item in blocking_errors)
-            order.executed_at = timezone.now()
-            order.save(update_fields=['status', 'execute_log', 'executed_at'])
+            SqlOrder.objects.filter(pk=order.pk, status='executing').update(
+                status='failed',
+                execute_log='\n'.join(item.message for item in blocking_errors),
+                executed_at=timezone.now(),
+            )
+            order.refresh_from_db()
             return Response(
                 {'error': 'SQL 检查未通过，禁止执行', 'checks': [item.to_dict() for item in blocking_errors]},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -225,12 +252,14 @@ class SqlOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             order.datasource, order.database, order.sql_content,
         )
 
-        order.status = 'executed' if success else 'failed'
-        order.affected_rows = affected
-        order.duration_ms = duration
-        order.execute_log = log
-        order.executed_at = timezone.now()
-        order.save()
+        SqlOrder.objects.filter(pk=order.pk, status='executing').update(
+            status='executed' if success else 'failed',
+            affected_rows=affected,
+            duration_ms=duration,
+            execute_log=log,
+            executed_at=timezone.now(),
+        )
+        order.refresh_from_db()
         record_event(
             request=request,
             module='sqlaudit',
@@ -267,6 +296,13 @@ class QueryOrderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         'retrieve': ['sqlaudit.query.view'],
         'create': ['sqlaudit.datasource.view', 'sqlaudit.query.execute'],
     }
+
+    def get_throttles(self):
+        # 查询会真的连库执行，按 expensive 档限流。
+        if self.action == 'create':
+            self.throttle_scope = 'expensive'
+            return [ExpensiveEndpointThrottle()]
+        return super().get_throttles()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

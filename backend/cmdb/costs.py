@@ -337,22 +337,14 @@ def _replace_aliyun_cost_record(ci, month, amount):
 
 
 def _replace_cost_record(ci, month, amount, provider):
-    records = list(
-        CostRecord.objects.filter(ci=ci, month=month, provider=provider).order_by('id')
-    )
-    if records:
-        record = records[0]
-        record.amount = amount
-        record.save(update_fields=['amount'])
-        if len(records) > 1:
-            CostRecord.objects.filter(id__in=[item.id for item in records[1:]]).delete()
-        return record
-    return CostRecord.objects.create(
+    # (ci, month, provider) 现在有唯一约束；update_or_create 避免读-删-写产生重复行。
+    record, _ = CostRecord.objects.update_or_create(
         ci=ci,
         month=month,
-        amount=amount,
         provider=provider,
+        defaults={'amount': amount},
     )
+    return record
 
 
 def _refresh_current_monthly_cost(ci, month):

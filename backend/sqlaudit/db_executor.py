@@ -3,6 +3,7 @@
 支持 MySQL、PostgreSQL 与 MongoDB。
 """
 import json
+import logging
 import re
 import time
 
@@ -17,6 +18,16 @@ try:
 except ImportError:  # pragma: no cover
     MongoClient = None
 
+from sxdevops import secrets as platform_secrets
+
+logger = logging.getLogger(__name__)
+
+PASSWORD_DECRYPT_ERROR = '数据源密码无法解密，请检查 CMDB_PASSWORD_ENCRYPTION_KEY 是否正确'
+
+
+class DataSourcePasswordError(ValueError):
+    """数据源口令无法解密（密钥缺失或密文损坏）。"""
+
 
 MYSQL_LIKE_TYPES = {'mysql'}
 MONGODB_TYPE = 'mongodb'
@@ -29,6 +40,10 @@ MONGODB_WRITE_ACTIONS = {
     'deleteone', 'deletemany',
     'createcollection', 'dropcollection',
     'createindex', 'dropindex',
+}
+DEMO_DATASOURCE_DEFAULT_PROFILE = {
+    'message': '演示数据源连接正常（模拟）',
+    'databases': ['demo_db'],
 }
 DEMO_DATASOURCE_PROFILES = {
     'commerce-prod-postgresql': {
@@ -51,7 +66,19 @@ def _get_db_type(datasource):
 
 
 def _get_demo_profile(datasource):
-    return DEMO_DATASOURCE_PROFILES.get(getattr(datasource, 'name', ''))
+    """只有显式标记 is_demo 的数据源才走演示档，避免同名真实数据源被伪造成功。"""
+    if not getattr(datasource, 'is_demo', False):
+        return None
+    return DEMO_DATASOURCE_PROFILES.get(getattr(datasource, 'name', '')) or DEMO_DATASOURCE_DEFAULT_PROFILE
+
+
+def datasource_password(datasource):
+    """读取解密后的数据源口令；密钥缺失/密文损坏统一转成可读错误。"""
+    try:
+        return platform_secrets.decrypt(getattr(datasource, 'password_encrypted', '') or '')
+    except platform_secrets.SecretError as exc:
+        logger.warning('数据源口令无法解密 datasource=%s: %s', getattr(datasource, 'pk', None), exc)
+        raise DataSourcePasswordError(PASSWORD_DECRYPT_ERROR) from exc
 
 
 MONGODB_FORBIDDEN_OPERATORS = {'$out', '$merge', '$function', '$accumulator', '$where'}
@@ -103,11 +130,14 @@ def validate_query_content(datasource, sql_content):
                 return 'PostgreSQL 查询不允许写入或加行锁'
         return None
 
+    statements = [statement for statement in sqlparse.split(sql_content or '') if statement.strip()]
+    if len(statements) != 1:
+        return '查询工单仅允许单条 SELECT / SHOW / DESC 语句'
     # MySQL 会把 /* */ 当成 token 之间的空白，只压空白会漏掉 INTO/**/OUTFILE 这类写法。
     try:
-        cleaned = sqlparse.format(sql_content, strip_comments=True)
+        cleaned = sqlparse.format(statements[0], strip_comments=True)
     except Exception:
-        cleaned = sql_content
+        cleaned = statements[0]
     upper = cleaned.strip().upper()
     if not upper.startswith('SELECT') and not upper.startswith('SHOW') and not upper.startswith('DESC'):
         return '查询工单只允许 SELECT / SHOW / DESC 语句'
@@ -130,12 +160,15 @@ def test_connection(datasource):
         return True, demo_profile['message']
 
     db_type = _get_db_type(datasource)
-    if db_type in MYSQL_LIKE_TYPES:
-        return _test_mysql_connection(datasource)
-    if db_type == 'postgresql':
-        return _test_postgresql_connection(datasource)
-    if db_type == MONGODB_TYPE:
-        return _test_mongodb_connection(datasource)
+    try:
+        if db_type in MYSQL_LIKE_TYPES:
+            return _test_mysql_connection(datasource)
+        if db_type == 'postgresql':
+            return _test_postgresql_connection(datasource)
+        if db_type == MONGODB_TYPE:
+            return _test_mongodb_connection(datasource)
+    except DataSourcePasswordError as exc:
+        return False, str(exc)
     return False, f'暂不支持的数据源类型: {db_type}'
 
 
@@ -145,12 +178,15 @@ def get_databases(datasource):
         return demo_profile['databases']
 
     db_type = _get_db_type(datasource)
-    if db_type in MYSQL_LIKE_TYPES:
-        return _get_mysql_databases(datasource)
-    if db_type == 'postgresql':
-        return _get_postgresql_databases(datasource)
-    if db_type == MONGODB_TYPE:
-        return _get_mongodb_databases(datasource)
+    try:
+        if db_type in MYSQL_LIKE_TYPES:
+            return _get_mysql_databases(datasource)
+        if db_type == 'postgresql':
+            return _get_postgresql_databases(datasource)
+        if db_type == MONGODB_TYPE:
+            return _get_mongodb_databases(datasource)
+    except DataSourcePasswordError as exc:
+        logger.warning('数据源口令不可用 datasource=%s: %s', getattr(datasource, 'pk', None), exc)
     return []
 
 
@@ -162,12 +198,15 @@ def execute_sql(datasource, database, sql_content):
         return _execute_demo_sql(datasource, database, sql_content)
 
     db_type = _get_db_type(datasource)
-    if db_type in MYSQL_LIKE_TYPES:
-        return _execute_mysql_sql(datasource, database, sql_content)
-    if db_type == 'postgresql':
-        return _execute_postgresql_sql(datasource, database, sql_content)
-    if db_type == MONGODB_TYPE:
-        return _execute_mongodb_write(datasource, database, sql_content)
+    try:
+        if db_type in MYSQL_LIKE_TYPES:
+            return _execute_mysql_sql(datasource, database, sql_content)
+        if db_type == 'postgresql':
+            return _execute_postgresql_sql(datasource, database, sql_content)
+        if db_type == MONGODB_TYPE:
+            return _execute_mongodb_write(datasource, database, sql_content)
+    except DataSourcePasswordError as exc:
+        return False, 0, 0, str(exc)
     return False, 0, 0, f'暂不支持的数据源类型: {db_type}'
 
 
@@ -179,12 +218,15 @@ def execute_query(datasource, database, sql_content, limit=200):
         return _execute_demo_query(datasource, database, sql_content, limit)
 
     db_type = _get_db_type(datasource)
-    if db_type in MYSQL_LIKE_TYPES:
-        return _execute_mysql_query(datasource, database, sql_content, limit)
-    if db_type == 'postgresql':
-        return _execute_postgresql_query(datasource, database, sql_content, limit)
-    if db_type == MONGODB_TYPE:
-        return _execute_mongodb_query(datasource, database, sql_content, limit)
+    try:
+        if db_type in MYSQL_LIKE_TYPES:
+            return _execute_mysql_query(datasource, database, sql_content, limit)
+        if db_type == 'postgresql':
+            return _execute_postgresql_query(datasource, database, sql_content, limit)
+        if db_type == MONGODB_TYPE:
+            return _execute_mongodb_query(datasource, database, sql_content, limit)
+    except DataSourcePasswordError as exc:
+        return False, [], [], 0, 0, str(exc)
     return False, [], [], 0, 0, f'暂不支持的数据源类型: {db_type}'
 
 
@@ -193,7 +235,7 @@ def _build_mysql_connect_kwargs(datasource, database=None, cursorclass=None, aut
         'host': datasource.host,
         'port': datasource.port,
         'user': datasource.user,
-        'password': datasource.password,
+        'password': datasource_password(datasource),
         'charset': datasource.charset,
         'connect_timeout': timeout,
     }
@@ -227,7 +269,8 @@ def _get_mysql_databases(datasource):
             databases = [row[0] for row in cursor.fetchall()]
         conn.close()
         return [db for db in databases if db not in MYSQL_SYSTEM_DATABASES]
-    except Exception:
+    except Exception as exc:
+        logger.warning('读取 MySQL 数据源库列表失败 datasource=%s: %s', getattr(datasource, 'pk', None), exc)
         return []
 
 
@@ -264,6 +307,9 @@ def _execute_mysql_sql(datasource, database, sql_content):
 
 def _execute_mysql_query(datasource, database, sql_content, limit):
     start = time.time()
+    error = validate_query_content(datasource, sql_content)
+    if error:
+        return False, [], [], 0, 0, error
     conn = None
     try:
         # 流式游标：execute 不再把整个结果集读进内存，fetchmany(limit) 才真正限量；
@@ -304,7 +350,7 @@ def _postgresql_connect_kwargs(datasource, database=None):
         'host': datasource.host,
         'port': datasource.port,
         'user': datasource.user,
-        'password': datasource.password,
+        'password': datasource_password(datasource),
         'dbname': database or getattr(datasource, 'database', '') or 'postgres',
         'connect_timeout': 10,
         'client_encoding': 'UTF8',
@@ -328,7 +374,8 @@ def _get_postgresql_databases(datasource):
                 "AND has_database_privilege(current_user, oid, 'CONNECT') ORDER BY datname"
             ).fetchall()
             return [row[0] for row in rows]
-    except Exception:
+    except Exception as exc:
+        logger.warning('读取 PostgreSQL 数据源库列表失败 datasource=%s: %s', getattr(datasource, 'pk', None), exc)
         return []
 
 
@@ -495,8 +542,9 @@ def _get_mongo_client(datasource):
     }
     if datasource.user:
         kwargs['username'] = datasource.user
-    if datasource.password:
-        kwargs['password'] = datasource.password
+    password = datasource_password(datasource)
+    if password:
+        kwargs['password'] = password
         kwargs['authSource'] = 'admin'
     return MongoClient(**kwargs)
 
@@ -517,7 +565,8 @@ def _get_mongodb_databases(datasource):
         databases = [name for name in client.list_database_names() if name not in MONGODB_SYSTEM_DATABASES]
         client.close()
         return databases
-    except Exception:
+    except Exception as exc:
+        logger.warning('读取 MongoDB 数据源库列表失败 datasource=%s: %s', getattr(datasource, 'pk', None), exc)
         return []
 
 

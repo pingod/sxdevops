@@ -301,12 +301,46 @@ def _prepare_schedule_fields(schedule, scheduled_run, when):
     schedule.save(update_fields=['last_run_at', 'total_run_count', 'enabled', 'next_run_at', 'updated_at'])
 
 
+def _claim_due_schedule(schedule, now):
+    """原子摘掉到期标记：多进程/多副本轮询时只有一方能领取。"""
+    return HostTaskSchedule.objects.filter(
+        pk=schedule.pk,
+        enabled=True,
+        next_run_at__isnull=False,
+        next_run_at__lte=now,
+    ).update(next_run_at=None)
+
+
+def _restore_claimed_schedule(schedule, now):
+    """领取后异常：把到期时间还回去，避免计划再也不被触发。"""
+    if schedule.schedule_type == HostTaskSchedule.SCHEDULE_TYPE_ONCE:
+        schedule.enabled = True
+    schedule.next_run_at = now
+    schedule.save(update_fields=['enabled', 'next_run_at', 'updated_at'])
+
+
 def trigger_schedule(schedule, actor='system', trigger_source=HostTaskScheduleExecution.TRIGGER_SCHEDULER, scheduled_run=False):
+    now = timezone.now()
+    if scheduled_run and not _claim_due_schedule(schedule, now):
+        # 已被其它进程领取，或本轮已不再到期。
+        return None, None
+    if scheduled_run:
+        schedule.refresh_from_db(fields=['next_run_at'])
+        try:
+            return _trigger_claimed_schedule(schedule, actor, trigger_source, scheduled_run, now)
+        except Exception:
+            logger.exception('trigger claimed schedule failed, restoring next_run_at: %s', schedule.pk)
+            _restore_claimed_schedule(schedule, now)
+            raise
+
+    return _trigger_claimed_schedule(schedule, actor, trigger_source, scheduled_run, now)
+
+
+def _trigger_claimed_schedule(schedule, actor, trigger_source, scheduled_run, now):
     from .host_tasks import start_host_task
 
     hosts = sync_schedule_targets(schedule)
     schedule.save(update_fields=['target_count', 'target_snapshot', 'updated_at'])
-    now = timezone.now()
 
     if scheduled_run and schedule.overlap_policy == HostTaskSchedule.OVERLAP_SKIP and _running_schedule_exists(schedule):
         if schedule.schedule_type == HostTaskSchedule.SCHEDULE_TYPE_ONCE:
@@ -416,6 +450,8 @@ def run_due_schedules(limit=20, actor='system-scheduler'):
 
 
 def run_scheduler_loop(interval_seconds=None, limit=20, actor='system-scheduler'):
+    from .host_tasks import mark_stale_running_host_tasks
+
     interval = int(interval_seconds or getattr(settings, 'HOST_TASK_SCHEDULER_POLL_SECONDS', 30))
     logger.info('host task scheduler loop started, interval=%s', interval)
     while True:
@@ -424,6 +460,11 @@ def run_scheduler_loop(interval_seconds=None, limit=20, actor='system-scheduler'
             logger.debug('host task scheduler checked due schedules: %s', result)
         except Exception:
             logger.exception('host task scheduler loop failed')
+        try:
+            # 回收执行中但已超时的任务，否则 OVERLAP_SKIP 的计划再也不触发。
+            mark_stale_running_host_tasks()
+        except Exception:
+            logger.exception('host task stale recovery failed')
         time.sleep(max(interval, 5))
 
 

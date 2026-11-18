@@ -8,10 +8,10 @@ from urllib.parse import parse_qs
 
 from channels.generic.websocket import WebsocketConsumer
 from django.db import close_old_connections
-from rest_framework.authtoken.models import Token
 
 from eventwall.services import record_event
 from rbac.services import user_has_permissions
+from rbac.websocket import resolve_terminal_user
 from .docker_views import (
     _find_demo_container, _get_demo_state, _get_docker_host,
     _get_ssh_client_from_docker_host, _is_demo_docker_host, _run_docker,
@@ -29,10 +29,13 @@ class DockerExecConsumer(WebsocketConsumer):
         self.demo_buffer = ''
         self.last_activity = time.monotonic()
         query = parse_qs(self.scope.get('query_string', b'').decode('utf-8', errors='replace'))
-        token = Token.objects.filter(key=query.get('token', [''])[0]).select_related('user').first()
-        if not token or not token.user.is_active:
+        user = resolve_terminal_user(
+            ticket_key=query.get('ticket', [''])[0],
+            legacy_token_key=query.get('token', [''])[0],
+        )
+        if not user or not user.is_active:
             return self.close(code=4401)
-        self.user = token.user
+        self.user = user
         self.guard = WebShellGuard(load_rules())
         if not user_has_permissions(self.user, ['ops.docker.view', 'ops.docker.exec']):
             return self.close(code=4403)

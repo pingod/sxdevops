@@ -10,6 +10,7 @@ import logging
 import mimetypes
 import re
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 import requests
 from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
@@ -108,7 +109,7 @@ class PlanningProxyView(APIView):
             upstream = requests.request(
                 request.method,
                 f'{cfg.base_url}/{engine_path}',
-                params=request.META.get('QUERY_STRING', ''),
+                params=parse_qsl(request.META.get('QUERY_STRING', ''), keep_blank_values=True),
                 data=None if request.method in SAFE_METHODS else request.body,
                 headers=headers,
                 timeout=(5, 120),
@@ -136,8 +137,15 @@ class PlanningProxyView(APIView):
                 resource_name=resource_name,
             )
 
+        def _stream():
+            try:
+                yield from upstream.iter_content(chunk_size=64 * 1024)
+            finally:
+                # 客户端中断时也要释放上游连接，否则 stream=True 的连接要等 GC。
+                upstream.close()
+
         response = StreamingHttpResponse(
-            upstream.iter_content(chunk_size=64 * 1024),
+            _stream(),
             status=upstream.status_code,
         )
         for key, value in upstream.headers.items():

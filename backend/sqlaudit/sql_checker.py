@@ -24,6 +24,38 @@ class CheckItem:
         }
 
 
+def _significant_tokens(statement):
+    """过滤掉注释/空白/字符串字面量，只留下语法关键字与标识符。"""
+    ignored = {
+        sqlparse.tokens.Comment,
+        sqlparse.tokens.Comment.Single,
+        sqlparse.tokens.Comment.Multiline,
+        sqlparse.tokens.Whitespace,
+        sqlparse.tokens.Newline,
+        sqlparse.tokens.String.Single,
+        sqlparse.tokens.String.Symbol,
+        sqlparse.tokens.Literal.String.Single,
+        sqlparse.tokens.Literal.String.Symbol,
+    }
+    return [
+        token for token in statement.flatten()
+        if token.ttype not in ignored and not token.is_whitespace
+    ]
+
+
+def _has_where_clause(statement):
+    """语法级判定 WHERE：字符串字面量里的 'nowhere' 不算条件。"""
+    for token in _significant_tokens(statement):
+        if token.ttype in sqlparse.tokens.Keyword and token.normalized == 'WHERE':
+            return True
+    return False
+
+
+def _leading_keyword(statement):
+    tokens = _significant_tokens(statement)
+    return tokens[0].normalized.upper() if tokens else ''
+
+
 def check_sql(sql_content, sql_type='DML', db_type='mysql'):
     """
     对 SQL 文本进行语法/安全检查。
@@ -41,7 +73,9 @@ def check_sql(sql_content, sql_type='DML', db_type='mysql'):
             continue
 
         upper = sqlparse.format(stmt_stripped, strip_comments=True).strip().upper()
-        statement_type = sqlparse.parse(stmt_stripped)[0].get_type()
+        parsed_statement = sqlparse.parse(stmt_stripped)[0]
+        statement_type = parsed_statement.get_type()
+        leading_keyword = _leading_keyword(parsed_statement)
 
         if sql_type == 'DML' and statement_type in {'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'GRANT', 'REVOKE', 'RENAME'}:
             results.append(CheckItem(
@@ -58,14 +92,14 @@ def check_sql(sql_content, sql_type='DML', db_type='mysql'):
                 results.append(CheckItem('error', 'TRANSACTION_CONTROL',
                                          f'语句 #{idx}: 工单事务由平台统一提交或回滚', line_no=idx))
 
-        if statement_type == 'DELETE' and 'WHERE' not in upper:
+        if statement_type == 'DELETE' and not _has_where_clause(parsed_statement):
             results.append(CheckItem(
                 'error', 'NO_WHERE_DELETE',
                 f'语句 #{idx}: DELETE 语句缺少 WHERE 条件，可能删除全表数据',
                 line_no=idx,
             ))
 
-        if statement_type == 'UPDATE' and 'WHERE' not in upper:
+        if statement_type == 'UPDATE' and not _has_where_clause(parsed_statement):
             results.append(CheckItem(
                 'error', 'NO_WHERE_UPDATE',
                 f'语句 #{idx}: UPDATE 语句缺少 WHERE 条件，可能更新全表数据',
@@ -86,14 +120,14 @@ def check_sql(sql_content, sql_type='DML', db_type='mysql'):
                 line_no=idx,
             ))
 
-        if upper.startswith('TRUNCATE'):
+        if leading_keyword == 'TRUNCATE':
             results.append(CheckItem(
                 'error', 'TRUNCATE_TABLE',
                 f'语句 #{idx}: TRUNCATE TABLE 操作风险极高，建议使用 DELETE 并添加 WHERE 条件',
                 line_no=idx,
             ))
 
-        if sql_type == 'DML' and upper.startswith('DROP'):
+        if sql_type == 'DML' and leading_keyword == 'DROP':
             results.append(CheckItem(
                 'error', 'DROP_IN_DML',
                 f'语句 #{idx}: DML 工单中不允许 DROP 操作，请提交 DDL 工单',

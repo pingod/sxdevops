@@ -8,7 +8,7 @@ from multicloud.models import CloudCredential, CloudEnvironment
 class CleanupCmdbDemoCommandTests(TestCase):
     def setUp(self):
         self.ci_type = CIType.objects.create(name='Server', code='TEST_SERVER')
-        self.demo_credential = CloudCredential.objects.create(
+        self.demo_credential = CloudCredential.objects.create_with_credentials(
             provider='aliyun',
             name='aliyun-demo',
             account_id='100001',
