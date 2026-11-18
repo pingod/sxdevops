@@ -1,7 +1,7 @@
 import mimetypes
 from pathlib import Path
 
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, JsonResponse
 
 
 FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent.parent / 'frontend' / 'dist'
@@ -34,3 +34,8 @@ def frontend_asset(request, path):
         raise Http404('Invalid asset path')
     cache_control = 'no-cache' if path == 'assets/theme-init.js' else 'public, max-age=31536000, immutable'
     return _serve_file(safe_path, cache_control=cache_control)
+
+
+def healthz(request):
+    """轻量探针：不查库，避免探针本身放大数据库负载。"""
+    return JsonResponse({'status': 'ok'})

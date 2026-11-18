@@ -55,6 +55,13 @@ For new management or console-style pages, default to the same top structure alr
 ## Testing Guidelines
 Backend tests use Django's built-in `TestCase`; add coverage in the nearest app-level `tests.py` or a `test_*.py` module. Name tests by behavior, for example `test_refresh_info_marks_host_offline_on_ssh_failure`. Frontend has no automated test suite yet, so every UI change should at minimum pass `npm run build` and a manual browser check.
 
+Do not run the whole backend suite in one process: the aiops/ops modules are heavy and a single runaway case has already OOMed a 60 GB workstation. Run per app or per module with a virtual-memory cap:
+
+- `tools/run_backend_tests.sh [app ...]` — per app, sequential, `MEM_LIMIT_MB` caps each process (default 3000).
+- `tools/run_test_modules.sh <label> <mem_mb> <module ...>` — per test module, prints one line per module.
+
+Example: `MEM_LIMIT_MB=2500 PYTHON=.venv/bin/python tools/run_backend_tests.sh ops rbac`.
+
 ## Commit & Pull Request Guidelines
 Use the commit style already in history: `feat: ...`, `feat(scope): ...`, `style(scope): ...`, `docs: ...`. Keep subjects imperative and scoped to one change. PRs should describe the user-visible impact, list touched areas, include validation steps, and attach screenshots for UI updates.
 

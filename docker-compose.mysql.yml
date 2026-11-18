@@ -29,7 +29,8 @@ services:
       # Keep this Fernet key unchanged after CMDB credentials have been saved.
       CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
       DEBUG: "0"
-      CORS_ALLOW_ALL_ORIGINS: "1"
+      # 默认只允许同源：公网部署绝不能放开全部来源，需要时显式设置该变量。
+      CORS_ALLOW_ALL_ORIGINS: "${CORS_ALLOW_ALL_ORIGINS:-0}"
       SXDEVOPS_WAIT_FOR_DB: "1"
       SXDEVOPS_MIGRATE: "1"
       SXDEVOPS_SEED_DATA: "0"

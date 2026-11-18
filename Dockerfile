@@ -60,13 +60,14 @@ ARG TARGETARCH
 WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/requirements.lock.txt /app/backend/requirements.lock.txt
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH:-amd64}/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r /app/backend/requirements.txt
+    && pip install --no-cache-dir -r /app/backend/requirements.lock.txt
 
 # IDC 上架布线引擎（vendored，MPL-2.0，见 planning/NOTICE.md）。
 # 依赖版本由引擎自己的 pyproject [serve] 钉死；运行时监管进程以

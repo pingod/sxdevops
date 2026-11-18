@@ -47,6 +47,18 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: sxdevops-runtime
+  namespace: sxdevops
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: redis-data
   namespace: sxdevops
 spec:
@@ -409,14 +421,17 @@ spec:
             secretKeyRef:
               name: sxdevops-secrets
               key: CMDB_PASSWORD_ENCRYPTION_KEY
+        # 探针走 /healthz：不查库，避免探针自身放大数据库负载。
         readinessProbe:
-          tcpSocket:
+          httpGet:
+            path: /healthz
             port: http
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 3
         livenessProbe:
-          tcpSocket:
+          httpGet:
+            path: /healthz
             port: http
           initialDelaySeconds: 30
           periodSeconds: 20
@@ -428,9 +443,17 @@ spec:
           limits:
             cpu: '1'
             memory: 1Gi
+        # known_hosts 与会话临时文件需要跨 Pod 重启保留，否则每次都退化为全量 TOFU。
+        volumeMounts:
+        - name: runtime
+          mountPath: /app/backend/runtime
         envFrom:
         - configMapRef:
             name: sxdevops-config
+      volumes:
+      - name: runtime
+        persistentVolumeClaim:
+          claimName: sxdevops-runtime
 ---
 apiVersion: apps/v1
 kind: Deployment

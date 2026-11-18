@@ -21,6 +21,7 @@ from datacenter import views as datacenter_views
 from planning import views as planning_views
 
 urlpatterns = [
+    path('healthz', frontend_views.healthz, name='healthz'),
     path('admin/', admin.site.urls),
     path('api/', include('rbac.urls')),
     path('api/', include('ops.urls')),

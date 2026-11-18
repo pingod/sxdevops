@@ -29,13 +29,16 @@ services:
       # Keep this Fernet key unchanged after CMDB credentials have been saved.
       CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
       DEBUG: "0"
-      CORS_ALLOW_ALL_ORIGINS: "1"
+      # 默认只允许同源：公网部署绝不能放开全部来源，需要时显式设置该变量。
+      CORS_ALLOW_ALL_ORIGINS: "${CORS_ALLOW_ALL_ORIGINS:-0}"
       SXDEVOPS_WAIT_FOR_DB: "1"
       SXDEVOPS_MIGRATE: "1"
       SXDEVOPS_SEED_DATA: "0"
       SXDEVOPS_SEED_TEMPLATES: "1"
       AIOPS_LANGGRAPH_CHECKPOINT_BACKEND: postgresql
       PLANNING_ENGINE_URL: http://planning-engine:18001
+      # 可观测性快照刷新交给独立服务单实例执行，避免每个 Daphne worker 各起一条线程。
+      SXDEVOPS_OBSERVABILITY_SCHEDULER: "0"
     volumes:
       - aiops_runtime:/app/backend/runtime
     ports:
@@ -188,6 +191,80 @@ services:
       SXDEVOPS_SEED_TEMPLATES: "0"
       NETWORK_METRIC_RETENTION_DAYS: ${NETWORK_METRIC_RETENTION_DAYS:-30}
     command: ["python", "manage.py", "run_network_poller", "--tick", "5", "--concurrency", "8"]
+
+  alert-escalation-scheduler:
+    image: sxdevops:latest
+    container_name: sxdevops-alert-escalation
+    restart: unless-stopped
+    depends_on:
+      sxdevops:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      SXDEVOPS_OBSERVABILITY_SCHEDULER: "0"
+    volumes:
+      - aiops_runtime:/app/backend/runtime
+    command: ["python", "manage.py", "run_alert_escalation_scheduler", "--interval", "60"]
+
+  observability-scheduler:
+    image: sxdevops:latest
+    container_name: sxdevops-observability-scheduler
+    restart: unless-stopped
+    depends_on:
+      sxdevops:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+      SXDEVOPS_OBSERVABILITY_SCHEDULER: "0"
+    volumes:
+      - aiops_runtime:/app/backend/runtime
+    command: ["python", "manage.py", "run_observability_scheduler", "--interval", "3600"]
 
   postgres:
     image: postgres:16-alpine

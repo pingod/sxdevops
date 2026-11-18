@@ -40,6 +40,8 @@ frontend/*.log
 frontend/*.out.log
 frontend/*.err.log
 backend/*.txt
+# 依赖锁定文件是构建输入，必须入库
+!backend/requirements.lock.txt
 
 # Local verification artifacts
 frontend/cmdb-cost-check*.png
