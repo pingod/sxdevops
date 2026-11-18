@@ -1,10 +1,12 @@
 import hashlib
 import copy
+import ipaddress
 import json
 import os
 import queue
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import threading
@@ -305,6 +307,9 @@ MCP_SAFE_STDIO_ENV_KEYS = {
     'LC_ALL',
     'PYTHONIOENCODING',
 }
+
+# 聊天任务最多被领取 3 次，超过后置 failed，避免失败循环持续计费。
+AIOPS_CHAT_JOB_MAX_ATTEMPTS = 3
 
 PROCESSING_STATUS_PENDING = 'pending'
 PROCESSING_STATUS_RUNNING = 'running'
@@ -4164,10 +4169,39 @@ def _update_chat_message_processing(
     tool_calls=None,
     metadata_updates=None,
 ):
-    message = AIOpsChatMessage.objects.filter(pk=message_id).first()
-    if not message:
-        return None
+    # 读改写整块 metadata 必须加行锁，否则 worker 进度与审计隐藏会互相覆盖。
+    with transaction.atomic():
+        message = AIOpsChatMessage.objects.select_for_update().filter(pk=message_id).first()
+        if not message:
+            return None
+        message = _apply_chat_message_processing_update(
+            message,
+            status_value=status_value,
+            text=text,
+            step=step,
+            tool_event=tool_event,
+            content=content,
+            message_type=message_type,
+            citations=citations,
+            tool_calls=tool_calls,
+            metadata_updates=metadata_updates,
+        )
+    return message
 
+
+def _apply_chat_message_processing_update(
+    message,
+    *,
+    status_value=None,
+    text=None,
+    step=None,
+    tool_event=None,
+    content=None,
+    message_type=None,
+    citations=None,
+    tool_calls=None,
+    metadata_updates=None,
+):
     metadata = dict(message.metadata or {})
     changed_fields = []
 
@@ -12459,7 +12493,7 @@ def _formatter_template_for_profile(profile):
         'task': '\n'.join([
             '必须按以下结构输出：',
             '结论：',
-            '明确当前是任务草稿、待确认创建，还是已在任务中心创建待执行任务。',
+            '明确当前只是任务草稿，需人工在任务中心确认后才会创建和执行。',
             '执行概要：',
             '列出目标范围、任务类型、执行方式、风险等级；K8s 任务必须写“K8s 目标”，不要写“目标主机”。',
             '下一步：',
@@ -12667,7 +12701,7 @@ def _build_answer_formatter_messages(question, draft_content, sections, citation
         '如果 query_logs 的 summary.count 大于 0，禁止说“没有命中/未查到/没找到/0条”；必须围绕已返回日志做分析。',
         '如果 query_logs 的 summary.count 等于 0，禁止声称发现了具体日志样本；只能说明当前查询条件未命中，并提出放宽条件或检查采集链路。',
         '如果事实不足，要明确说明“当前工具结果未覆盖该信息”。',
-        '如果涉及任务生成：必须明确区分“任务草稿 / 待确认创建 / 已在任务中心创建待执行任务”，不能混淆为已执行完成。',
+        '如果涉及任务生成：必须说明当前只是“任务草稿”，需人工在任务中心确认后才会创建和执行，不能写成已执行或已创建真实任务。',
         '输出保持简洁、结构化、可读，优先使用短标题和项目符号，不要输出你的推理过程。',
         '所有问答默认都应输出结构化结果，不要只写一两句泛化描述。',
         f'本轮必须包含这些一级标题：{required_headings}',
@@ -14761,75 +14795,6 @@ def _build_task_center_draft_from_aiops_draft(draft, action=None):
     }
 
 
-def _create_host_task_record_from_draft(draft, user, session=None, request=None):
-    payload = _ensure_task_draft_title(draft)
-    payload = _convert_service_status_draft_to_shell(payload)
-    payload = _ensure_task_draft_title(payload)
-    target_refs = payload.get('target_refs') or []
-    if not target_refs:
-        target_refs = [{'source': 'host', 'id': item} for item in (payload.get('host_ids') or [])]
-        target_refs.extend({'source': 'task_resource', 'id': item} for item in (payload.get('resource_ids') or []))
-    target_refs = _dedupe_target_refs(target_refs)
-    hosts = resolve_host_source_refs(target_refs)
-    if not hosts:
-        raise ValueError('没有找到有效的目标主机。')
-
-    task = HostTask.objects.create(
-        name=payload.get('name') or 'AIOps 智能任务',
-        task_type=payload.get('task_type') or HostTask.TASK_REFRESH_METRICS,
-        description=payload.get('description', ''),
-        payload=payload.get('payload') or {},
-        selection_filters={
-            'source': 'aiops',
-            'session_id': session.id if session else None,
-            'request_summary': payload.get('request_summary', ''),
-            'target_refs': target_refs,
-        },
-        target_snapshot=build_ops_host_target_snapshot(hosts),
-        target_count=len(hosts),
-        execution_mode=payload.get('execution_mode') or HostTask.EXECUTION_MODE_SSH,
-        execution_strategy=payload.get('execution_strategy') or HostTask.STRATEGY_CONTINUE,
-        timeout_seconds=_host_task_timeout_seconds(payload.get('timeout_seconds'), 30),
-        trigger_source=HostTask.TRIGGER_SOURCE_AIOPS,
-        lifecycle_status=HostTask.LIFECYCLE_PENDING_EXECUTION,
-        risk_level=payload.get('risk_level') or HostTask.RISK_LOW,
-        correlation_id=f'aiops-session:{session.id}' if session else '',
-        source_context={
-            'source': 'aiops',
-            'session_id': session.id if session else None,
-            'request_summary': payload.get('request_summary', ''),
-            'reason': payload.get('reason', ''),
-        },
-        created_by=user.username,
-        summary='任务已由 AIOps 智能助手创建，等待在任务中心执行',
-    )
-    record_event(
-        request=request,
-        module='aiops',
-        category='execution',
-        action='create_host_task_record',
-        title='AIOps 创建任务中心任务',
-        summary=f'已创建任务中心任务 {task.name}',
-        result=EventRecord.RESULT_PENDING,
-        resource_type='host_task',
-        resource_id=task.id,
-        resource_name=task.name,
-        correlation_id=f'aiops-host-task:{task.id}',
-        metadata={
-            'task_type': task.task_type,
-            'execution_mode': task.execution_mode,
-            'target_count': len(hosts),
-            'created_by': user.username,
-            'source': 'aiops',
-        },
-    )
-    return task
-
-
-def _should_materialize_host_task(question, result, draft):
-    return False
-
-
 def _serializer_error_text(errors):
     if isinstance(errors, dict):
         return '；'.join(
@@ -15041,10 +15006,18 @@ def cancel_action(action, user):
         raise ValueError('当前动作状态不可取消。')
     if action.session.user_id != user.id:
         raise ValueError('只能取消自己的动作。')
-    action.status = AIOpsPendingAction.STATUS_CANCELED
-    action.confirmed_by = user.username
-    action.confirmed_at = timezone.now()
-    action.save(update_fields=['status', 'confirmed_by', 'confirmed_at', 'updated_at'])
+    # 条件更新：与 _action_execute_node 的 select_for_update 竞争时，取消不能把已执行动作回退。
+    updated = AIOpsPendingAction.objects.filter(
+        pk=action.pk, status=AIOpsPendingAction.STATUS_PENDING,
+    ).update(
+        status=AIOpsPendingAction.STATUS_CANCELED,
+        confirmed_by=user.username,
+        confirmed_at=timezone.now(),
+        updated_at=timezone.now(),
+    )
+    if not updated:
+        raise ValueError('动作已被执行或取消，请刷新后查看最新状态。')
+    action.refresh_from_db()
     from .models import AIOpsRemediationVerification
 
     AIOpsRemediationVerification.objects.filter(action=action, status='waiting', task__isnull=True).update(
@@ -16046,9 +16019,23 @@ def _validate_mcp_stdio_command(command_text):
     executable = Path(raw_executable).stem.lower()
     if executable not in MCP_ALLOWED_STDIO_EXECUTABLES:
         raise ValueError(f'MCP STDIO executable is not allowed: {executable}')
+    # 解析出的绝对路径也要在白名单目录内，避免 PATH 被替换成同名二进制。
+    resolved = shutil.which(raw_executable)
+    if not resolved:
+        raise ValueError(f'MCP STDIO executable not found on PATH: {raw_executable}')
+    # 逐 token 校验包参数：`--package=<任意包>` 可以绕过只取第一个非 flag 值的旧逻辑。
+    for index, token in enumerate(command[1:], start=1):
+        package = ''
+        if token.startswith('--package='):
+            package = token.split('=', 1)[1]
+        elif token in ('--package', '-p'):
+            following = command[index + 1] if index + 1 < len(command) else ''
+            package = '' if following.startswith('-') else following
+        if package and package not in MCP_ALLOWED_NPX_PACKAGES:
+            raise ValueError(f'MCP STDIO npx 仅允许已审核的 MCP 包: {package}')
     if executable == 'npx':
-        package = next((item for item in command[1:] if not item.startswith('-')), '')
-        if package not in MCP_ALLOWED_NPX_PACKAGES:
+        packages = [token for token in command[1:] if not token.startswith('-')]
+        if not any(item in MCP_ALLOWED_NPX_PACKAGES for item in packages):
             raise ValueError('MCP STDIO npx 仅允许已审核的 MCP 包。')
     return command
 
@@ -16258,12 +16245,37 @@ class _BaseMCPClientSession:
         return None
 
 
+def _assert_public_endpoint(url):
+    """MCP HTTP 地址不允许指向内网/回环/链路本地/保留地址（防 SSRF 读 metadata）。"""
+    parsed = urlparse(str(url or ''))
+    host = (parsed.hostname or '').strip()
+    if not host:
+        raise ValueError('MCP HTTP 地址无效')
+    try:
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+    except ValueError as exc:
+        raise ValueError('MCP HTTP 地址端口无效') from exc
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f'MCP HTTP 地址无法解析: {host}') from exc
+    for info in infos:
+        address = info[4][0]
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError('MCP HTTP 地址不允许指向内网或回环地址')
+
+
 class _HTTPMCPClientSession(_BaseMCPClientSession):
     def __init__(self, server):
         super().__init__(server)
         parsed_url = urlparse(server.endpoint_or_command or '')
         if parsed_url.scheme not in {'http', 'https'} or not parsed_url.netloc:
             raise ValueError(f"Invalid MCP HTTP endpoint for {server.name}: expected http(s) URL")
+        _assert_public_endpoint(server.endpoint_or_command)
         self.session = requests.Session()
         self.session_id = ''
         auth_config = server.auth_config or {}
@@ -16286,6 +16298,7 @@ class _HTTPMCPClientSession(_BaseMCPClientSession):
             json=message,
             headers=headers,
             timeout=_graph_request_timeout(self.timeout_seconds),
+            allow_redirects=False,
         )
         if response.status_code >= 400:
             raise ValueError(_sanitize_mcp_error_text(response.text or f'HTTP {response.status_code}'))
@@ -16577,7 +16590,7 @@ def _build_runtime_prompt(config, active_mcp_servers, active_skills, user, mcp_d
         '如果用户说“在机器/主机/服务器上安装 helm 命令行工具/客户端/CLI”，这是安装 Helm 客户端工具，不是创建 Helm Release；必须生成主机 Shell 安装任务，task_kind=run_command，software_name=helm，不能生成 K8s/Helm 部署任务。',
         'K8s 安装部署类请求如果不确定软件的生产级参数，应在草稿中标记需查阅官方 Kubernetes/Helm 文档并生成可编辑 K8s 清单草稿；不要因此退回主机安装脚本。非 K8s 安装才默认 task_kind=run_command 生成 Shell 安装脚本；用户明确要求 Ansible/Playbook 时使用 task_kind=run_playbook。',
         '安装脚本草稿应包含包管理器探测、幂等安装、服务启动/enable（如适用）和安装后验证；如果模型不确定包名，应生成可编辑草稿并说明需要人工确认，而不是只检查服务状态。',
-        '只要已经调用 generate_host_task，就要在最终回答里明确说明：是生成任务草稿，还是已经在任务中心创建真实任务。',
+        '只要已经调用 generate_host_task，就要在最终回答里明确说明：已生成待确认的任务草稿（助手不会直接创建或执行真实任务）。',
         '工具选择示例：',
         '- “查/分析 xxx 环境 xxx 服务最近半小时 warn/error/info 日志” => 必须调用 query_logs，并设置 service、level/levels、duration_minutes；不要先调用 query_alerts。',
         '- “当前未确认的严重告警有哪些” => 优先调用 query_alerts，并设置 level=critical、only_unacknowledged=true。',
@@ -18960,35 +18973,6 @@ def _apply_dispatch_result_to_message(session, assistant_message, result, user, 
             if analysis_only:
                 merged_metadata['analysis_only_enforced'] = True
             action_decision = {'status': 'blocked', 'reason': action_block_reason}
-        elif is_host_task_draft and _should_materialize_host_task(question, result, draft):
-            try:
-                with transaction.atomic():
-                    task = _create_host_task_record_from_draft(draft, user, session=session)
-                    pending_action = create_pending_action_from_draft(session, assistant_message, draft)
-                    pending_action.status = AIOpsPendingAction.STATUS_CONFIRMED
-                    pending_action.confirmed_by = user.username
-                    pending_action.confirmed_at = timezone.now()
-                    pending_action.result_payload = {
-                        'task_id': task.id,
-                        'task_name': task.name,
-                        'materialized_in_task_center': True,
-                    }
-                    pending_action.save(update_fields=['status', 'confirmed_by', 'confirmed_at', 'result_payload', 'updated_at'])
-                merged_metadata['pending_action_id'] = pending_action.id
-                merged_metadata['created_task_id'] = task.id
-                merged_metadata['task_materialized_in_center'] = True
-                action_decision = {
-                    'status': 'materialized',
-                    'reason': 'task_center',
-                    'task_id': task.id,
-                    'task_name': task.name,
-                    'pending_action_id': pending_action.id,
-                }
-                final_content = f"{final_content}\n\n已在任务中心创建待执行任务：{task.name}（#{task.id}）。"
-            except ValueError as exc:
-                merged_metadata['task_materialization_error'] = str(exc)[:200]
-                action_decision = {'status': 'failed', 'reason': 'task_materialization_error', 'error': str(exc)[:200]}
-                final_content = f"{final_content}\n\n任务中心创建失败：{exc}"
         else:
             pending_action = create_pending_action_from_draft(session, assistant_message, draft)
             merged_metadata['pending_action_id'] = pending_action.id
@@ -19165,17 +19149,39 @@ def resume_interrupted_async_chats(limit=20):
     return resumed
 
 
-def claim_async_chat_job(lease_seconds=120):
-    now = timezone.now()
-    candidates = AIOpsChatJob.objects.filter(
+def _claimable_chat_job_query(now):
+    """可领取条件：排队中、租约过期，或历史脏数据（running 且租约为空）。"""
+    return (
         Q(status=AIOpsChatJob.STATUS_QUEUED)
         | Q(status=AIOpsChatJob.STATUS_RUNNING, lease_until__lt=now)
+        | Q(status=AIOpsChatJob.STATUS_RUNNING, lease_until__isnull=True)
+    )
+
+
+def fail_exhausted_chat_jobs():
+    """重试次数超限的任务直接终态，避免每次都重新计费调用模型。"""
+    return AIOpsChatJob.objects.filter(
+        status=AIOpsChatJob.STATUS_RUNNING,
+        attempt_count__gte=AIOPS_CHAT_JOB_MAX_ATTEMPTS,
+    ).update(
+        status=AIOpsChatJob.STATUS_FAILED,
+        error_message='重试次数超限，请重新提问',
+        lease_until=None,
+        claim_token=None,
+        updated_at=timezone.now(),
+    )
+
+
+def claim_async_chat_job(lease_seconds=120):
+    now = timezone.now()
+    claimable = _claimable_chat_job_query(now)
+    candidates = AIOpsChatJob.objects.filter(claimable).filter(
+        attempt_count__lt=AIOPS_CHAT_JOB_MAX_ATTEMPTS,
     ).order_by('created_at', 'id')[:20]
     for candidate in candidates:
         claim_token = uuid.uuid4()
         claimed = AIOpsChatJob.objects.filter(pk=candidate.pk).filter(
-            Q(status=AIOpsChatJob.STATUS_QUEUED)
-            | Q(status=AIOpsChatJob.STATUS_RUNNING, lease_until__lt=now)
+            _claimable_chat_job_query(now)
         ).update(
             status=AIOpsChatJob.STATUS_RUNNING,
             attempt_count=F('attempt_count') + 1,
@@ -19280,11 +19286,17 @@ def process_async_chat_job(job):
         stop_heartbeat.set()
         heartbeat.join(timeout=2)
         if not lease_lost.is_set():
-            AIOpsChatJob.objects.filter(
+            # running + NULL 租约会让任务永久卡死（NULL 不满足 lease_until__lt），
+            # 所以收尾只允许写终态。
+            if job.status == AIOpsChatJob.STATUS_RUNNING:
+                job.status = AIOpsChatJob.STATUS_FAILED
+                job.error_message = job.error_message or '任务执行中断，已标记失败'
+            # 只收尾“仍由本 worker 持有且仍是 running”的行；job.status 已被上面
+            # 强制成 completed/failed，所以写回的必然是终态，不会留下 running+空租约。
+            updated = AIOpsChatJob.objects.filter(
                 pk=job.pk,
                 status=AIOpsChatJob.STATUS_RUNNING,
                 claim_token=job.claim_token,
-                lease_until__gt=timezone.now(),
             ).update(
                 status=job.status,
                 error_message=job.error_message,
@@ -19292,6 +19304,10 @@ def process_async_chat_job(job):
                 claim_token=None,
                 updated_at=timezone.now(),
             )
+            if updated:
+                # .update() 不刷新内存实例，把收尾后的状态同步回调用方看到的对象。
+                job.lease_until = None
+                job.claim_token = None
     return job
 
 

@@ -1,6 +1,6 @@
 from rest_framework import serializers
-from rbac.services import user_has_permissions
 
+from rbac.services import user_has_permissions
 from sxdevops.features import is_system_posture_enabled
 
 from .models import (
@@ -132,19 +132,47 @@ class AIOpsAgentConfigSerializer(serializers.ModelSerializer):
 
 
 class AIOpsMCPServerSerializer(serializers.ModelSerializer):
+    # 可写但永不回显：库内只存密文，序列化时统一替换成“是否已配置”。
+    auth_config = serializers.JSONField(required=False)
+
     class Meta:
         model = AIOpsMCPServer
-        fields = '__all__'
-        read_only_fields = ['is_builtin']
+        fields = [
+            'id', 'name', 'server_type', 'endpoint_or_command', 'description', 'auth_config',
+            'tool_whitelist', 'is_builtin', 'is_enabled', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['is_builtin', 'created_at', 'updated_at']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        actor = getattr(self.context.get('request'), 'user', None)
+        # 对所有调用者都只返回是否已配置，绝不回显鉴权内容。
+        config = instance.auth_config if isinstance(instance.auth_config, dict) else {}
+        data['auth_config'] = {
+            'configured': bool(config),
+            'allow_write': bool(config.get('allow_write')),
+        }
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None) if request is not None else None
         if not user_has_permissions(actor, ['aiops.config.manage']):
-            config = instance.auth_config if isinstance(instance.auth_config, dict) else {}
-            data['auth_config'] = {'configured': bool(config), 'allow_write': bool(config.get('allow_write'))}
+            # 端点 URL 里可能带 ?key=...，没有配置权限的账号只看到占位符。
             data['endpoint_or_command'] = 'configured' if instance.endpoint_or_command else ''
         return data
+
+    def create(self, validated_data):
+        auth_config = validated_data.pop('auth_config', None)
+        instance = super().create(validated_data)
+        if auth_config is not None:
+            instance.auth_config = auth_config
+            instance.save(update_fields=['auth_config_encrypted'])
+        return instance
+
+    def update(self, instance, validated_data):
+        auth_config = validated_data.pop('auth_config', None)
+        instance = super().update(instance, validated_data)
+        if auth_config is not None:
+            instance.auth_config = auth_config
+            instance.save(update_fields=['auth_config_encrypted'])
+        return instance
 
     def validate(self, attrs):
         server_type = attrs.get('server_type') or getattr(self.instance, 'server_type', '')

@@ -4,7 +4,7 @@ import time
 from django.core.management.base import BaseCommand
 from django.db import OperationalError, ProgrammingError, close_old_connections
 
-from aiops.services import claim_async_chat_job, process_async_chat_job
+from aiops.services import claim_async_chat_job, fail_exhausted_chat_jobs, process_async_chat_job
 from aiops.langgraph_management import cleanup_checkpoints
 from aiops.remediation import claim_verification, cleanup_verifications, process_verification
 
@@ -25,6 +25,7 @@ class Command(BaseCommand):
         while True:
             close_old_connections()
             try:
+                fail_exhausted_chat_jobs()
                 job = claim_async_chat_job()
             except (OperationalError, ProgrammingError):
                 if options['once']:

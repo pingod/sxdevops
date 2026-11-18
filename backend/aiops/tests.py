@@ -79,7 +79,6 @@ from .services import (
     claim_async_chat_job,
     process_async_chat_job,
     build_action_preflight_contract,
-    _should_materialize_host_task,
     _run_tool_call,
     build_task_draft,
     build_cmdb_asset_draft,
@@ -10932,14 +10931,6 @@ class AIOpsApiTests(TestCase):
         self.assertFalse(HostTask.objects.filter(created_by=self.user.username, trigger_source=HostTask.TRIGGER_SOURCE_AIOPS).exists())
         action.refresh_from_db()
         self.assertTrue(action.result_payload['draft_ready'])
-
-    def test_generate_task_never_materializes_before_confirmation(self):
-        decision = _should_materialize_host_task(
-            '为 legacy-data-sync 生成巡检任务',
-            {'tool_calls': ['generate_host_task']},
-            {'host_ids': [1], 'name': 'test'},
-        )
-        self.assertFalse(decision)
 
     def test_build_task_draft_and_confirm_support_task_resource_targets(self):
         env = TaskResourceGroup.objects.create(name='电商测试环境', group_type=TaskResourceGroup.GROUP_ENVIRONMENT)

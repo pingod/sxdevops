@@ -2567,12 +2567,14 @@ def run_langgraph_readonly_pilot(
     question: str = '',
     environment: str = '',
     service: str = '',
-    thread_id: str = '',
     max_evidence_tools: int = 3,
 ) -> Dict[str, Any]:
-    """Run the pilot and return a UI-friendly trace plus evidence bundle."""
+    """Run the pilot and return a UI-friendly trace plus evidence bundle.
+
+    thread_id 由服务端生成：客户端不得指定，否则可以往别人的 checkpoint 追加状态。
+    """
     graph = get_langgraph_pilot_graph()
-    thread_id = str(thread_id or f'aiops-langgraph-{uuid.uuid4()}')
+    thread_id = f'aiops-pilot-{uuid.uuid4()}'
     initial: PilotState = {
         'session_id': session.id,
         'message_id': user_message.id,

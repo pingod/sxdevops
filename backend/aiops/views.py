@@ -177,9 +177,10 @@ class AIOpsModelProviderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
             payload = result
             status_code = status.HTTP_200_OK if result.get('status') == 'success' else status.HTTP_400_BAD_REQUEST
         except Exception as exc:
+            message = _redact_provider_error(exc, provider)
             provider.last_test_status = AIOpsModelProvider.STATUS_FAILED
-            provider.last_test_message = str(exc)[:255]
-            payload = {'status': 'failed', 'message': str(exc)}
+            provider.last_test_message = message[:255]
+            payload = {'status': 'failed', 'message': message}
             status_code = status.HTTP_400_BAD_REQUEST
         provider.save(update_fields=['last_test_status', 'last_test_message', 'updated_at'])
         return Response(payload, status=status_code)
@@ -191,7 +192,21 @@ class AIOpsModelProviderViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
         try:
             return Response(list_model_provider_models(provider, probe=probe))
         except Exception as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': _redact_provider_error(exc, provider)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _redact_provider_error(exc, provider=None):
+    """对外错误文案必须脱敏：异常里常带回显的 API Key。"""
+    message = str(exc)
+    secret = ''
+    if provider is not None:
+        try:
+            secret = provider.get_api_key() or ''
+        except Exception:
+            secret = ''
+    if secret:
+        message = message.replace(secret, '[redacted]')
+    return message
 
 
 @api_view(['GET'])
@@ -599,18 +614,23 @@ def _hide_audit_trace_rows(request, trace_type, label):
     deleted_count = 0
     metadata_key = f'audit_hidden_{trace_type}_trace_ids'
     for message in messages:
-        metadata = dict(message.metadata or {})
-        hidden_ids = _normalize_audit_trace_list(metadata.get(metadata_key) or [])
-        before_count = len(hidden_ids)
-        for trace_id in ids_by_message.get(message.id, []):
-            if trace_id not in hidden_ids:
-                hidden_ids.append(trace_id)
-        if len(hidden_ids) == before_count:
-            continue
-        metadata[metadata_key] = hidden_ids
-        message.metadata = metadata
-        message.save(update_fields=['metadata'])
-        deleted_count += len(hidden_ids) - before_count
+        # 与 worker 进度写入共用一把行锁，避免互相覆盖 metadata。
+        with transaction.atomic():
+            locked = AIOpsChatMessage.objects.select_for_update().filter(pk=message.pk).first()
+            if locked is None:
+                continue
+            metadata = dict(locked.metadata or {})
+            hidden_ids = _normalize_audit_trace_list(metadata.get(metadata_key) or [])
+            before_count = len(hidden_ids)
+            for trace_id in ids_by_message.get(message.id, []):
+                if trace_id not in hidden_ids:
+                    hidden_ids.append(trace_id)
+            if len(hidden_ids) == before_count:
+                continue
+            metadata[metadata_key] = hidden_ids
+            locked.metadata = metadata
+            locked.save(update_fields=['metadata'])
+            deleted_count += len(hidden_ids) - before_count
 
     if not deleted_count:
         return Response({'detail': '未找到可删除的审计记录'}, status=status.HTTP_404_NOT_FOUND)
@@ -1065,7 +1085,6 @@ class AIOpsChatSessionViewSet(RBACPermissionMixin, viewsets.ModelViewSet):
                 question=content,
                 environment=data.get('environment') or '',
                 service=data.get('service') or '',
-                thread_id=data.get('thread_id') or '',
                 max_evidence_tools=max_evidence_tools,
             )
         except LangGraphPilotUnavailable as exc:

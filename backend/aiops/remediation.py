@@ -1,10 +1,11 @@
+import logging
 import os
 import uuid
 from datetime import timedelta
 from typing import TypedDict
 
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -18,7 +19,11 @@ from .models import AIOpsGraphNodeRun, AIOpsKnowledgeEnvironment, AIOpsPendingAc
 from .verification_health import collect_signal, observation_end, prepare_health_policy, require_health_access
 
 
+logger = logging.getLogger(__name__)
+
 VERIFICATION_GRAPH_VERSION = 2
+VERIFICATION_MAX_ATTEMPTS = 3
+VERIFICATION_ENV_ERROR_SUMMARY = '验证未完成：平台执行环境异常，请稍后重试'
 VERIFICATION_PERMISSIONS = ('aiops.chat.analyze', 'ops.alert.view')
 TERMINAL_TASK_STATUSES = ('success', 'partial', 'failed', 'canceled')
 
@@ -328,8 +333,24 @@ def process_verification(verification):
     except ChatJobLeaseLost:
         return
     except Exception as exc:
-        from .audit_executions import safe_error
-        result = {'status': 'inconclusive', 'summary': safe_error(exc), 'task': {}, 'alert': {}}
+        import requests
+
+        transient = isinstance(exc, (DatabaseError, requests.RequestException, TimeoutError, ConnectionError))
+        logger.exception('remediation verification failed verification=%s', verification.pk)
+        if transient and (verification.attempt_count or 0) < VERIFICATION_MAX_ATTEMPTS:
+            # 环境类异常不是结论：放回等待态，下一轮重新验证，并把次数记上。
+            AIOpsRemediationVerification.objects.filter(
+                pk=verification.pk, claim_token=claim_token,
+            ).update(
+                status=AIOpsRemediationVerification.STATUS_WAITING,
+                lease_until=None,
+                claim_token=None,
+                attempt_count=F('attempt_count') + 1,
+                updated_at=timezone.now(),
+            )
+            return
+        # 用户可见文案不含异常原文，原文只进日志。
+        result = {'status': 'inconclusive', 'summary': VERIFICATION_ENV_ERROR_SUMMARY, 'task': {}, 'alert': {}}
     try:
         check_lease()
     except ChatJobLeaseLost:
@@ -349,7 +370,11 @@ def process_verification(verification):
                 actor_username=verification.action.session.user.username, correlation_id=verification.thread_id,
                 metadata={'status': result['status'], 'task_id': verification.task_id, 'is_demo': verification.is_demo},
                 is_demo=verification.is_demo,
-                result=EventRecord.RESULT_FAILED if result['status'] == 'failed' else EventRecord.RESULT_SUCCESS,
+                result=(
+                    EventRecord.RESULT_FAILED
+                    if result['status'] in {'failed', 'inconclusive'}
+                    else EventRecord.RESULT_SUCCESS
+                ),
                 severity=EventRecord.SEVERITY_INFO if result['status'] == 'passed' else EventRecord.SEVERITY_WARNING,
             )
 

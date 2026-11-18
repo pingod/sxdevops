@@ -1,21 +1,31 @@
-import base64
-import hashlib
+import json
+import logging
 import uuid
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import InvalidToken, MultiFernet
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.utils import timezone
 
+from sxdevops import secrets as platform_secrets
+
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
+AIOPS_API_KEY_SALT = 'aiops:model-provider'
 
 
 def _build_fernet():
-    seed = f"{settings.SECRET_KEY}:aiops:model-provider".encode('utf-8')
-    key = base64.urlsafe_b64encode(hashlib.sha256(seed).digest())
-    return Fernet(key)
+    """新写入用平台密钥；旧密文（SECRET_KEY 派生）仍可读。"""
+    try:
+        primary = platform_secrets.get_fernet()
+    except platform_secrets.SecretError:
+        primary = None
+    legacy = platform_secrets.legacy_fernet_from_secret_key(AIOPS_API_KEY_SALT)
+    if primary is None:
+        return MultiFernet([legacy])
+    return MultiFernet([primary, legacy])
 
 
 class AIOpsModelProvider(models.Model):
@@ -68,7 +78,7 @@ class AIOpsModelProvider(models.Model):
 
     @property
     def has_api_key(self):
-        return bool(self.api_key_encrypted)
+        return bool(self.api_key_encrypted) and bool(self.get_api_key())
 
     def set_api_key(self, value):
         value = (value or '').strip()
@@ -83,6 +93,7 @@ class AIOpsModelProvider(models.Model):
         try:
             return _build_fernet().decrypt(self.api_key_encrypted.encode('utf-8')).decode('utf-8')
         except (InvalidToken, TypeError, ValueError):
+            logger.warning('模型提供商 %s 的 API Key 无法解密，请在配置页重新保存', self.pk)
             return ''
 
 
@@ -137,7 +148,7 @@ class AIOpsMCPServer(models.Model):
     server_type = models.CharField('类型', max_length=16, choices=SERVER_TYPE_CHOICES, default=SERVER_HTTP)
     endpoint_or_command = models.CharField('地址或命令', max_length=255, blank=True, default='')
     description = models.CharField('描述', max_length=255, blank=True, default='')
-    auth_config = models.JSONField('鉴权配置', default=dict, blank=True)
+    auth_config_encrypted = models.TextField('鉴权配置密文', blank=True, default='')
     tool_whitelist = models.JSONField('启用工具', default=list, blank=True)
     is_builtin = models.BooleanField('内置', default=False)
     is_enabled = models.BooleanField('启用', default=True)
@@ -151,6 +162,30 @@ class AIOpsMCPServer(models.Model):
 
     def __str__(self):
         return self.name
+
+    def __init__(self, *args, **kwargs):
+        # 允许 AIOpsMCPServer(auth_config={...}) 构造，值经 setter 加密。
+        auth_config = kwargs.pop('auth_config', None)
+        super().__init__(*args, **kwargs)
+        if auth_config is not None:
+            self.auth_config = auth_config
+
+    @property
+    def auth_config(self):
+        if not self.auth_config_encrypted:
+            return {}
+        try:
+            return json.loads(platform_secrets.decrypt(self.auth_config_encrypted) or '{}')
+        except (platform_secrets.SecretError, ValueError):
+            logger.warning('MCP 服务 %s 的鉴权配置无法解密，请重新保存', self.pk)
+            return {}
+
+    @auth_config.setter
+    def auth_config(self, value):
+        value = value or {}
+        self.auth_config_encrypted = (
+            platform_secrets.encrypt(json.dumps(value, ensure_ascii=False)) if value else ''
+        )
 
 
 class AIOpsSkill(models.Model):
