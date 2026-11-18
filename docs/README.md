@@ -59,6 +59,7 @@ vendored 子系统（原 IDCBoxLine，MPL-2.0），平台入口「数据机房 �
 
 ## 版本与素材
 
+- [v2.0.3 更新说明](releases/v2.0.3.md)
 - [v2.0.2 更新说明](releases/v2.0.2.md)
 - [v2.0.1 更新说明](releases/v2.0.1.md)
 - [v2.0.0 更新说明](releases/v2.0.0.md)

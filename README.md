@@ -7,7 +7,7 @@
 <p align="center"><strong>思而后行，行必有证。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/pingod/sxdevops/releases/tag/v2.0.2"><img src="https://img.shields.io/badge/Version-v2.0.2-3370FF?style=flat-square" alt="版本 v2.0.2" /></a>
+  <a href="https://github.com/pingod/sxdevops/releases/tag/v2.0.3"><img src="https://img.shields.io/badge/Version-v2.0.3-3370FF?style=flat-square" alt="版本 v2.0.3" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0F9D8A?style=flat-square" alt="MIT License" /></a>
   <a href="docs/AIOps-LangGraph-试点说明.md"><img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=flat-square&logo=langgraph&logoColor=white" alt="LangGraph 智能体编排" /></a>
 </p>
@@ -54,7 +54,7 @@ SxDevOps 是一个面向真实运维现场的开源智能运维 Agent 平台。�
 
 ## v2 重点更新
 
-v2 围绕 **CMDB 资产底座、LangGraph 智能体编排、容器管理工作台** 完善从资源、取证、人工确认到执行验证的链路。平台版本使用 `v2.0.2`；文档中的聊天图 v12、动作图 v1 和验证图 v1 是内部流程版本，与平台发行版本分别管理。
+v2 围绕 **CMDB 资产底座、LangGraph 智能体编排、容器管理工作台** 完善从资源、取证、人工确认到执行验证的链路。平台版本使用 `v2.0.3`；文档中的聊天图 v12、动作图 v1 和验证图 v1 是内部流程版本，与平台发行版本分别管理。
 
 | 方向 | 本版能力与调整 |
 | --- | --- |
@@ -322,7 +322,7 @@ docker compose exec sxdevops python manage.py changepassword admin
 Kubernetes 已准备好集群可拉取的应用镜像时，在任意可连接目标集群的电脑或跳板机上执行（将示例镜像替换为自己的固定版本镜像；执行机需 Python 3、`kubectl` 及本仓库源码）：
 
 ```bash
-python3 k8s/deploy.py registry.example.com/your-team/sxdevops:v2.0.2
+python3 k8s/deploy.py registry.example.com/your-team/sxdevops:v2.0.3
 ```
 
 可追加 `--kubeconfig ./kubeconfig --context production` 指定远程集群；省略时沿用 kubectl 默认配置。脚本在目标集群创建随机密钥、配置共享 PostgreSQL / Redis / checkpoint、执行迁移并启动 Web、CMDB 调度器和 AIOps worker，首次按提示设置 `admin` 密码，随后打开执行机上的本地访问隧道。Windows 将 `python3` 换为 `python`。新安装可追加 `--database mysql` 选择 MySQL；已有安装会保留原数据库类型，拒绝直接切换引擎。存储类、私有仓库与升级选项见[集群部署指南](docs/Kubernetes部署指南.md)。
@@ -356,7 +356,7 @@ Dockerfile           前后端一体镜像
 | 数据中心 | [设计与数字孪生](docs/数据中心设计与数字孪生.md) · [用户指南](docs/用户使用文档.md#数据中心) |
 | 智能体机制 | [AIOps 架构](docs/AIOps-LangGraph-试点说明.md) · [Skills](docs/AIOps-问答能力与Skills.md) · [AI 机房建模](docs/AIOps-AI机房建模.md) · [处置验证](docs/AIOps-处置效果验证.md) |
 | 权限与安全 | [账号与 RBAC](docs/user-permission-security.md) · [安全反馈](SECURITY.md) |
-| 版本与贡献 | [v2.0.2 更新说明](docs/releases/v2.0.2.md) · [v2.0.0 验证记录](docs/releases/v2.0.0-validation.md) · [贡献指南](CONTRIBUTING.md) |
+| 版本与贡献 | [v2.0.3 更新说明](docs/releases/v2.0.3.md) · [v2.0.0 验证记录](docs/releases/v2.0.0-validation.md) · [贡献指南](CONTRIBUTING.md) |
 
 更多专题见[文档目录](docs/README.md)。当前后端全量测试仍有已知失败，不能用专项通过代替全量结论；最近记录见版本验证说明。
 
