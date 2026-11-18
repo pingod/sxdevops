@@ -56,7 +56,9 @@
 
 ### MCP 关联
 
-MCP Server 是工具的唯一配置入口，问答类型和 Skill 只根据各自声明的工具依赖自动展示反向关联，不再维护第二套手工绑定。管理接口会返回 `mcp_server_names` 和 `mcp_bindings`，其中每条绑定包含工具名、Server、启用状态和 Server 类型；同一个工具可以由多个 Server 提供。运行时仍以启用的 MCP、工具白名单、用户权限和问答类型安全策略共同决定是否可调用。
+MCP Server 是工具的唯一配置入口。鉴权配置（`auth_config`）在库内只存密文，接口对所有权限等级都只返回 `{"configured": ..., "allow_write": ...}`，不回显 headers / env / token；没有 `aiops.config.manage` 的账号连端点地址也只看到占位符。保存时整体覆盖，因此修改端点后需要重新填写鉴权配置。
+
+stdio 类型只接受白名单可执行文件（`npx` / `swmcp`），并逐 token 校验 `--package` 参数，只有已审核的 MCP 包能启动；HTTP 类型必须指向公网可达地址，内网、回环、链路本地与保留地址会被拒绝，且不跟随重定向。，问答类型和 Skill 只根据各自声明的工具依赖自动展示反向关联，不再维护第二套手工绑定。管理接口会返回 `mcp_server_names` 和 `mcp_bindings`，其中每条绑定包含工具名、Server、启用状态和 Server 类型；同一个工具可以由多个 Server 提供。运行时仍以启用的 MCP、工具白名单、用户权限和问答类型安全策略共同决定是否可调用。
 
 典型关联如下：
 

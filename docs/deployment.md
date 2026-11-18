@@ -11,11 +11,15 @@
 | Web / ASGI | `sxdevops` | 页面、API 和 WebSocket |
 | CMDB 调度器 | `cmdb-sync-scheduler` | 每 60 秒扫描到期采集任务，每轮最多 10 个；保持单实例 |
 | AIOps worker | `aiops-chat-worker` | 异步聊天、租约恢复和处置效果验证 |
+| 告警升级调度器 | `alert-escalation-scheduler` | 每 60 秒扫描到期未升级的告警并外发升级通知（v2.0.3 新增） |
+| 可观测性调度器 | `observability-scheduler` | 每小时刷新系统态势快照，靠缓存锁保证多副本只跑一次（v2.0.3 新增） |
 | PostgreSQL / Redis | `postgres` / `redis` | 业务数据、共享 checkpoint、缓存与实时通信 |
 
 应用、调度器和 worker 必须使用同一份发行镜像及兼容配置。只更新 Web 会造成 worker 沿用旧图或旧权限逻辑。
 
-持久状态包括数据库、Redis 数据和 `aiops_runtime` 卷；已有凭据还依赖稳定的 `CMDB_PASSWORD_ENCRYPTION_KEY`。容器运行正常不代表后台任务正在消费，需分别检查三项应用服务。
+持久状态包括数据库、Redis 数据和 `aiops_runtime` 卷（挂到 `/app/backend/runtime`）。该卷在 v2.0.3 起还保存 `known_hosts`，丢失后所有受管主机会重新走一次 TOFU 记录；AIOps SQLite checkpoint 也在这里。已有凭据还依赖稳定的 `CMDB_PASSWORD_ENCRYPTION_KEY`。
+
+v2.0.3 起应用容器设置了 `SXDEVOPS_OBSERVABILITY_SCHEDULER=0`，态势刷新只由 `observability-scheduler` 执行；如果自行删掉该服务，需要把该变量改回 `1`，否则快照不再更新。
 
 ## 首次部署配置
 
@@ -55,6 +59,10 @@ services:
     environment: *app-env
   aiops-chat-worker:
     environment: *app-env
+  alert-escalation-scheduler:
+    environment: *app-env
+  observability-scheduler:
+    environment: *app-env
   postgres:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
@@ -62,7 +70,7 @@ services:
 
 该示例只覆盖配置，保留基础编排的命令、依赖及卷。不要在已有 PostgreSQL / MySQL 数据卷上仅修改初始化密码变量来“轮换密码”：已有账号密码须在数据库内另行变更，并同步应用配置。
 
-基础编排已移除历史默认 Fernet 密钥，缺少外部密钥时 Compose 会拒绝启动。首次部署生成独立密钥；已有环境先备份并核对实际生效的旧密钥及凭据解密情况。若曾使用公开默认值，应在维护窗口内使用旧密钥解密并用新密钥重新加密全部相关凭据，再同步三个服务，验证后恢复流量。仅更改环境变量会使旧数据无法解密；不能把源码移除默认值视为已经完成线上轮换。
+基础编排已移除历史默认 Fernet 密钥，缺少外部密钥时 Compose 会拒绝启动。首次部署生成独立密钥；已有环境先备份并核对实际生效的旧密钥及凭据解密情况。若曾使用公开默认值，应在维护窗口内使用旧密钥解密并用新密钥重新加密全部相关凭据，再同步全部应用服务，验证后恢复流量。仅更改环境变量会使旧数据无法解密；不能把源码移除默认值视为已经完成线上轮换。
 
 启动时始终带上同一份覆盖文件：
 
@@ -88,24 +96,34 @@ docker compose -f docker-compose.yml -f compose.production.local exec sxdevops p
 1. 进入维护窗口，停止接收新的聊天和执行任务，处理 queued/running 聊天、实际任务、待确认动作及未完成验证。
 2. 备份业务数据库、共享 checkpoint 表或 SQLite checkpoint 文件、运行卷、私有配置与加密密钥；记录旧镜像摘要并验证备份可读取。SQLite 文件应在写入进程停止后备份，或使用 SQLite 一致性备份方式。
 3. 需要跨数据库表一致性的备份时，停止所有写入方后执行。PostgreSQL 可使用 `pg_dump` / `pg_restore`；MySQL 可使用受控备份工具或 `mysqldump --single-transaction`（适用于事务表），凭据通过受限配置提供；不要在共享命令行或日志中明文传递密码。
-4. 停止三项应用服务，保留数据库和卷，构建候选镜像并执行一次完整迁移。
+4. 停止五项应用服务，保留数据库和卷，构建候选镜像并执行一次完整迁移。
 
 ```bash
-docker compose stop sxdevops aiops-chat-worker cmdb-sync-scheduler
+docker compose stop sxdevops aiops-chat-worker cmdb-sync-scheduler alert-escalation-scheduler observability-scheduler
 docker compose build sxdevops
 docker compose run --rm -e SXDEVOPS_MIGRATE=0 -e SXDEVOPS_SEED_DATA=0 -e SXDEVOPS_SEED_TEMPLATES=0 sxdevops python manage.py migrate --noinput
-docker compose up -d --force-recreate sxdevops cmdb-sync-scheduler aiops-chat-worker
+docker compose up -d --force-recreate sxdevops cmdb-sync-scheduler aiops-chat-worker alert-escalation-scheduler observability-scheduler
 ```
 
-重建镜像后显式重建三个应用容器，避免仅镜像更新而旧容器继续运行。不要运行 `down -v` 清理升级环境，它会删除持久卷。首次迁移后保持已有加密密钥；图版本变化前处理旧的未完成 checkpoint，不假设能够跨版本恢复。
+重建镜像后显式重建应用容器，避免仅镜像更新而旧容器继续运行。不要运行 `down -v` 清理升级环境，它会删除持久卷。首次迁移后保持已有加密密钥；图版本变化前处理旧的未完成 checkpoint，不假设能够跨版本恢复。
+
+### v2.0.3 升级要点
+
+1. 迁移会把 SSH 口令、SQL 数据源密码、云 AK/SK、MCP 鉴权配置就地加密并打印条数。迁移期间不要有其他进程写这些表；先停应用服务再迁移。
+2. 迁移后如再导入明文数据，用 `docker compose exec sxdevops python manage.py encrypt_ssh_passwords` 补加密。
+3. `CORS_ALLOW_ALL_ORIGINS` 在 Compose 中默认改成 `0`。原有跨域直连部署要显式设回。
+4. 新增两个调度服务，缺失时告警升级与态势快照都不会自动运行。
+5. 前端必须同版本升级：终端改用一次性 WS 票据，旧 `?token=` 仅兼容一个版本。
+6. 受管主机首次连接会记录主机密钥；确认 `/app/backend/runtime` 已持久化，否则每次重建容器都会重新 TOFU。
 
 ## 上线检查
 
 ```bash
 docker compose ps
-docker compose logs --tail=100 sxdevops aiops-chat-worker cmdb-sync-scheduler
+docker compose logs --tail=100 sxdevops aiops-chat-worker cmdb-sync-scheduler alert-escalation-scheduler observability-scheduler
 docker compose exec sxdevops python manage.py check
 docker compose exec sxdevops python manage.py showmigrations
+curl -fsS http://127.0.0.1:8000/healthz
 ```
 
 确认三项应用服务为当前镜像，首页和 API 可访问，迁移已应用。再用最小权限账号验证菜单、只读接口及越权拒绝，确认 CMDB 采集能调度、异步聊天能完成，查看执行审计。任务写入仅在明确的测试资源上验收。
@@ -137,7 +155,11 @@ Go 服务应为堆之外的文件缓存和运行时留出余量；若透明大�
 | 无法登录或没有管理员 | 查看迁移结果；首次运行 `createsuperuser`，不使用旧演示账号 |
 | 聊天一直排队 | worker 是否运行、数据库与 checkpoint 是否一致、是否存在旧图版本或过期租约 |
 | 定时采集不执行 | 调度器日志、任务启用状态与到期时间；不要并行启动多个调度器 |
-| CMDB 密码无法解密 | 是否沿用原 Fernet 密钥，JSON 配置是否覆盖环境变量 |
+| 凭据无法解密（SSH/SQL/云/模型/MCP） | 是否沿用原 `CMDB_PASSWORD_ENCRYPTION_KEY`；JSON 配置是否覆盖环境变量；各应用与 worker 是否一致 |
+| 采集任务报"采集凭据不可用" | `auth_ref` 是否为大写前缀，环境变量是否为 `SXDEVOPS_COLLECTOR_<AUTH_REF>_<FIELD>` |
+| SSH 连接报主机密钥变更 | 主机确实换过密钥则从 `runtime/known_hosts` 删除该主机条目；不要用 `SXDEVOPS_SSH_STRICT_HOST_KEY=0` 长期绕过 |
+| 终端提示"终端沙箱降权失败" | 容器内是否存在 `nobody`，进程是否有权限 `setuid`；该提示意味着系统拒绝以 root 开终端 |
+| 告警没有按策略升级 | `alert-escalation-scheduler` 是否运行、告警是否处于静默/已屏蔽、策略 `levels` 是否配置 |
 | 权限变化后仍有终端连接 | 确认 ASGI 已重启；四类终端每次输入及空闲每 5 秒复核权限，检查数据库可用性和进程调度 |
 | 返回 403 | 分别检查能力权限、资源范围、账号状态和功能开关，不只检查菜单 |
 | WebSocket 连接失败 | 代理 Upgrade / 超时、当前 Token、用户状态及对应终端权限 |

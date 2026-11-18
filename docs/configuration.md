@@ -34,10 +34,10 @@ JSON 示例中的 `database` 和 `cache` 字段分别映射这些设置。多实
 | 变量 | 配置要求 |
 | --- | --- |
 | `SECRET_KEY` | 生产显式设置稳定的长随机值，各应用进程一致；未配会在进程启动时随机生成 |
-| `CMDB_PASSWORD_ENCRYPTION_KEY` | Fernet 密钥；保存资产登录凭据前配置，各实例一致并单独备份 |
+| `CMDB_PASSWORD_ENCRYPTION_KEY` | 平台唯一 Fernet 密钥；v2.0.3 起同时用于 SSH 口令、SQL 数据源密码、云厂商 AK/SK、模型 API Key 和 MCP 鉴权配置。必须在保存任何凭据前配置，各实例一致并单独备份 |
 | `DEBUG` | 当前默认 `0`；生产保持关闭 |
-| `ALLOWED_HOSTS` | 当前默认 `*`；生产填写实际域名/IP，逗号分隔，不带协议和路径 |
-| `CORS_ALLOW_ALL_ORIGINS` | 当前后端默认开启；同源生产部署显式设置 `0` |
+| `ALLOWED_HOSTS` | `DEBUG=1` 时默认 `*`；生产填写实际域名/IP，逗号分隔，不带协议和路径。`DEBUG=0` 且仍含 `*` 时启动会输出收敛告警 |
+| `CORS_ALLOW_ALL_ORIGINS` | 后端默认跟随 `DEBUG`（`DEBUG=0` 时为关闭）；Compose 已显式写成 `${CORS_ALLOW_ALL_ORIGINS:-0}`。同源生产部署保持 `0` |
 | `SXDEVOPS_TRUSTED_PROXIES` | 默认空；逗号分隔的可信入口代理 IP/CIDR，控制登录 IP 对 `X-Forwarded-For` 的信任 |
 
 生成 Fernet 密钥：
@@ -46,9 +46,24 @@ JSON 示例中的 `database` 和 `cache` 字段分别映射这些设置。多实
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-**已有 CMDB 密文后必须保留原密钥。** 更换或丢失密钥会导致历史密码无法解密；保留数据库备份还不足以恢复凭据。
+**已有密文后必须保留原密钥。** 更换或丢失密钥会导致历史凭据全部无法解密（SSH 登录、SQL 执行、云同步、模型调用、MCP 连接都会失败）；保留数据库备份还不足以恢复，因为密钥不在库里。v2.0.3 未提供在线轮换工具，升级时保持密钥不变。
+
+密文统一带 `fernet:v1:` 前缀（`backend/sxdevops/secrets.py`）。读取时无前缀的值按历史明文返回，写入时立即加密，因此迁移后手动导入的明文数据可以用 `python manage.py encrypt_ssh_passwords` 补加密（仅覆盖 ops 四张表）。
 
 当前 settings 未提供 CORS 来源列表、CSRF 可信来源列表和 HTTPS 代理设置的同名环境变量映射。优先采用同源反向代理；确需跨域或 Session 跨站请求时，需先在 Django 配置中显式接入准确白名单及可信代理设置，再验证。不能通过写入未支持的环境变量假定其已生效。
+
+## 凭据、终端与调度开关
+
+| 变量 | 默认 / 含义 |
+| --- | --- |
+| `SXDEVOPS_SSH_KNOWN_HOSTS` | `backend/runtime/known_hosts`；首次连接写入主机密钥，之后密钥变更直接拒绝连接。容器部署必须让该目录落在持久卷上 |
+| `SXDEVOPS_SSH_STRICT_HOST_KEY` | 默认 `1`（TOFU 校验）。设为 `0` 退回 `AutoAddPolicy` 并打印告警，仅用于临时排障 |
+| `SXDEVOPS_OBSERVABILITY_SCHEDULER` | 默认 `1`；进程内每小时刷新系统态势快照。Compose 部署设为 `0`，改由 `observability-scheduler` 服务单实例执行 |
+| `SXDEVOPS_OBSERVABILITY_SCHEDULER_START_DELAY` | 进程内调度线程的首轮延迟秒数，默认 `15` |
+| `EMAIL_TIMEOUT` | 告警邮件外发超时，默认 `10` 秒；不设置时邮件发送可能长时间占住 worker |
+| `SXDEVOPS_COLLECTOR_<AUTH_REF>_<FIELD>` | CMDB 采集凭据来源。`<AUTH_REF>` 由采集任务的 `auth_ref` 给出，必须是 `^[A-Z][A-Z0-9_]{0,63}$`；`<FIELD>` 限 `USERNAME`/`PASSWORD`/`ACCESS_KEY_ID`/`ACCESS_KEY_SECRET`/`SECRET_KEY`/`PROJECT_ID` |
+
+采集凭据不再接受裸环境变量名：设置 `auth_ref=VSPHERE_PROD` 时实际读取的是 `SXDEVOPS_COLLECTOR_VSPHERE_PROD_PASSWORD`。`auth_ref` 非法或字段不在白名单时采集任务直接失败并给出"采集凭据不可用"。
 
 ## 初始化开关
 
@@ -75,6 +90,8 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `AIOPS_LANGGRAPH_RETENTION_DAYS` | `30` 天；完成且符合清理条件的状态才会清理 |
 
 PostgreSQL / MySQL checkpoint 使用应用数据库配置（含 PostgreSQL SSL 选项），首次建表需要相应权限；应用和 worker 的存储后端、数据库、代码与图版本应一致。切换后端不会自动迁移未完成 checkpoint，升级前先处理活动任务。运行命令见 [AIOps 架构说明](AIOps-LangGraph-试点说明.md)。
+
+接口限流速率写在 `REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']`（当前 `user=600/min`、`expensive=30/min`、`cmdb_password_reveal=10/min`），不是环境变量；缓存不可用时计数会失败，多实例必须共用 Redis。
 
 平台数据库与 SQL 审计的业务数据源独立配置。SQL 审计支持 MySQL、PostgreSQL、MongoDB；PostgreSQL 数据源默认端口 `5432`，连接数据库留空时用 `postgres` 发现可连接库，查询和变更连接工单选定的目标库。查询使用只读事务；变更工单统一提交，失败回滚，不执行 `CREATE DATABASE`、`VACUUM`、`CREATE INDEX CONCURRENTLY` 等要求在事务外运行的操作。
 

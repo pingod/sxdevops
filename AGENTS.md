@@ -52,6 +52,15 @@ For new management or console-style pages, default to the same top structure alr
 - Do not paste terminal output back into source files when terminal encoding is uncertain. Prefer direct file edits and then reopen the file to verify the saved text.
 - For UI or API changes involving Chinese, validate the affected page or build output and fix any newly introduced mojibake before closing the task.
 
+## Documentation Maintenance
+Every change that alters behavior must update documentation in the same commit:
+
+- Functional handbook for the touched area (`docs/*.md`, e.g. `configuration.md` for env vars, `deployment.md` for services/volumes/upgrade steps).
+- A new entry at the top of `docs/维护记录.md` following its template: commit SHA, scope, migrations, new/changed environment variables, user-visible behavior, the commands actually run with their results, and remaining gaps.
+- `docs/releases/<version>.md` when cutting a release, plus the README badge/version references and `docs/README.md` index.
+
+Rules: describe only implemented behavior, never guess verification results, and never write secrets, real hosts, or internal addresses into docs. Chinese docs stay UTF-8.
+
 ## Testing Guidelines
 Backend tests use Django's built-in `TestCase`; add coverage in the nearest app-level `tests.py` or a `test_*.py` module. Name tests by behavior, for example `test_refresh_info_marks_host_offline_on_ssh_failure`. Frontend has no automated test suite yet, so every UI change should at minimum pass `npm run build` and a manual browser check.
 
