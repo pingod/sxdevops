@@ -25,7 +25,7 @@ def unseed_inspection_items(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('ops', '0063_taskresourcegroup_env_name_unique'),
+        ('ops', '0064_encrypt_ssh_passwords'),
     ]
 
     operations = [

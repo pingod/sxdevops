@@ -29,7 +29,7 @@ def enable_inspection_capability(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('aiops', '0030_aiopsmodelinvocation_modeling_purpose'),
+        ('aiops', '0031_encrypt_mcp_auth_config'),
     ]
 
     operations = [

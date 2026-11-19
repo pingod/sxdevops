@@ -108,6 +108,7 @@ services:
       SXDEVOPS_WAIT_FOR_SCHEMA: "1"
       SXDEVOPS_SEED_DATA: "0"
       SXDEVOPS_SEED_TEMPLATES: "0"
+      SXDEVOPS_OBSERVABILITY_SCHEDULER: "0"
     command: ["python", "manage.py", "run_inspection_scheduler", "--interval", "60", "--limit", "20"]
 
   aiops-chat-worker:
