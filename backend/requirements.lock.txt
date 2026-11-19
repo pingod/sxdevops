@@ -8,7 +8,7 @@ django-filter==25.1
 django-redis==7.0.0
 requests==2.34.2
 pymysql==1.2.4
-psycopg==3.3.9
+psycopg[binary,pool]==3.3.9
 sqlparse==0.6.1
 pymongo==4.18.2
 cryptography==50.0.2
@@ -19,7 +19,7 @@ channels-redis==4.3.0
 daphne==4.2.3
 langgraph==0.6.11
 langgraph-checkpoint-sqlite==2.0.11
-langgraph-checkpoint-mysql==3.0.0
+langgraph-checkpoint-mysql[pymysql]==3.0.0
 langgraph-checkpoint-postgres==2.0.25
 kubernetes==37.0.2
 aliyun-python-sdk-ecs==4.24.83
