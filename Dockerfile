@@ -59,26 +59,34 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-COPY backend/requirements.txt /app/backend/requirements.txt
-COPY backend/requirements.lock.txt /app/backend/requirements.lock.txt
+# 系统依赖与 kubectl 单独一层：改 requirements.lock.txt 不会重跑 apt。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl bash bash-completion \
     && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH:-amd64}/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client \
-    && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r /app/backend/requirements.lock.txt
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements.txt /app/backend/requirements.txt
+COPY backend/requirements.lock.txt /app/backend/requirements.lock.txt
 
 # IDC 上架布线引擎（vendored，MPL-2.0，见 planning/NOTICE.md）。
 # 依赖版本由引擎自己的 pyproject [serve] 钉死；运行时监管进程以
 # /app/planning/backend 为 cwd 启动 uvicorn，导入的是这份源码树。
 COPY planning/backend/pyproject.toml /app/planning/backend/pyproject.toml
 COPY planning/backend/idcbox/ /app/planning/backend/idcbox/
-RUN pip install --no-cache-dir "/app/planning/backend[serve]"
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash bash-completion \
-    && rm -rf /var/lib/apt/lists/*
+# 安装与清理必须同一层：删除动作放在新层只会新增一个“白化”层，镜像体积不会减小。
+# 移除项：pip 运行时不需要；kubernetes/aio 异步客户端代码零引用；.pyc 与 tests 目录。
+RUN set -eux; \
+    pip install --no-cache-dir -r /app/backend/requirements.lock.txt; \
+    pip install --no-cache-dir "/app/planning/backend[serve]"; \
+    SP=/usr/local/lib/python3.12/site-packages; \
+    rm -rf $SP/pip $SP/pip-*.dist-info $SP/wheel $SP/wheel-*.dist-info; \
+    rm -rf $SP/kubernetes/aio; \
+    find $SP -type d -name tests -prune -exec rm -rf {} + || true; \
+    find $SP -name "__pycache__" -type d -prune -exec rm -rf {} + || true; \
+    rm -rf /root/.cache
 
 COPY LICENSE /app/LICENSE
 COPY THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
