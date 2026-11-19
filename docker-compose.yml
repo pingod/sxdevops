@@ -74,6 +74,39 @@ services:
       SXDEVOPS_SEED_TEMPLATES: "0"
     command: ["python", "manage.py", "run_cmdb_sync_scheduler", "--interval", "60", "--limit", "10"]
 
+  inspection-scheduler:
+    image: sxdevops:latest
+    container_name: sxdevops-inspection-scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENGINE: postgresql
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: sxdevops
+      POSTGRES_USER: sxdevops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run start.sh or start.cmd to generate POSTGRES_PASSWORD}
+      CACHE_BACKEND: redis
+      CACHE_IGNORE_EXCEPTIONS: "0"
+      SXDEVOPS_TRUSTED_PROXIES: ${SXDEVOPS_TRUSTED_PROXIES:-}
+      # 容器部署默认允许任意 Host（自建环境常以局域网 IP/域名访问）；公网部署请显式收敛
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      REDIS_URL: redis://redis:6379/0
+      CHANNEL_REDIS_URL: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY to a unique random value before starting Compose}
+      CMDB_PASSWORD_ENCRYPTION_KEY: ${CMDB_PASSWORD_ENCRYPTION_KEY:?Set a persistent Fernet key; preserve the existing key on upgrades}
+      DEBUG: "0"
+      SXDEVOPS_WAIT_FOR_DB: "1"
+      SXDEVOPS_MIGRATE: "0"
+      SXDEVOPS_WAIT_FOR_SCHEMA: "1"
+      SXDEVOPS_SEED_DATA: "0"
+      SXDEVOPS_SEED_TEMPLATES: "0"
+    command: ["python", "manage.py", "run_inspection_scheduler", "--interval", "60", "--limit", "20"]
+
   aiops-chat-worker:
     image: sxdevops:latest
     container_name: sxdevops-aiops-chat-worker

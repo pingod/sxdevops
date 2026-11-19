@@ -560,6 +560,7 @@ def _chat_route_node(state: ChatState, config=None) -> ChatState:
         'event.analysis': 'correlation',
         'self_heal.recommend': 'self_heal',
         'host_task.generate': 'action',
+        'inspection.analysis': 'general',
     }
     requested_action = None
     if category == 'troubleshoot' or category in action_routes:

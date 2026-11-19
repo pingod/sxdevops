@@ -49,7 +49,7 @@ class AIOpsCapabilityTests(TestCase):
         self.assertEqual(response.data['enabled_capability_codes'], ['cmdb'])
         self.assertEqual([item['code'] for item in bootstrap_payload_for_user(self.user)['capabilities']], ['cmdb'])
         management = self.client.get('/api/aiops/admin/capabilities/').data['capabilities']
-        self.assertEqual(len(management), 6)
+        self.assertEqual(len(management), 7)
         disabled = next(item for item in management if item['code'] == 'troubleshoot')
         self.assertFalse(disabled['is_enabled'])
         self.assertIn('策略中停用', disabled['available_reason'])
@@ -64,7 +64,7 @@ class AIOpsCapabilityTests(TestCase):
         self.client.force_authenticate(self.restricted_user())
         response = self.client.put('/api/aiops/admin/config/', {'enabled_capability_codes': []}, format='json')
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(len(get_agent_config().enabled_capability_codes), 6)
+        self.assertEqual(len(get_agent_config().enabled_capability_codes), 7)
 
     def test_disabled_question_scope_blocks_legacy_handlers_external_tasks_and_dispatch(self):
         config = get_agent_config()
@@ -116,8 +116,8 @@ class AIOpsCapabilityTests(TestCase):
             builtin.refresh_from_db()
             self.assertTrue(builtin.is_enabled)
 
-    def test_chat_and_management_share_six_capability_codes(self):
-        expected = {'troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb'}
+    def test_chat_and_management_share_capability_codes(self):
+        expected = {'troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb', 'inspection.analysis'}
         bootstrap = bootstrap_payload_for_user(self.user)
         public = self.client.get('/api/aiops/capabilities/')
         management = self.client.get('/api/aiops/admin/capabilities/')
@@ -174,7 +174,7 @@ class AIOpsCapabilityTests(TestCase):
         for question, expected in [('分析告警', 'alert.root_cause'), ('排查 Pod 重启', 'k8s.diagnose'), ('推荐恢复方案', 'self_heal.recommend')]:
             self.assertEqual(_resolve_question_category_action('troubleshoot', question, self.user)['code'], expected)
         self.assertEqual(_resolve_question_category_action('event.analysis', '分析事件', self.user)['code'], 'change.correlation')
-        for code in ['troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb']:
+        for code in ['troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb', 'inspection.analysis']:
             task = create_external_task({'action_code': code}, self.user)
             self.assertEqual(task.action_code, code)
             response = self.client.post('/api/aiops/admin/actions/preflight/', {'action_code': code}, format='json')

@@ -332,6 +332,9 @@
         </el-table>
       </div>
     </template>
+    <template v-else-if="activeTab === 'inspection'">
+      <CmdbInspectionCenter :resource-tree="resourceTree" />
+    </template>
     <template v-else>
       <div class="glass-card history-card">
         <div class="card-head history-head">
@@ -761,9 +764,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Clock, Collection, Promotion, QuestionFilled, Search, VideoPlay } from '@element-plus/icons-vue'
+import { Aim, ArrowDown, Clock, Collection, Promotion, QuestionFilled, Search, VideoPlay } from '@element-plus/icons-vue'
 import { useRouteTabState } from '@/composables/useRouteTabState'
 import { normalizeTaskDraftTitle } from '@/utils/taskDraftTitle'
+import CmdbInspectionCenter from './CmdbInspectionCenter.vue'
 import {
   batchCancelHostTasks,
   cancelHostTask,
@@ -984,6 +988,7 @@ const innerTabs = [
   { key: 'history', label: '\u4efb\u52a1\u5386\u53f2', icon: Clock, desc: '\u67e5\u770b\u7ed3\u679c\u3001\u91cd\u8dd1\u4e0e\u7ec8\u6b62\u4efb\u52a1' },
   { key: 'dispatch', label: '\u4efb\u52a1\u4e0b\u53d1', icon: Promotion, desc: '\u9009\u62e9\u76ee\u6807\u4e3b\u673a\u5e76\u7acb\u5373\u6267\u884c' },
   { key: 'library', label: '\u6a21\u677f\u5e93', icon: Collection, desc: '维护可复用执行模板' },
+  { key: 'inspection', label: '巡检中心', icon: Aim, desc: '主机 / K8s / 中间件巡检、隐患闭环与 AI 解读' },
 ]
 const executionTypeOptions = [
   { label: 'Shell 脚本', value: 'shell', targetType: 'host', taskType: 'run_command', executionMode: 'ansible', desc: '在主机资源上执行 Shell 脚本。' },

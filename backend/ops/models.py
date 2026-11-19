@@ -1832,3 +1832,261 @@ class WebShellCommandRule(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.get_action_display()})'
+
+
+class InspectionItem(models.Model):
+    CATEGORY_HOST = 'host'
+    CATEGORY_K8S = 'k8s'
+    CATEGORY_MIDDLEWARE = 'middleware'
+    CATEGORY_CHOICES = [
+        (CATEGORY_HOST, '主机'),
+        (CATEGORY_K8S, 'K8s'),
+        (CATEGORY_MIDDLEWARE, '中间件'),
+    ]
+
+    code = models.CharField('巡检项编码', max_length=64, unique=True)
+    name = models.CharField('巡检项名称', max_length=128)
+    category = models.CharField('分类', max_length=16, choices=CATEGORY_CHOICES)
+    description = models.CharField('说明', max_length=255, blank=True, default='')
+    weight = models.PositiveSmallIntegerField('扣分权重', default=10)
+    threshold_config = models.JSONField('阈值配置', default=dict, blank=True)
+    remediation = models.TextField('处置建议', blank=True, default='')
+    is_builtin = models.BooleanField('内置巡检项', default=True)
+    is_enabled = models.BooleanField('启用', default=True)
+    sort_order = models.IntegerField('排序', default=100)
+
+    class Meta:
+        verbose_name = '巡检项'
+        verbose_name_plural = '巡检项'
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
+
+
+class InspectionPlan(models.Model):
+    SCHEDULE_TYPE_MANUAL = 'manual'
+    SCHEDULE_TYPE_ONCE = 'once'
+    SCHEDULE_TYPE_INTERVAL = 'interval'
+    SCHEDULE_TYPE_CRON = 'cron'
+    SCHEDULE_TYPE_CHOICES = [
+        (SCHEDULE_TYPE_MANUAL, '仅手动'),
+        (SCHEDULE_TYPE_ONCE, '单次'),
+        (SCHEDULE_TYPE_INTERVAL, '间隔'),
+        (SCHEDULE_TYPE_CRON, 'Cron'),
+    ]
+
+    name = models.CharField('计划名称', max_length=128)
+    description = models.CharField('说明', max_length=255, blank=True, default='')
+    enabled = models.BooleanField('启用', default=True)
+    scope = models.JSONField('巡检范围', default=dict, blank=True)
+    item_codes = models.JSONField('巡检项', default=list, blank=True)
+    schedule_type = models.CharField('调度方式', max_length=16, choices=SCHEDULE_TYPE_CHOICES, default=SCHEDULE_TYPE_MANUAL)
+    cron_expression = models.CharField('Cron 表达式', max_length=64, blank=True, default='')
+    interval_seconds = models.PositiveIntegerField('间隔秒数', null=True, blank=True)
+    run_at = models.DateTimeField('执行时间', null=True, blank=True)
+    timezone = models.CharField('时区', max_length=64, default='Asia/Shanghai')
+    next_run_at = models.DateTimeField('下次执行', null=True, blank=True)
+    last_run_at = models.DateTimeField('上次执行', null=True, blank=True)
+    last_status = models.CharField('上次状态', max_length=16, blank=True, default='')
+    consecutive_failures = models.PositiveIntegerField('连续失败次数', default=0)
+    total_run_count = models.PositiveIntegerField('累计执行次数', default=0)
+    last_error = models.CharField('上次错误', max_length=255, blank=True, default='')
+    ai_analysis_enabled = models.BooleanField('启用 AI 解读', default=True)
+    created_by = models.CharField('创建人', max_length=64, blank=True, default='')
+    updated_by = models.CharField('更新人', max_length=64, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '巡检计划'
+        verbose_name_plural = '巡检计划'
+        ordering = ['-enabled', 'next_run_at', '-id']
+
+    def __str__(self):
+        return self.name
+
+
+class InspectionRun(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCESS = 'success'
+    STATUS_WARNING = 'warning'
+    STATUS_CRITICAL = 'critical'
+    STATUS_FAILED = 'failed'
+    STATUS_CANCELED = 'canceled'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, '待执行'),
+        (STATUS_RUNNING, '执行中'),
+        (STATUS_SUCCESS, '正常'),
+        (STATUS_WARNING, '存在警告'),
+        (STATUS_CRITICAL, '存在严重问题'),
+        (STATUS_FAILED, '执行失败'),
+        (STATUS_CANCELED, '已取消'),
+    ]
+
+    TRIGGER_MANUAL = 'manual'
+    TRIGGER_SCHEDULE = 'schedule'
+    TRIGGER_AIOPS = 'aiops'
+    TRIGGER_API = 'api'
+    TRIGGER_SOURCE_CHOICES = [
+        (TRIGGER_MANUAL, '手动'),
+        (TRIGGER_SCHEDULE, '定时'),
+        (TRIGGER_AIOPS, 'AIOps'),
+        (TRIGGER_API, 'API'),
+    ]
+
+    AI_STATUS_NONE = 'none'
+    AI_STATUS_PENDING = 'pending'
+    AI_STATUS_RUNNING = 'running'
+    AI_STATUS_SUCCESS = 'success'
+    AI_STATUS_FAILED = 'failed'
+    AI_STATUS_CHOICES = [
+        (AI_STATUS_NONE, '未分析'),
+        (AI_STATUS_PENDING, '排队中'),
+        (AI_STATUS_RUNNING, '分析中'),
+        (AI_STATUS_SUCCESS, '已完成'),
+        (AI_STATUS_FAILED, '分析失败'),
+    ]
+
+    plan = models.ForeignKey(
+        InspectionPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='runs', verbose_name='巡检计划',
+    )
+    plan_name = models.CharField('计划名称', max_length=128, blank=True, default='')
+    status = models.CharField('状态', max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    trigger_source = models.CharField('触发方式', max_length=16, choices=TRIGGER_SOURCE_CHOICES, default=TRIGGER_MANUAL)
+    started_at = models.DateTimeField('开始时间', null=True, blank=True)
+    finished_at = models.DateTimeField('结束时间', null=True, blank=True)
+    duration_ms = models.PositiveIntegerField('耗时(毫秒)', default=0)
+    target_count = models.PositiveIntegerField('目标数', default=0)
+    item_codes = models.JSONField('巡检项', default=list, blank=True)
+    item_count = models.PositiveIntegerField('巡检项数', default=0)
+    ok_count = models.PositiveIntegerField('正常项', default=0)
+    warning_count = models.PositiveIntegerField('警告项', default=0)
+    critical_count = models.PositiveIntegerField('严重项', default=0)
+    unknown_count = models.PositiveIntegerField('未知项', default=0)
+    score = models.PositiveSmallIntegerField('综合得分', default=100)
+    summary = models.CharField('摘要', max_length=255, blank=True, default='')
+    ai_status = models.CharField('AI 状态', max_length=16, choices=AI_STATUS_CHOICES, default=AI_STATUS_NONE)
+    ai_summary = models.TextField('AI 结论', blank=True, default='')
+    ai_payload = models.JSONField('AI 结果', default=dict, blank=True)
+    ai_error = models.CharField('AI 错误', max_length=255, blank=True, default='')
+    scope_snapshot = models.JSONField('目标快照', default=dict, blank=True)
+    created_by = models.CharField('创建人', max_length=64, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '巡检执行'
+        verbose_name_plural = '巡检执行'
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['plan', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.plan_name or "巡检"} #{self.pk}'
+
+
+class InspectionResult(models.Model):
+    SEVERITY_OK = 'ok'
+    SEVERITY_WARNING = 'warning'
+    SEVERITY_CRITICAL = 'critical'
+    SEVERITY_UNKNOWN = 'unknown'
+    SEVERITY_CHOICES = [
+        (SEVERITY_OK, '正常'),
+        (SEVERITY_WARNING, '警告'),
+        (SEVERITY_CRITICAL, '严重'),
+        (SEVERITY_UNKNOWN, '未知'),
+    ]
+
+    run = models.ForeignKey(InspectionRun, on_delete=models.CASCADE, related_name='results', verbose_name='巡检执行')
+    target_type = models.CharField('目标类型', max_length=16)
+    target_key = models.CharField('目标标识', max_length=160)
+    target_id = models.CharField('目标 ID', max_length=64, blank=True, default='')
+    target_name = models.CharField('目标名称', max_length=160)
+    target_ip = models.CharField('目标 IP', max_length=64, blank=True, default='')
+    item_code = models.CharField('巡检项编码', max_length=64)
+    item_name = models.CharField('巡检项名称', max_length=128)
+    category = models.CharField('分类', max_length=16)
+    severity = models.CharField('级别', max_length=16, choices=SEVERITY_CHOICES, default=SEVERITY_OK)
+    value = models.CharField('当前值', max_length=128, blank=True, default='')
+    threshold = models.CharField('阈值', max_length=128, blank=True, default='')
+    message = models.CharField('说明', max_length=255, blank=True, default='')
+    evidence = models.TextField('证据', blank=True, default='')
+    duration_ms = models.PositiveIntegerField('耗时(毫秒)', default=0)
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '巡检结果'
+        verbose_name_plural = '巡检结果'
+        ordering = ['target_name', 'item_code']
+        constraints = [
+            models.UniqueConstraint(fields=['run', 'target_key', 'item_code'], name='uniq_inspection_result_scope'),
+        ]
+
+    def __str__(self):
+        return f'{self.target_name} / {self.item_code} / {self.severity}'
+
+
+class InspectionIssue(models.Model):
+    SEVERITY_WARNING = 'warning'
+    SEVERITY_CRITICAL = 'critical'
+    SEVERITY_CHOICES = [
+        (SEVERITY_WARNING, '警告'),
+        (SEVERITY_CRITICAL, '严重'),
+    ]
+    STATUS_OPEN = 'open'
+    STATUS_ACKNOWLEDGED = 'acknowledged'
+    STATUS_RESOLVED = 'resolved'
+    STATUS_IGNORED = 'ignored'
+    STATUS_CHOICES = [
+        (STATUS_OPEN, '待处理'),
+        (STATUS_ACKNOWLEDGED, '已确认'),
+        (STATUS_RESOLVED, '已修复'),
+        (STATUS_IGNORED, '已忽略'),
+    ]
+    ACTIVE_STATUSES = (STATUS_OPEN, STATUS_ACKNOWLEDGED)
+
+    dedupe_key = models.CharField('去重键', max_length=220, unique=True)
+    item_code = models.CharField('巡检项编码', max_length=64)
+    item_name = models.CharField('巡检项名称', max_length=128)
+    category = models.CharField('分类', max_length=16)
+    target_type = models.CharField('目标类型', max_length=16)
+    target_key = models.CharField('目标标识', max_length=160)
+    target_name = models.CharField('目标名称', max_length=160)
+    target_ip = models.CharField('目标 IP', max_length=64, blank=True, default='')
+    severity = models.CharField('级别', max_length=16, choices=SEVERITY_CHOICES)
+    status = models.CharField('状态', max_length=16, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    title = models.CharField('隐患标题', max_length=200)
+    detail = models.TextField('详情', blank=True, default='')
+    ai_advice = models.TextField('AI 建议', blank=True, default='')
+    first_seen_at = models.DateTimeField('首次发现')
+    last_seen_at = models.DateTimeField('最近发现')
+    resolved_at = models.DateTimeField('修复时间', null=True, blank=True)
+    occurrences = models.PositiveIntegerField('出现次数', default=1)
+    first_run = models.ForeignKey(
+        InspectionRun, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='first_issues', verbose_name='首次巡检',
+    )
+    last_run = models.ForeignKey(
+        InspectionRun, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='last_issues', verbose_name='最近巡检',
+    )
+    owner = models.CharField('处理人', max_length=64, blank=True, default='')
+    updated_by = models.CharField('更新人', max_length=64, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '巡检隐患'
+        verbose_name_plural = '巡检隐患'
+        ordering = ['-last_seen_at', '-id']
+        indexes = [
+            models.Index(fields=['status', 'severity']),
+            models.Index(fields=['item_code', 'status']),
+        ]
+
+    def __str__(self):
+        return f'{self.title} / {self.status}'
