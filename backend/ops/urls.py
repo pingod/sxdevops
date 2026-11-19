@@ -10,10 +10,15 @@ from . import observability_views
 from . import rum_views
 from . import webshell_views
 from . import middleware_views
+from . import inspection_views
 from sxdevops.features import is_system_posture_enabled
 
 router = DefaultRouter()
 router.register(r'webshell-rules', webshell_views.WebShellCommandRuleViewSet, basename='webshell-rule')
+router.register(r'inspections/items', inspection_views.InspectionItemViewSet, basename='inspection-item')
+router.register(r'inspections/plans', inspection_views.InspectionPlanViewSet, basename='inspection-plan')
+router.register(r'inspections/runs', inspection_views.InspectionRunViewSet, basename='inspection-run')
+router.register(r'inspections/issues', inspection_views.InspectionIssueViewSet, basename='inspection-issue')
 router.register(r'hosts', views.HostViewSet)
 router.register(r'task-resource-groups', views.TaskResourceGroupViewSet, basename='task-resource-group')
 router.register(r'task-resources', views.TaskResourceViewSet, basename='task-resource')
@@ -83,6 +88,8 @@ urlpatterns = [
     path('observability/tracing/traces/<str:trace_id>/', observability_views.observability_trace_detail, name='observability-trace-detail'),
     path('middleware/overview/', middleware_views.middleware_overview, name='middleware-overview'),
     path('middleware/action/', middleware_views.middleware_action, name='middleware-action'),
+    path('inspections/overview/', inspection_views.inspection_overview, name='inspection-overview'),
+    path('inspections/recommend-items/', inspection_views.inspection_recommend_items, name='inspection-recommend-items'),
 
     path('', include(router.urls)),
 ]

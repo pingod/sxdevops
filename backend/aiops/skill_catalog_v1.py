@@ -8,8 +8,11 @@ from copy import deepcopy
 from django.db import transaction
 
 
-CATALOG_VERSION = 2
-CAPABILITY_CODES = ('troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb')
+CATALOG_VERSION = 3
+CAPABILITY_CODES = (
+    'troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis',
+    'host_task.generate', 'cmdb', 'inspection.analysis',
+)
 LEGACY_CAPABILITY_ALIASES = {
     'alert.root_cause': 'troubleshoot',
     'k8s.diagnose': 'troubleshoot',
@@ -478,7 +481,40 @@ LEGACY_BUILTIN_SKILLS = [
 ]
 
 
+SKILL_CONTENT = """适用场景：
+- 查询巡检运行结果、得分趋势与未闭环隐患。
+- 解读某次巡检的严重/警告项并给出处置建议。
+
+取证要求：
+1. 巡检运行用 query_inspection_runs，隐患台账用 query_inspection_issues，两者都要查再下结论。
+2. 结论必须引用具体巡检名称、目标名称、巡检项与数值，不臆造未采集的指标。
+3. 没有历史运行时不描述趋势，直接说明「暂无历史基线」。
+4. 只给只读建议，不承诺执行；需要处置时提示到巡检中心或任务中心由人工确认。
+
+输出要求：
+- 先一句结论，再按严重度列风险，最后给可执行建议动作。
+- 隐患按出现次数与持续天数排序，优先提示长期未闭环项。"""
+
+
 SKILL_GROUPS = [
+    {
+        'slug': 'sx-inspection-analysis',
+        'name': '巡检结果分析',
+        'category': '巡检治理',
+        'description': '基于巡检结果与隐患台账输出结论、风险与处置建议。',
+        'source_slugs': [],
+        'applicable_actions': ['inspection.analysis'],
+        'builtin_tools': ['query_inspection_runs', 'query_inspection_issues'],
+        'recommended_tools': ['query_knowledge_graph'],
+        'max_iterations': 3,
+        'risk_level': 'read_only',
+        'output_contract': {
+            'sections': ['结论', '关键风险', '趋势', '建议动作'],
+            'blocks': ['tool_trace', 'evidence_timeline'],
+        },
+        'content': SKILL_CONTENT,
+        'allowed_role_codes': [],
+    },
     {
         'slug': 'answer-formatter',
         'name': '统一应答规范',

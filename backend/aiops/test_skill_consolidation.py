@@ -25,7 +25,7 @@ class ReusableSkillConsolidationTests(TestCase):
     def test_default_catalog_runs_split_reusable_skills(self):
         config = get_agent_config()
         active = _get_selected_skills(config)
-        self.assertEqual(len(active), 13)
+        self.assertEqual(len(active), 14)
         self.assertEqual({skill.slug for skill in active}, {definition['slug'] for definition in BUILTIN_SKILLS})
         selected = _skills_for_action(active, {'code': 'k8s.diagnose', 'skills': ['does-not-exist']})
         self.assertIn('sx-k8s-diagnostics', {skill.slug for skill in selected})
@@ -56,7 +56,7 @@ class ReusableSkillConsolidationTests(TestCase):
         custom.refresh_from_db()
         self.assertEqual(custom.content, '保留团队正文')
         self.assertEqual(custom.applicable_actions, ['troubleshoot'])
-        self.assertEqual(AIOpsSkill.objects.filter(merged_into__isnull=True, is_builtin=True).count(), 13)
+        self.assertEqual(AIOpsSkill.objects.filter(merged_into__isnull=True, is_builtin=True).count(), 14)
 
     def test_disjoint_role_limits_disable_merged_skill_without_broadening(self):
         sources, _ = self.seed_legacy()
@@ -170,7 +170,7 @@ class ReusableSkillConsolidationTests(TestCase):
         skill.refresh_from_db()
         self.assertEqual(skill.content, '允许编辑专业方法')
         self.assertEqual(skill.applicable_actions, ['troubleshoot', 'log.query_generate'])
-        self.assertEqual(skill.builtin_version, 2)
+        self.assertEqual(skill.builtin_version, 3)
         self.assertIsNone(skill.merged_into_id)
         self.assertTrue(skill.is_builtin)
 

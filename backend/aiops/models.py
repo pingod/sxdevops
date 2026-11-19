@@ -98,7 +98,10 @@ class AIOpsModelProvider(models.Model):
 
 
 def default_capability_codes():
-    return ['troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb']
+    return [
+        'troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis',
+        'host_task.generate', 'cmdb', 'inspection.analysis',
+    ]
 
 
 class AIOpsAgentConfig(models.Model):
@@ -556,6 +559,7 @@ class AIOpsModelInvocation(models.Model):
     PURPOSE_MODEL_PROBE = 'model_probe'
     PURPOSE_CONNECTION_TEST = 'connection_test'
     PURPOSE_MODELING = 'modeling'
+    PURPOSE_INSPECTION_ANALYSIS = 'inspection_analysis'
     PURPOSE_CHOICES = [
         (PURPOSE_CHAT_PLANNING, '聊天规划'),
         (PURPOSE_ANSWER_FORMATTING, '回答整形'),
@@ -563,6 +567,7 @@ class AIOpsModelInvocation(models.Model):
         (PURPOSE_MODEL_PROBE, '模型探测'),
         (PURPOSE_CONNECTION_TEST, '连接测试'),
         (PURPOSE_MODELING, '机房建模'),
+        (PURPOSE_INSPECTION_ANALYSIS, '巡检分析'),
     ]
 
     STATUS_SUCCESS = 'success'

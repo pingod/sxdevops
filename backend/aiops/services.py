@@ -40,6 +40,8 @@ from ops.models import (
     GrafanaSetting,
     Host,
     HostTask,
+    InspectionIssue,
+    InspectionRun,
     K8sCluster,
     LogDataSource,
     LogEntry,
@@ -368,6 +370,12 @@ BUILTIN_MCP_SERVERS = [
         'tool_whitelist': ['query_container_assets', 'query_k8s_cluster_summary', 'query_k8s_resources'],
     },
     {
+        'name': '巡检 MCP',
+        'server_type': AIOpsMCPServer.SERVER_PLATFORM_BUILTIN,
+        'description': '查询巡检运行、巡检结果与隐患台账。',
+        'tool_whitelist': ['query_inspection_runs', 'query_inspection_issues'],
+    },
+    {
         'name': 'N9E 监控 MCP',
         'server_type': AIOpsMCPServer.SERVER_STDIO,
         'description': '对接 Nightingale（N9E）官方 MCP Server，查询告警、监控目标、数据源、事件流水线与团队信息。',
@@ -655,6 +663,25 @@ BUILTIN_ACTION_REGISTRY = [
         ],
     },
     {
+        'code': 'inspection.analysis',
+        'display_name': '巡检结果分析',
+        'category': '分析诊断',
+        'description': '查询巡检运行与隐患台账，输出结论、风险与建议。',
+        'risk_level': 'read_only',
+        'agent_mode': 'direct',
+        'required_context': [],
+        'allowed_tools': ['query_inspection_runs', 'query_inspection_issues'],
+        'preflight_required': False,
+        'preflight_fields': [],
+        'output_blocks': ['tool_trace', 'evidence_timeline'],
+        'rbac_permissions': ['aiops.chat.view', 'aiops.chat.analyze', 'ops.inspection.view'],
+        'suggested_questions': [
+            '最近一次巡检发现了哪些严重问题',
+            '当前还有哪些未闭环的巡检隐患',
+            '最近 7 天巡检得分趋势如何',
+        ],
+    },
+    {
         'code': 'host_task.generate',
         'display_name': '任务生成',
         'category': '任务生成',
@@ -746,6 +773,10 @@ BUILTIN_CAPABILITY_REGISTRY = [
      'description': '生成主机、Playbook 或 K8s 任务草稿，确认后进入任务中心。',
      'summary': '巡检 · 安装 · 任务草稿', 'icon': 'Operation', 'requires_environment': True,
      'legacy_action_codes': ['host_task.generate']},
+    {'code': 'inspection.analysis', 'display_name': '巡检分析', 'category': '分析诊断',
+     'description': '解读巡检结果、聚合隐患并给出处置建议。',
+     'summary': '巡检结果 · 隐患 · 建议', 'icon': 'Aim', 'requires_environment': False,
+     'legacy_action_codes': ['inspection.analysis']},
     {'code': 'cmdb', 'display_name': 'CMDB', 'category': '查询分析',
      'description': '在 CMDB 授权范围内查询资产、依赖拓扑、成本和数据质量。',
      'summary': '资产 · 拓扑 · 成本 · 治理', 'icon': 'Coin', 'requires_environment': False,
@@ -1779,6 +1810,7 @@ def build_runbook_draft_from_payload(payload, user=None, source_task=None, sourc
 
 ACTION_ROUTE_PRIORITY = [
     'host_task.generate',
+    'inspection.analysis',
     'self_heal.recommend',
     'log.query_generate',
     'change.correlation',
@@ -1882,6 +1914,8 @@ def _action_question_matches(action_code, question, analysis_scope=None):
             and _question_contains_any(lowered, ['推荐', '方案', '脚本', '处置', '建议', '确认', '可以', '能不能', '是否', '恢复'])
             and _question_contains_any(lowered, ['自愈', '修复', '处置', '脚本', '恢复', '告警', '故障', '异常', '错误', '超时', '服务'])
         )
+    if action_code == 'inspection.analysis':
+        return _question_contains_any(lowered, ['巡检结果', '巡检报告', '巡检发现', '巡检得分', '隐患', '巡检历史', '巡检趋势'])
     if action_code == 'host_task.generate':
         if _looks_like_k8s_task_request(text, {}):
             return True
@@ -1926,6 +1960,8 @@ def _resolve_question_category_action(category, question, user=None):
     category = {'incident': 'troubleshoot', 'monitoring': 'troubleshoot',
                 'deployment': 'event.analysis', 'operations': 'host_task.generate'}.get(category, category)
     action_code = category
+    if category == 'inspection.analysis':
+        return _action_registry_item_by_code('inspection.analysis', user=user, include_unavailable=True)
     if category == 'event.analysis':
         action_code = 'change.correlation'
     if category == 'troubleshoot':
@@ -2167,7 +2203,12 @@ def _missing_action_context_fields(action, question, knowledge_environment=None,
     missing = []
     page_context = normalize_page_context(page_context)
 
-    if not _action_context_present('environment', question, knowledge_environment, analysis_scope, page_context):
+    # required_context 显式声明为空表示该动作不依赖知识环境（如巡检分析）。
+    declared_context = action.get('required_context')
+    environment_required = True if declared_context is None else 'environment' in declared_context
+    if environment_required and not _action_context_present(
+        'environment', question, knowledge_environment, analysis_scope, page_context,
+    ):
         missing.append(_build_action_missing_context_field('environment', '需要先确认唯一知识图谱环境。'))
 
     if action_code == 'log.query_generate' and not _action_context_present('service', question, knowledge_environment, analysis_scope, page_context):
@@ -9105,6 +9146,45 @@ def _run_task_generation_evidence(
     )
 
 
+def _run_inspection_evidence(
+    session, user_message, user, question, scoped_question, knowledge_environment, analysis_scope,
+    provider, active_skills, action, emit,
+):
+    emit(
+        step={'title': '巡检证据收集', 'detail': '先查询巡检运行与隐患台账，再给出结论与建议。', 'status': PROCESSING_STATUS_COMPLETED},
+        text='正在查询巡检运行与隐患台账',
+    )
+    sections, citations, tool_names, collected = [], [], [], []
+    _run_scoped_tool(
+        session, user_message, user, collected, sections, citations, tool_names,
+        'query_inspection_runs', {'query': scoped_question or question, 'status': '', 'days': 30, 'limit': 5},
+        emit=emit,
+    )
+    _run_scoped_tool(
+        session, user_message, user, collected, sections, citations, tool_names,
+        'query_inspection_issues', {'query': scoped_question or question, 'status': 'open', 'severity': '', 'limit': 10},
+        emit=emit,
+    )
+    if not sections:
+        sections = [{'title': '巡检运行', 'items': ['暂无巡检记录']}]
+    citations = citations or [{'title': '巡检中心', 'path': '/tasks/workbench?taskTab=inspection'}]
+    return _build_evidence_bundle_result(
+        question=question,
+        scoped_question=scoped_question,
+        knowledge_environment=knowledge_environment,
+        analysis_scope=analysis_scope,
+        provider=provider,
+        active_skills=active_skills,
+        sections=sections,
+        citations=citations,
+        tool_names=tool_names,
+        collected_tool_outputs=collected,
+        execution_mode='deterministic_inspection_analysis',
+        message_type=AIOpsChatMessage.TYPE_ANALYSIS,
+        extra_metadata={'action_route': 'selected_inspection_analysis'},
+    )
+
+
 def _run_change_correlation_evidence(session, user_message, user, question, scoped_question, knowledge_environment, analysis_scope, provider, active_skills, action, emit):
     emit(
         step={'title': '事件分析', 'detail': '先读取变更、工单、事件和知识图谱关系，再判断时间线是否对齐。', 'status': PROCESSING_STATUS_COMPLETED},
@@ -9609,6 +9689,96 @@ def query_host_tasks(session, user_message, user, query='', status='', limit=6):
     summary = {'count': len(tasks)}
     _finish_tool_invocation(invocation, summary, started_at, success=True)
     return {'summary': summary, 'sections': sections, 'citations': [{'title': '任务中心', 'path': '/tasks'}], 'tasks': tasks}
+
+
+def query_inspection_runs(session, user_message, user, query='', status='', days=30, limit=5):
+    started_at = time.time()
+    try:
+        limit = max(1, min(int(limit or 5), 10))
+    except (TypeError, ValueError):
+        limit = 5
+    try:
+        days = max(1, min(int(days or 30), 365))
+    except (TypeError, ValueError):
+        days = 30
+    tokens = _clean_tokens(query)
+    invocation = _create_tool_invocation(
+        session,
+        user_message,
+        'query_inspection_runs',
+        {'query': query, 'tokens': tokens, 'status': status, 'days': days, 'limit': limit},
+    )
+    if not user_has_permissions(user, ['ops.inspection.view']):
+        _finish_tool_invocation(invocation, {'detail': 'missing_permission'}, started_at, success=False)
+        return {'sections': [], 'citations': []}
+
+    queryset = InspectionRun.objects.filter(created_at__gte=timezone.now() - timedelta(days=days))
+    if status:
+        queryset = queryset.filter(status=status)
+    matched = _queryset_search(queryset, ['plan_name', 'summary', 'created_by'], tokens)
+    # 自然语言提问很少命中计划名，检索为空时回退到时间范围内最近记录，避免答成“暂无巡检记录”。
+    runs = list((matched if tokens and matched.exists() else queryset).order_by('-created_at', '-id')[:limit])
+    sections = [{
+        'title': '巡检运行',
+        'items': [
+            f'{run.plan_name or "巡检"} / {run.get_status_display()} / 得分 {run.score} / '
+            f'严重 {run.critical_count} / {timezone.localtime(run.created_at):%Y-%m-%d %H:%M}'
+            for run in runs
+        ],
+    }] if runs else []
+    scores = [run.score for run in runs]
+    summary = {'count': len(runs), 'avg_score': round(sum(scores) / len(scores), 1) if scores else 0}
+    _finish_tool_invocation(invocation, summary, started_at, success=True)
+    return {
+        'summary': summary,
+        'sections': sections,
+        'citations': [{'title': '巡检中心', 'path': '/tasks/workbench?taskTab=inspection'}],
+        'runs': runs,
+    }
+
+
+def query_inspection_issues(session, user_message, user, query='', status='open', severity='', limit=10):
+    started_at = time.time()
+    try:
+        limit = max(1, min(int(limit or 10), 20))
+    except (TypeError, ValueError):
+        limit = 10
+    tokens = _clean_tokens(query)
+    invocation = _create_tool_invocation(
+        session,
+        user_message,
+        'query_inspection_issues',
+        {'query': query, 'tokens': tokens, 'status': status, 'severity': severity, 'limit': limit},
+    )
+    if not user_has_permissions(user, ['ops.inspection.view']):
+        _finish_tool_invocation(invocation, {'detail': 'missing_permission'}, started_at, success=False)
+        return {'sections': [], 'citations': []}
+
+    queryset = InspectionIssue.objects.all()
+    if status:
+        queryset = queryset.filter(status=status)
+    if severity:
+        queryset = queryset.filter(severity=severity)
+    matched = _queryset_search(queryset, ['title', 'target_name', 'item_name'], tokens)
+    issues = list((matched if tokens and matched.exists() else queryset).order_by('-last_seen_at', '-id')[:limit])
+    sections = [{
+        'title': '未闭环隐患',
+        'items': [
+            f'{issue.title} / {issue.target_name} / {issue.get_severity_display()} / 出现 {issue.occurrences} 次'
+            for issue in issues
+        ],
+    }] if issues else []
+    summary = {
+        'count': len(issues),
+        'critical': sum(1 for issue in issues if issue.severity == InspectionIssue.SEVERITY_CRITICAL),
+    }
+    _finish_tool_invocation(invocation, summary, started_at, success=True)
+    return {
+        'summary': summary,
+        'sections': sections,
+        'citations': [{'title': '巡检中心', 'path': '/tasks/workbench?taskTab=inspection'}],
+        'issues': issues,
+    }
 
 
 def query_knowledge_graph(session, user_message, user, query='', environment='', system_name='', service='', limit=8):
@@ -16698,6 +16868,8 @@ def _tool_allowed(user, tool_name):
         return user_has_permissions(user, ['ops.deployment.view'])
     if tool_name == 'query_host_tasks':
         return user_has_permissions(user, ['ops.host.execute'])
+    if tool_name in ('query_inspection_runs', 'query_inspection_issues'):
+        return user_has_permissions(user, ['ops.inspection.view'])
     if tool_name == 'generate_host_task':
         return user_has_permissions(user, ['aiops.task.generate'])
     return False
@@ -16890,6 +17062,30 @@ def _tool_specs_for_runtime(active_mcp_servers, user):
         'query_recent_changes': {
             'description': '查询当前知识环境、系统与服务范围内的最近应用发布变更。',
             'parameters': {'type': 'object', 'properties': {'query': {'type': 'string'}, 'system_name': {'type': 'string'}, 'service': {'type': 'string'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10}}},
+        },
+        'query_inspection_runs': {
+            'description': '查询巡检中心的巡检运行记录与得分。用户问巡检结果、巡检得分、巡检历史或巡检趋势时使用。',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'query': {'type': 'string'},
+                    'status': {'type': 'string', 'enum': ['success', 'warning', 'critical', 'failed', '']},
+                    'days': {'type': 'integer', 'minimum': 1, 'maximum': 365},
+                    'limit': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+                },
+            },
+        },
+        'query_inspection_issues': {
+            'description': '查询巡检隐患台账。用户问未闭环隐患、严重隐患或隐患出现次数时使用。',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'query': {'type': 'string'},
+                    'status': {'type': 'string', 'enum': ['open', 'acknowledged', 'resolved', 'ignored', '']},
+                    'severity': {'type': 'string', 'enum': ['warning', 'critical', '']},
+                    'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20},
+                },
+            },
         },
         'query_host_tasks': {
             'description': '查询任务中心的任务记录。',
@@ -17629,6 +17825,20 @@ def _run_tool_call_once(session, user_message, user, tool_name, arguments, regis
                                       query=arguments.get('query') or '', system_name=arguments.get('system_name') or '',
                                       service=arguments.get('service') or '')
         return {'tool_output': result, 'sections': result.get('sections', []), 'citations': result.get('citations', []), 'message_type': AIOpsChatMessage.TYPE_ANALYSIS}
+    if tool_name == 'query_inspection_runs':
+        result = query_inspection_runs(
+            session, user_message, user, query=arguments.get('query', ''),
+            status=arguments.get('status', ''), days=arguments.get('days') or 30,
+            limit=arguments.get('limit') or 5,
+        )
+        return {'tool_output': result, 'sections': result.get('sections', []), 'citations': result.get('citations', []), 'message_type': AIOpsChatMessage.TYPE_ANALYSIS}
+    if tool_name == 'query_inspection_issues':
+        result = query_inspection_issues(
+            session, user_message, user, query=arguments.get('query', ''),
+            status=arguments.get('status', 'open'), severity=arguments.get('severity', ''),
+            limit=arguments.get('limit') or 10,
+        )
+        return {'tool_output': result, 'sections': result.get('sections', []), 'citations': result.get('citations', []), 'message_type': AIOpsChatMessage.TYPE_ANALYSIS}
     if tool_name == 'query_host_tasks':
         result = query_host_tasks(session, user_message, user, query=arguments.get('query', ''), status=arguments.get('status', ''), limit=arguments.get('limit') or 6)
         return {'tool_output': result, 'sections': result.get('sections', []), 'citations': result.get('citations', []), 'message_type': AIOpsChatMessage.TYPE_TEXT}
@@ -17779,6 +17989,21 @@ def _run_selected_action(session, user_message, user, question, scoped_question,
             action,
             emit,
         )
+    if action_code == 'inspection.analysis':
+        result = _run_inspection_evidence(
+            session,
+            user_message,
+            user,
+            question,
+            scoped_question,
+            knowledge_environment,
+            analysis_scope,
+            provider,
+            action_skills,
+            action,
+            emit,
+        )
+        return _attach_selected_action_metadata(result, action, extra_metadata={'action_route': 'selected_inspection_analysis'})
     if action_code == 'host_task.generate':
         result = _run_task_generation_evidence(
             session,
@@ -17816,7 +18041,8 @@ def _question_scope_disabled_reason(config, question, category='auto', route='',
         codes.add(normalize_capability_code(category))
     else:
         lane_code = {'incident': 'troubleshoot', 'k8s': 'troubleshoot', 'self_heal': 'troubleshoot',
-                     'correlation': 'event.analysis', 'slo': 'slo.analysis', 'action': 'host_task.generate', 'cmdb': 'cmdb'}.get(route)
+                     'correlation': 'event.analysis', 'slo': 'slo.analysis', 'action': 'host_task.generate',
+                     'cmdb': 'cmdb', 'inspection.analysis': 'inspection.analysis'}.get(route)
         if lane_code:
             codes.add(lane_code)
         for definition in BUILTIN_ACTION_REGISTRY:
@@ -17952,6 +18178,23 @@ def _dispatch_with_tool_runtime(session, user_message, user, question, progress_
         return _attach_selected_action_metadata(result, cmdb_capability, extra_metadata={'action_route': 'direct_cmdb_query'})
     if cmdb_only:
         return None
+    # 巡检分析等不依赖知识环境的能力必须在环境前置检查之前分流，否则无环境时会被拦下。
+    environment_free_action = requested_action or _select_action_for_question(
+        question, user=user, analysis_scope=None,
+    )
+    environment_free_capability = capability_by_code(
+        (environment_free_action or {}).get('capability_code') or (environment_free_action or {}).get('code')
+    ) if environment_free_action else None
+    if (
+        environment_free_capability
+        and not environment_free_capability.get('requires_environment', True)
+        and environment_free_capability['code'] != 'cmdb'
+    ):
+        return _run_selected_action(
+            session, user_message, user, question, question, {}, {},
+            provider if _provider_is_ready(provider) else None, active_skills, environment_free_action, emit,
+            graph_runtime=graph_runtime,
+        )
     environment_resolution = _resolve_chat_environment(session, question)
     if environment_resolution.get('status') != 'resolved':
         emit(
