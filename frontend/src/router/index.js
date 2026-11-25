@@ -671,6 +671,16 @@ const routes = [
         },
       },
       {
+        path: 'datacenter/rack',
+        name: 'RackLayout',
+        component: () => import('@/views/RackLayout.vue'),
+        meta: {
+          title: '机柜布设',
+          icon: 'Grid',
+          permission: 'datacenter.rack.view',
+        },
+      },
+      {
         path: 'aiops/chat',
         name: 'AIOpsChat',
         component: () => import('@/views/AIOpsChatEntry.vue'),

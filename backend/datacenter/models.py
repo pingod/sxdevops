@@ -63,3 +63,69 @@ class TwinProjectSnapshot(models.Model):
 
     def __str__(self):
         return f'{self.project_id} v{self.version}'
+
+
+class RackProject(models.Model):
+    """单机柜设备布设方案（机柜布设）。
+
+    内容口径与上游 RackDraw 的布设文件一致：机柜规格 + 卡位版式 + 设备数组，
+    坐标以「顶边孔位 / 横向 6 等分」为准，U 号由孔位推导。落库方式沿用
+    TwinProject 的覆盖保存 + 乐观锁 + 快照，避免另起一套版本机制。
+    """
+
+    RACK_CHOICES = [('42U', '42U'), ('36U', '36U'), ('24U', '24U')]
+    MODE_CHOICES = [('U', '标准 U 数版式'), ('hole', '螺丝孔位版式')]
+
+    name = models.CharField('方案名称', max_length=120, unique=True)
+    description = models.CharField('说明', max_length=255, blank=True, default='')
+    rack_kind = models.CharField('机柜规格', max_length=8, choices=RACK_CHOICES, default='42U')
+    snap_mode = models.CharField('卡位版式', max_length=8, choices=MODE_CHOICES, default='U')
+    content = models.TextField('布设 JSON')
+    device_count = models.PositiveIntegerField('设备数', default=0)
+    used_u = models.PositiveIntegerField('占用 U 数', default=0)
+    size_bytes = models.PositiveIntegerField('内容字节数', default=0)
+    checksum = models.CharField('SHA-256', max_length=64, blank=True, default='')
+    uploaded_by = models.CharField('创建人', max_length=150, blank=True, default='')
+    version = models.PositiveIntegerField('内容版本', default=1)
+    updated_by = models.CharField('最后修改人', max_length=150, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+    updated_at = models.DateTimeField('更新时间', auto_now=True)
+
+    class Meta:
+        verbose_name = '机柜布设方案'
+        verbose_name_plural = '机柜布设方案'
+        ordering = ['-updated_at', '-id']
+
+    def __str__(self):
+        return self.name
+
+
+class RackProjectSnapshot(models.Model):
+    """机柜布设内容快照：每次覆盖保存前留一份旧内容，保留最近 30 个版本。"""
+
+    SNAPSHOT_KEEP = 30
+
+    project = models.ForeignKey(
+        RackProject, on_delete=models.CASCADE, related_name='snapshots', verbose_name='方案',
+    )
+    version = models.PositiveIntegerField('版本号')
+    content = models.TextField('布设 JSON')
+    device_count = models.PositiveIntegerField('设备数', default=0)
+    used_u = models.PositiveIntegerField('占用 U 数', default=0)
+    size_bytes = models.PositiveIntegerField('内容字节数', default=0)
+    checksum = models.CharField('SHA-256', max_length=64, blank=True, default='')
+    created_by = models.CharField('保存人', max_length=150, blank=True, default='')
+    created_at = models.DateTimeField('创建时间', auto_now_add=True)
+
+    class Meta:
+        verbose_name = '机柜布设方案快照'
+        verbose_name_plural = '机柜布设方案快照'
+        ordering = ['-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project', 'version'], name='rack_snapshot_project_version_unique',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.project_id} v{self.version}'

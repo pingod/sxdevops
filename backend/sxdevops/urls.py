@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/', include('planning.urls')),
     path('api/network/', include('network.urls')),
     path('api/datacenter/twin/', include('datacenter.urls')),
+    path('api/datacenter/rack/', include('datacenter.rack_urls')),
     re_path(r'^planning-app(?:/(?P<path>.*))?$', planning_views.planning_app),
     re_path(r'^dc-viewer-app(?:/(?P<path>.*))?$', datacenter_views.dc_viewer_app),
     re_path(r'^dc-designer-app(?:/(?P<path>.*))?$', datacenter_views.dc_designer_app),

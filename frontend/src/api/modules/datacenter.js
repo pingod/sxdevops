@@ -25,3 +25,22 @@ export const fetchTwinVersionContent = (id, version) => request.get(
 export const rollbackTwinProject = (id, version) => request.post(
   `/datacenter/twin/projects/${id}/rollback/`, { version },
 )
+
+/* 机柜布设：方案内容 + 乐观锁 + 快照，口径与三维机房项目库一致。 */
+export const listRackProjects = (params) => request.get('/datacenter/rack/projects/', { params })
+export const createRackProject = (payload) => request.post('/datacenter/rack/projects/', payload)
+export const updateRackProject = (id, payload) => request.put(`/datacenter/rack/projects/${id}/`, payload)
+export const patchRackProject = (id, data) => request.patch(`/datacenter/rack/projects/${id}/`, data)
+export const deleteRackProject = (id) => request.delete(`/datacenter/rack/projects/${id}/`)
+export const fetchRackProjectContent = (id) => request.get(`/datacenter/rack/projects/${id}/content/`, {
+  responseType: 'text',
+  transformResponse: [(data) => data],
+})
+export const listRackVersions = (id) => request.get(`/datacenter/rack/projects/${id}/versions/`)
+export const fetchRackVersionContent = (id, version) => request.get(
+  `/datacenter/rack/projects/${id}/versions/${version}/content/`,
+  { responseType: 'text', transformResponse: [(data) => data] },
+)
+export const rollbackRackProject = (id, version) => request.post(
+  `/datacenter/rack/projects/${id}/rollback/`, { version },
+)

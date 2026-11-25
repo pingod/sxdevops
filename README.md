@@ -60,7 +60,7 @@ v2 围绕 **CMDB 资产底座、LangGraph 智能体编排、容器管理工作�
 | --- | --- |
 | CMDB | 统一资产、资源树、容量水位、同步与治理入口；任务中心显式接入 CMDB 资产；最新指标查询与历史聚合优化；拓扑支持精确范围及 1–3 跳邻居 |
 | AIOps / LangGraph | 默认聊天进入持久化图编排；分阶段取证、工具循环、任务草稿和回复修复；独立 worker、checkpoint 恢复、租约与节点审计；处置后告警恢复验证；AI 机房建模使用平台模型代理与统一审计 |
-| 数据中心 | 数字孪生只读呈现；三维机房设计收敛到 CAD 编辑内核并接入平台项目库/版本，内置 AI 建模；保留本地/离线独立工作台 |
+| 数据中心 | 数字孪生只读呈现；三维机房设计收敛到 CAD 编辑内核并接入平台项目库/版本，内置 AI 建模；保留本地/离线独立工作台；新增单柜「机柜布设」，支持 U 位混排、版本与布设表导出 |
 | 能力配置 | 六类问答入口、十三个内置可复用 Skill；统一能力挂载与 MCP 工具依赖展示，减少重复配置 |
 | 容器管理 | 统一 Kubernetes / Docker 工作台；资源与 YAML 预检、范围授权、容量摘要、容器与镜像分页搜索、交互终端及历史日志 |
 | 工作台体验 | 浅色、炭灰、深蓝灰三套主题；侧栏集中导航与工具入口，内容区自适应铺满；系统设置统一管理网站名称、图标、菜单排序与显示 |
@@ -89,14 +89,15 @@ v2 围绕 **CMDB 资产底座、LangGraph 智能体编排、容器管理工作�
 
 详见 [LangGraph 实现与运行说明](docs/AIOps-LangGraph-试点说明.md)、[问答能力与 Skills](docs/AIOps-问答能力与Skills.md)和[处置效果验证](docs/AIOps-处置效果验证.md)。
 
-### 数据中心：数字孪生与 CAD 设计
+### 数据中心：数字孪生、CAD 设计与机柜布设
 
 - `数字孪生` 保持只读：加载平台项目库中的三维机房项目，展示实时状态，不承担编辑。
 - `三维机房设计` 使用 CAD 编辑内核，保留项目库、版本历史和乐观锁；编辑器通过 postMessage 与平台交换 `load/new-room/request-save/saved/dirty`。
 - 工具栏「独立工作台」用于本地/离线工勘与导入导出（JSON、PNG、DXF、CSV），不写平台项目库。
 - 编辑器内置 16 类构件、成排/POD、合规检查、3D 检视与 AI 建模；AI 模型调用经 AIOps 代理，服务端选提供商并写审计。
+- `机柜布设` 处理单柜内部 U 位与孔位布局：目录拖放、全宽/1/2/1/3 宽混排、自定义设备、版本回滚、Markdown 布设表与 PNG 导出；跨机柜布线仍归 `IDC 上架布线`。
 
-详见[数据中心设计与数字孪生](docs/数据中心设计与数字孪生.md)和[AI 机房建模](docs/AIOps-AI机房建模.md)。
+详见[数据中心设计与数字孪生](docs/数据中心设计与数字孪生.md)、[机柜布设使用手册](docs/机柜布设使用手册.md)和[AI 机房建模](docs/AIOps-AI机房建模.md)。
 
 ### 容器管理：工作台、终端与日志
 
@@ -353,7 +354,7 @@ Dockerfile           前后端一体镜像
 | 安装与配置 | [快速开始](docs/getting-started.md) · [配置参考](docs/configuration.md) |
 | 部署、备份和排障 | [部署与运维](docs/deployment.md) · [Kubernetes](docs/Kubernetes部署指南.md) |
 | 日常使用 | [用户指南](docs/用户使用文档.md) · [CMDB](docs/CMDB使用手册.md) · [任务资源](docs/task-resource-cmdb.md) |
-| 数据中心 | [设计与数字孪生](docs/数据中心设计与数字孪生.md) · [用户指南](docs/用户使用文档.md#数据中心) |
+| 数据中心 | [设计与数字孪生](docs/数据中心设计与数字孪生.md) · [机柜布设](docs/机柜布设使用手册.md) · [用户指南](docs/用户使用文档.md#数据中心) |
 | 智能体机制 | [AIOps 架构](docs/AIOps-LangGraph-试点说明.md) · [Skills](docs/AIOps-问答能力与Skills.md) · [AI 机房建模](docs/AIOps-AI机房建模.md) · [处置验证](docs/AIOps-处置效果验证.md) |
 | 权限与安全 | [账号与 RBAC](docs/user-permission-security.md) · [安全反馈](SECURITY.md) |
 | 版本与贡献 | [v2.0.3 更新说明](docs/releases/v2.0.3.md) · [v2.0.0 验证记录](docs/releases/v2.0.0-validation.md) · [贡献指南](CONTRIBUTING.md) |
