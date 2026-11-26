@@ -116,6 +116,18 @@ class AIOpsCapabilityTests(TestCase):
             builtin.refresh_from_db()
             self.assertTrue(builtin.is_enabled)
 
+    def test_unreadable_builtin_mcp_auth_config_does_not_break_bootstrap(self):
+        server = AIOpsMCPServer.objects.get(name='N9E 监控 MCP')
+        broken = 'fernet:v1:not-a-valid-token'
+        server.auth_config_encrypted = broken
+        server.save(update_fields=['auth_config_encrypted'])
+
+        get_agent_config()
+        bootstrap_payload_for_user(self.user)
+
+        server.refresh_from_db()
+        self.assertEqual(server.auth_config_encrypted, broken)
+
     def test_chat_and_management_share_capability_codes(self):
         expected = {'troubleshoot', 'event.analysis', 'log.query_generate', 'slo.analysis', 'host_task.generate', 'cmdb', 'inspection.analysis'}
         bootstrap = bootstrap_payload_for_user(self.user)

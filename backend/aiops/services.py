@@ -2476,9 +2476,12 @@ def _ensure_builtin_runtime_assets(config, initialize_skill_selection=False):
         if definition.get('endpoint_or_command') and not server.endpoint_or_command:
             server.endpoint_or_command = definition['endpoint_or_command']
             changed_fields.append('endpoint_or_command')
-        if definition.get('auth_config') and not server.auth_config:
+        # 只给「从未保存过鉴权配置」的内置服务补默认值。已有密文但当前密钥
+        # 解不开时保持原值并留 warning，不能把用户配置覆盖成演示默认值；
+        # auth_config 是属性，落库字段是 auth_config_encrypted。
+        if definition.get('auth_config') and not server.auth_config_encrypted:
             server.auth_config = definition['auth_config']
-            changed_fields.append('auth_config')
+            changed_fields.append('auth_config_encrypted')
         if changed_fields:
             server.save(update_fields=changed_fields)
         if definition.get('default_enabled', True):
