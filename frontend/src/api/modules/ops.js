@@ -116,7 +116,7 @@ export const getAlertNotificationChannels = (params) => request.get('/alert-noti
 export const createAlertNotificationChannel = (data) => request.post('/alert-notification-channels/', data)
 export const updateAlertNotificationChannel = (id, data) => request.put(`/alert-notification-channels/${id}/`, data)
 export const deleteAlertNotificationChannel = (id) => request.delete(`/alert-notification-channels/${id}/`)
-export const testAlertNotificationChannel = (id) => request.post(`/alert-notification-channels/${id}/test/`)
+export const testAlertNotificationChannel = (id, data = {}) => request.post(`/alert-notification-channels/${id}/test/`, data)
 export const getAlertNotificationRules = (params) => request.get('/alert-notification-rules/', { params })
 export const createAlertNotificationRule = (data) => request.post('/alert-notification-rules/', data)
 export const updateAlertNotificationRule = (id, data) => request.put(`/alert-notification-rules/${id}/`, data)

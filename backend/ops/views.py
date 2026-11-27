@@ -2147,19 +2147,17 @@ class AlertNotificationChannelViewSet(EventWallModelViewSetMixin, RBACPermission
     @action(detail=True, methods=['post'])
     def test(self, request, pk=None):
         channel = self.get_object()
-        alert = Alert.objects.order_by('-created_at').first()
-        target_alert = alert or Alert(
-            title='告警通知测试',
-            level='info',
-            source='SxDevOps',
-            source_type=Alert.SOURCE_GENERIC,
-            message='这是一条用于验证通知渠道的测试告警。',
-            status=Alert.STATUS_ACTIVE,
+        from .alerting import test_alert_channel
+
+        dry_run = str(request.data.get('dry_run', '')).strip().lower() in {'1', 'true', 'yes'}
+        result = test_alert_channel(
+            channel,
+            title_template=request.data.get('template_title'),
+            body_template=request.data.get('template_body'),
+            dry_run=dry_run,
+            request=request,
         )
-        logs = []
-        from .alerting import send_alert_notification
-        logs.append(send_alert_notification(channel, target_alert, {'names': ['渠道测试']}, action='test', rule=None, request=request))
-        return Response(AlertNotificationLogSerializer(logs, many=True).data)
+        return Response(result)
 
 
 class AlertAggregationRuleViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, viewsets.ModelViewSet):

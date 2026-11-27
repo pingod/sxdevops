@@ -983,6 +983,7 @@ class AlertNotificationChannel(models.Model):
     CHANNEL_DINGTALK = 'dingtalk'
     CHANNEL_FEISHU = 'feishu'
     CHANNEL_WECOM = 'wecom'
+    CHANNEL_WPS = 'wps'
     CHANNEL_CHOICES = [
         (CHANNEL_SMS, '短信'),
         (CHANNEL_VOICE, '语音'),
@@ -990,6 +991,7 @@ class AlertNotificationChannel(models.Model):
         (CHANNEL_DINGTALK, '钉钉'),
         (CHANNEL_FEISHU, '飞书'),
         (CHANNEL_WECOM, '企微'),
+        (CHANNEL_WPS, 'WPS 协作'),
     ]
 
     name = models.CharField('渠道名称', max_length=128)

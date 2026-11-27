@@ -539,22 +539,71 @@
           <div>
             <el-form-item label="Webhook &#x5730;&#x5740;"><el-input v-model="channelDialog.form.webhook_url" /></el-form-item>
             <el-form-item label="&#x8BBF;&#x95EE;&#x4EE4;&#x724C;"><el-input v-model="channelDialog.form.access_token" show-password placeholder="&#x7559;&#x7A7A;&#x4E0D;&#x66F4;&#x65B0;" /></el-form-item>
-            <el-form-item label="&#x9ED8;&#x8BA4;&#x63A5;&#x6536;&#x5730;&#x5740;"><el-input v-model="channelDialog.form.to" placeholder="&#x591A;&#x4E2A;&#x63A5;&#x6536;&#x5730;&#x5740;&#x6216;&#x624B;&#x673A;&#x53F7;&#xFF0C;&#x4F7F;&#x7528;&#x82F1;&#x6587;&#x9017;&#x53F7;&#x5206;&#x9694;" /></el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'dingtalk'" label="加签密钥">
+              <el-input v-model="channelDialog.form.secret" show-password placeholder="机器人安全设置中的加签密钥，留空则不加签" />
+            </el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'dingtalk'" label="@手机号">
+              <el-input v-model="channelDialog.form.at_mobiles" placeholder="多个手机号用英文逗号分隔，留空则不@人" />
+            </el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'dingtalk'" label="@所有人">
+              <el-switch v-model="channelDialog.form.at_all" />
+            </el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'feishu'" label="签名密钥">
+              <el-input v-model="channelDialog.form.secret" show-password placeholder="自定义机器人安全设置中的签名密钥，留空则不加签" />
+            </el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'wps'" label="@用户 ID">
+              <el-input v-model="channelDialog.form.at_user_ids" placeholder="WPS 用户 ID，多个用英文逗号分隔，留空则不@人" />
+            </el-form-item>
+            <el-form-item v-if="channelDialog.form.channel_type === 'wps'" label="@所有人">
+              <el-switch v-model="channelDialog.form.at_all" />
+            </el-form-item>
+            <el-form-item label="默认接收地址">
+              <el-input v-model="channelDialog.form.to" placeholder="多个接收地址或手机号，使用英文逗号分隔" />
+            </el-form-item>
           </div>
         </section>
         <section class="workbench-editor-section workbench-editor-section--tinted">
           <div class="workbench-editor-heading"><span class="workbench-editor-step">03</span><h3>消息模板与通知设置</h3></div>
           <div class="workbench-editor-grid">
-            <el-form-item label="&#x6807;&#x9898;&#x6A21;&#x677F;"><el-input v-model="channelDialog.form.template_title" /></el-form-item>
-            <el-form-item label="&#x5185;&#x5BB9;&#x6A21;&#x677F;"><el-input v-model="channelDialog.form.template_body" type="textarea" :rows="4" /></el-form-item>
-            <el-form-item label="&#x6062;&#x590D;&#x901A;&#x77E5;"><el-switch v-model="channelDialog.form.send_resolved" /></el-form-item>
-            <el-form-item label="&#x542F;&#x7528;"><el-switch v-model="channelDialog.form.is_enabled" /></el-form-item>
+            <el-form-item label="标题模板"><el-input v-model="channelDialog.form.template_title" placeholder="留空使用默认标题" /></el-form-item>
+            <el-form-item label="内容模板"><el-input v-model="channelDialog.form.template_body" type="textarea" :rows="4" placeholder="留空使用默认内容" /></el-form-item>
+            <el-form-item label="恢复通知"><el-switch v-model="channelDialog.form.send_resolved" /></el-form-item>
+            <el-form-item label="启用"><el-switch v-model="channelDialog.form.is_enabled" /></el-form-item>
           </div>
+          <p class="template-variable-hint">
+            可用变量：{title} {level} {status} {source} {source_type} {service} {environment} {cluster} {namespace} {region} {resource} {metric_name} {message} {claimed_by} {runbook_url} {starts_at} {last_received_at} {group_key} {occurrence_count}，以及 {label.xxx}、{annotation.xxx}
+          </p>
         </section>
       </el-form>
       <template #footer>
         <el-button @click="channelDialog.visible = false">&#x53D6;&#x6D88;</el-button>
+        <template v-if="channelDialog.form.id">
+          <el-button v-if="canNotifyAlerts" :loading="channelTest.loading" @click="runChannelTest(true)">预览</el-button>
+          <el-button v-if="canNotifyAlerts" type="success" plain :loading="channelTest.loading" @click="runChannelTest(false)">测试发送</el-button>
+        </template>
         <el-button type="primary" @click="saveChannel">&#x4FDD;&#x5B58;</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="channelTestDialog.visible" title="模板预览与测试结果" width="640px" append-to-body>
+      <div class="channel-test-result">
+        <div class="channel-test-meta">
+          <el-tag :type="channelTestDialog.success ? 'success' : 'danger'" size="small">
+            {{ channelTestDialog.dry_run ? '仅预览' : channelTestDialog.success ? '发送成功' : '发送失败' }}
+          </el-tag>
+          <span>{{ channelTestDialog.channel_name }} / {{ channelText(channelTestDialog.channel_type) }}</span>
+        </div>
+        <p class="channel-test-label">标题</p>
+        <p class="channel-test-title">{{ channelTestDialog.title }}</p>
+        <p class="channel-test-label">内容</p>
+        <pre class="channel-test-body">{{ channelTestDialog.body }}</pre>
+        <template v-if="!channelTestDialog.dry_run">
+          <p class="channel-test-label">{{ channelTestDialog.success ? '响应' : '错误' }}</p>
+          <pre class="channel-test-body" :class="{ 'is-error': !channelTestDialog.success }">{{ channelTestDialog.success ? channelTestDialog.response_body : channelTestDialog.error_message }}</pre>
+        </template>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="channelTestDialog.visible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -992,6 +1041,7 @@ const channelOptions = [
   { label: '\u9489\u9489', value: 'dingtalk' },
   { label: '\u98DE\u4E66', value: 'feishu' },
   { label: '\u4F01\u5FAE', value: 'wecom' },
+  { label: 'WPS \u534F\u4F5C', value: 'wps' },
 ]
 
 const dimensionOptions = [
@@ -1271,6 +1321,19 @@ const environmentOptions = computed(() => {
 const integrationDialog = reactive({ visible: false, form: emptyIntegration() })
 const muteDialog = reactive({ visible: false, target: null, form: { minutes: 60 } })
 const channelDialog = reactive({ visible: false, form: emptyChannel() })
+const channelTest = reactive({ loading: false })
+const channelTestDialog = reactive({
+  visible: false,
+  dry_run: true,
+  success: true,
+  status: '',
+  channel_name: '',
+  channel_type: '',
+  title: '',
+  body: '',
+  response_body: '',
+  error_message: '',
+})
 const recipientDialog = reactive({ visible: false, form: emptyRecipient() })
 const recipientGroupDialog = reactive({ visible: false, form: emptyRecipientGroup() })
 const notificationRuleDialog = reactive({ visible: false, form: emptyNotificationRule() })
@@ -1607,7 +1670,7 @@ async function removeIntegration(id) {
 }
 
 function emptyChannel() {
-  return { id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', to: '', template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8 }
+  return { id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_user_ids: '', at_all: false, to: '', template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8 }
 }
 
 function openChannel(row = null) {
@@ -1619,6 +1682,10 @@ function openChannel(row = null) {
       ...row,
       webhook_url: config.webhook_url || config.url || '',
       access_token: '',
+      secret: '',
+      at_mobiles: Array.isArray(config.at_mobiles) ? config.at_mobiles.join(',') : String(config.at_mobiles || ''),
+      at_user_ids: Array.isArray(config.at_user_ids) ? config.at_user_ids.join(',') : String(config.at_user_ids || ''),
+      at_all: !!config.at_all,
       to: Array.isArray(configTo) ? configTo.join(',') : String(configTo || ''),
     }
   } else {
@@ -1630,9 +1697,14 @@ function openChannel(row = null) {
 async function saveChannel() {
   const data = { ...channelDialog.form }
   const recipientsText = splitText(data.to)
+  const atMobiles = splitText(data.at_mobiles)
+  const atUserIds = splitText(data.at_user_ids)
   data.config = {
     ...(data.webhook_url ? { webhook_url: data.webhook_url } : {}),
     ...(data.access_token ? { access_token: data.access_token } : {}),
+    ...(['dingtalk', 'feishu'].includes(data.channel_type) && data.secret ? { secret: data.secret } : {}),
+    ...(data.channel_type === 'dingtalk' ? { at_mobiles: atMobiles, at_all: !!data.at_all } : {}),
+    ...(data.channel_type === 'wps' ? { at_user_ids: atUserIds, at_all: !!data.at_all } : {}),
     ...(data.channel_type === 'email' ? { to: recipientsText } : {}),
     ...((data.channel_type === 'sms' || data.channel_type === 'voice') ? { phones: recipientsText } : {}),
   }
@@ -1649,10 +1721,38 @@ async function removeChannel(id) {
   await loadNotifyTab()
 }
 
+async function requestChannelTest(channelId, payload) {
+  channelTest.loading = true
+  try {
+    const result = await testAlertNotificationChannel(channelId, payload)
+    Object.assign(channelTestDialog, { visible: true, ...result })
+    return result
+  } finally {
+    channelTest.loading = false
+  }
+}
+
+async function runChannelTest(dryRun) {
+  const form = channelDialog.form
+  if (!form.id) {
+    ElMessage.warning('请先保存渠道后再预览或测试')
+    return
+  }
+  const result = await requestChannelTest(form.id, {
+    dry_run: dryRun,
+    template_title: form.template_title || '',
+    template_body: form.template_body || '',
+  })
+  if (!dryRun) {
+    if (result.success) ElMessage.success('测试消息已发送')
+    else ElMessage.error(result.error_message || '测试发送失败')
+  }
+}
+
 async function testChannel(row) {
-  await testAlertNotificationChannel(row.id)
-  ElMessage.success('\u6D4B\u8BD5\u8BF7\u6C42\u5DF2\u63D0\u4EA4')
-  await fetchNotificationLogs()
+  const result = await requestChannelTest(row.id, {})
+  if (result.success) ElMessage.success('测试消息已发送')
+  else ElMessage.error(result.error_message || '测试发送失败')
 }
 
 function emptyRecipient() {
@@ -2175,6 +2275,62 @@ onMounted(async () => {
 
 .webhook-url-path {
   word-break: break-all;
+}
+
+.template-variable-hint {
+  margin: 10px 0 0;
+  color: var(--alert-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.channel-test-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.channel-test-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--alert-muted);
+  font-size: 13px;
+}
+
+.channel-test-label {
+  margin: 4px 0 0;
+  color: var(--alert-muted);
+  font-size: 12px;
+}
+
+.channel-test-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.channel-test-body {
+  margin: 0;
+  padding: 12px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--alert-border-soft);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--alert-text);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.channel-test-body.is-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .integration-help {

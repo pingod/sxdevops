@@ -1,5 +1,8 @@
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
+import base64
 import copy
+import hashlib
+import hmac
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -18,6 +21,7 @@ from ops.models import (
     AlertIntegration,
     AlertInteractionToken,
     AlertNotificationChannel,
+    AlertNotificationLog,
     AlertNotificationRule,
     AlertRecipient,
     AlertRecipientGroup,
@@ -4573,3 +4577,134 @@ class AlertActionApiTests(TestCase):
         rule = AlertNotificationRule.objects.get(name='critical notify')
         self.assertEqual(rule.channels.count(), 1)
         self.assertEqual(rule.recipient_groups.count(), 1)
+
+
+class AlertNotificationChannelDeliveryTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_superuser('channel-admin', 'channel@example.com', 'Admin@123456')
+        self.client.force_authenticate(user=self.user)
+        self.alert = Alert.objects.create(
+            title='CPU high',
+            level='critical',
+            source='monitor',
+            source_type='generic',
+            message='cpu high',
+            service='order-center',
+            environment='prod',
+            labels={'team': 'trade'},
+            annotations={'summary': 'CPU 使用率过高'},
+        )
+
+    @patch('ops.alerting.requests.post')
+    @override_settings(SXDEVOPS_PUBLIC_BASE_URL='https://sx.example.com')
+    def test_dingtalk_url_is_signed_and_mentions_are_sent(self, post):
+        from ops.alerting import _channel_url, send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='ok')
+        post.return_value.json.return_value = {'errcode': 0}
+        channel = AlertNotificationChannel.objects.create(
+            name='dingtalk',
+            channel_type='dingtalk',
+            config={
+                'webhook_url': 'https://oapi.dingtalk.com/robot/send?access_token=abc',
+                'secret': 'SEC-test',
+                'at_mobiles': '13800000000,13900000000',
+                'at_all': True,
+            },
+        )
+        url = _channel_url(channel)
+        query = parse_qs(urlsplit(url).query)
+        self.assertEqual(query['access_token'], ['abc'])
+        timestamp = query['timestamp'][0]
+        expected = base64.b64encode(
+            hmac.new(b'SEC-test', f'{timestamp}\nSEC-test'.encode(), hashlib.sha256).digest()
+        ).decode()
+        self.assertEqual(query['sign'], [expected])
+
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['at'], {'atMobiles': ['13800000000', '13900000000'], 'isAtAll': True})
+        self.assertIn('@13800000000', payload['actionCard']['text'])
+        self.assertIn('@所有人', payload['actionCard']['text'])
+
+    @patch('ops.alerting.requests.post')
+    def test_feishu_payload_is_signed(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='ok')
+        post.return_value.json.return_value = {'code': 0}
+        channel = AlertNotificationChannel.objects.create(
+            name='feishu',
+            channel_type='feishu',
+            config={'webhook_url': 'https://open.feishu.cn/open-apis/bot/v2/hook/abc', 'secret': 'fs-secret'},
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        payload = post.call_args.kwargs['json']
+        timestamp = payload['timestamp']
+        expected = base64.b64encode(
+            hmac.new(f'{timestamp}\nfs-secret'.encode(), digestmod=hashlib.sha256).digest()
+        ).decode()
+        self.assertEqual(payload['sign'], expected)
+        self.assertEqual(payload['msg_type'], 'interactive')
+
+    @patch('ops.alerting.requests.post')
+    def test_wps_markdown_delivery(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='{"result":"ok"}')
+        post.return_value.json.return_value = {'result': 'ok'}
+        channel = AlertNotificationChannel.objects.create(
+            name='wps',
+            channel_type='wps',
+            config={'webhook_url': 'https://xz.wps.cn/api/v1/webhook/send?key=abc'},
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['msgtype'], 'markdown')
+        self.assertIn('CPU high', payload['markdown']['text'])
+
+    def test_channel_test_endpoint_previews_and_does_not_persist(self):
+        channel = AlertNotificationChannel.objects.create(
+            name='dingtalk-preview',
+            channel_type='dingtalk',
+            config={'webhook_url': 'https://oapi.dingtalk.com/robot/send?access_token=abc'},
+        )
+        response = self.client.post(
+            f'/api/alert-notification-channels/{channel.id}/test/',
+            {
+                'dry_run': True,
+                'template_title': '[{level}] {title}',
+                'template_body': '{service}/{environment} {label.team} {annotation.summary}',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertTrue(data['dry_run'])
+        self.assertEqual(data['title'], '[critical] 生产环境 API 网关 5xx 比例升高')
+        self.assertEqual(data['body'], 'api-gateway/prod 交易平台 API 网关 5xx 比例升高')
+        channel.refresh_from_db()
+        self.assertEqual(channel.template_title, '')
+        self.assertFalse(AlertNotificationLog.objects.filter(channel=channel).exists())
+
+    @patch('ops.alerting.requests.post')
+    def test_channel_test_endpoint_sends_sample_alert(self, post):
+        post.return_value = MagicMock(status_code=200, text='ok')
+        post.return_value.json.return_value = {'errcode': 0}
+        channel = AlertNotificationChannel.objects.create(
+            name='wecom-test',
+            channel_type='wecom',
+            config={'webhook_url': 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc'},
+        )
+        response = self.client.post(f'/api/alert-notification-channels/{channel.id}/test/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['status'], 'success')
+        payload = post.call_args.kwargs['json']
+        self.assertIn('生产环境 API 网关 5xx 比例升高', payload['markdown']['content'])

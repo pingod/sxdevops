@@ -1,9 +1,13 @@
+import base64
 import hashlib
+import hmac
 import ipaddress
 import json
 import re
+import time
 from collections import Counter, defaultdict
 from datetime import timedelta
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import requests
 from django.conf import settings
@@ -41,6 +45,13 @@ class SafeFormatDict(dict):
         return ''
 
 
+class AttributeDict(dict):
+    """供 {label.xxx} / {annotation.xxx} 模板占位符做属性访问。"""
+
+    def __getattr__(self, name):
+        return self.get(name, '')
+
+
 def normalize_provider(provider):
     value = str(provider or '').strip().lower().replace('_', '-')
     aliases = {
@@ -74,6 +85,9 @@ def _text(value, default=''):
 
 
 def _claim_records(alert):
+    if not getattr(alert, 'pk', None):
+        # 渠道测试使用未落库的样例告警，反向关系不可查询。
+        return []
     records = getattr(alert, '_prefetched_objects_cache', {}).get('claim_records')
     if records is not None:
         return list(records)
@@ -770,6 +784,7 @@ def _alert_context(alert, action='fire'):
         'resource': alert.resource,
         'metric_name': alert.metric_name,
         'message': alert.message,
+        'claimed_by': alert.claimed_by,
         'claimants': '、'.join(_claimant_names(alert)),
         'runbook_url': alert.runbook_url,
         'starts_at': alert.starts_at.isoformat() if alert.starts_at else '',
@@ -777,6 +792,8 @@ def _alert_context(alert, action='fire'):
         'action': action,
         'group_key': alert.group_key,
         'occurrence_count': alert.occurrence_count,
+        'label': AttributeDict({key: _text(value) for key, value in (alert.labels or {}).items()}),
+        'annotation': AttributeDict({key: _text(value) for key, value in (alert.annotations or {}).items()}),
     }
 
 
@@ -867,20 +884,79 @@ def _post_json(url, payload, timeout=8, headers=None, provider=''):
                 code = body.get('code')
                 if code not in (None, 0, '0'):
                     raise RuntimeError(f"code={code}: {body.get('msg') or text}")
+            elif provider == 'wps':
+                result = body.get('result')
+                if result not in (None, 'ok'):
+                    raise RuntimeError(f"result={result}: {body.get('msg') or text}")
     return text
+
+
+def _truthy(value):
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _split_values(value):
+    if value in (None, ''):
+        return []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    result = []
+    for item in values:
+        for part in re.split(r'[,;，；\s]+', _text(item)):
+            if part and part not in result:
+                result.append(part)
+    return result
+
+
+def _append_query(url, params):
+    parts = urlsplit(url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query.extend((key, value) for key, value in params.items() if value not in (None, ''))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def _dingtalk_signed_url(url, secret):
+    if not secret:
+        return url
+    timestamp = str(int(time.time() * 1000))
+    string_to_sign = f'{timestamp}\n{secret}'
+    digest = hmac.new(secret.encode('utf-8'), string_to_sign.encode('utf-8'), hashlib.sha256).digest()
+    return _append_query(url, {'timestamp': timestamp, 'sign': base64.b64encode(digest).decode('utf-8')})
+
+
+def _feishu_signature(secret):
+    # 飞书签名：timestamp + "\n" + secret 作为 HMAC-SHA256 的密钥，对空消息签名后 base64。
+    timestamp = str(int(time.time()))
+    string_to_sign = f'{timestamp}\n{secret}'
+    digest = hmac.new(string_to_sign.encode('utf-8'), digestmod=hashlib.sha256).digest()
+    return {'timestamp': timestamp, 'sign': base64.b64encode(digest).decode('utf-8')}
+
+
+def _dingtalk_mentions(config):
+    mobiles = _split_values(config.get('at_mobiles') or config.get('at_mobile'))
+    return mobiles, _truthy(config.get('at_all'))
+
+
+def _dingtalk_mention_text(mobiles, at_all):
+    tokens = [f'@{mobile}' for mobile in mobiles]
+    if at_all:
+        tokens.append('@所有人')
+    return ' '.join(tokens)
 
 
 def _channel_url(channel):
     config = channel.config or {}
     url = _text(config.get('webhook_url') or config.get('url'))
-    if url:
-        return url
-    token = _text(config.get('access_token') or config.get('token'))
-    if channel.channel_type == AlertNotificationChannel.CHANNEL_DINGTALK and token:
-        return f'https://oapi.dingtalk.com/robot/send?access_token={token}'
-    if channel.channel_type == AlertNotificationChannel.CHANNEL_WECOM and token:
-        return f'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={token}'
-    return ''
+    if not url:
+        token = _text(config.get('access_token') or config.get('token'))
+        if channel.channel_type == AlertNotificationChannel.CHANNEL_DINGTALK and token:
+            url = f'https://oapi.dingtalk.com/robot/send?access_token={token}'
+        elif channel.channel_type == AlertNotificationChannel.CHANNEL_WECOM and token:
+            url = f'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={token}'
+    if url and channel.channel_type == AlertNotificationChannel.CHANNEL_DINGTALK:
+        url = _dingtalk_signed_url(url, _text(config.get('secret')))
+    return url
 
 
 def _card_buttons(alert, provider, request=None):
@@ -898,7 +974,7 @@ def _card_buttons(alert, provider, request=None):
     return buttons
 
 
-def send_alert_notification(channel, alert, recipients, action='fire', rule=None, request=None):
+def _deliver_channel(channel, alert, recipients, action='fire', request=None):
     config = channel.config or {}
     title = _render(channel.template_title, alert, action) or _default_title(alert, action)
     body = _render(channel.template_body, alert, action) or _default_body(alert, action)
@@ -933,19 +1009,28 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
                 status = AlertNotificationLog.STATUS_SKIPPED
                 response_body = '未配置钉钉 webhook_url 或 access_token'
             else:
+                mobiles, at_all = _dingtalk_mentions(config)
+                mention_text = _dingtalk_mention_text(mobiles, at_all)
+                text = body.replace('\n', '\n\n')
+                if mention_text:
+                    text = f'{text}\n\n{mention_text}'
                 buttons = _card_buttons(alert, 'dingtalk', request=request)
                 payload = {
                     'msgtype': 'actionCard',
                     'actionCard': {
                         'title': title,
-                        'text': body.replace('\n', '\n\n'),
+                        'text': text,
                         'btnOrientation': '0',
                         'btns': [{'title': item['title'], 'actionURL': item['url']} for item in buttons],
                     },
                 }
                 if not buttons:
-                    payload = {'msgtype': 'markdown', 'markdown': {'title': title, 'text': body}}
+                    payload = {'msgtype': 'markdown', 'markdown': {'title': title, 'text': text}}
+                if mobiles or at_all:
+                    payload['at'] = {'atMobiles': mobiles, 'isAtAll': at_all}
                 request_summary['buttons'] = [item['action'] for item in buttons]
+                request_summary['at_mobiles'] = mobiles
+                request_summary['at_all'] = at_all
                 response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='dingtalk')
         elif channel.channel_type == AlertNotificationChannel.CHANNEL_FEISHU:
             url = _channel_url(channel)
@@ -968,6 +1053,10 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
                         ],
                     },
                 }
+                secret = _text(config.get('secret'))
+                if secret:
+                    payload.update(_feishu_signature(secret))
+                    request_summary['signed'] = True
                 request_summary['buttons'] = [item['action'] for item in buttons]
                 response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='feishu')
         elif channel.channel_type == AlertNotificationChannel.CHANNEL_WECOM:
@@ -979,6 +1068,23 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
                 button_text = '\n'.join([f'[{item["title"]}]({item["url"]})' for item in _card_buttons(alert, 'wecom', request=request)])
                 payload = {'msgtype': 'markdown', 'markdown': {'content': f'**{title}**\n\n{body}\n\n{button_text}'}}
                 response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='wecom')
+        elif channel.channel_type == AlertNotificationChannel.CHANNEL_WPS:
+            url = _channel_url(channel)
+            if not url:
+                status = AlertNotificationLog.STATUS_SKIPPED
+                response_body = '未配置 WPS 协作 webhook 地址'
+            else:
+                content = f'**{title}**\n\n{body}'
+                mentions = ''.join(f'<at user_id="{user_id}"></at>' for user_id in _split_values(config.get('at_user_ids')))
+                if _truthy(config.get('at_all')):
+                    mentions += '<at user_id="-1">所有人</at>'
+                if mentions:
+                    content = f'{content}\n\n{mentions}'
+                button_text = '\n'.join([f'[{item["title"]}]({item["url"]})' for item in _card_buttons(alert, 'wps', request=request)])
+                if button_text:
+                    content = f'{content}\n\n{button_text}'
+                payload = {'msgtype': 'markdown', 'markdown': {'text': content}}
+                response_body = _post_json(url, payload, timeout=channel.timeout_seconds, provider='wps')
         else:
             status = AlertNotificationLog.STATUS_SKIPPED
             response_body = '未知通知渠道'
@@ -986,20 +1092,100 @@ def send_alert_notification(channel, alert, recipients, action='fire', rule=None
         status = AlertNotificationLog.STATUS_ERROR
         error_message = str(exc)
 
+    return {
+        'status': status,
+        'title': title,
+        'body': body,
+        'response_body': response_body,
+        'error_message': error_message,
+        'request_payload': request_summary,
+    }
+
+
+def send_alert_notification(channel, alert, recipients, action='fire', rule=None, request=None):
+    result = _deliver_channel(channel, alert, recipients, action=action, request=request)
     log = AlertNotificationLog.objects.create(
         alert=alert,
         rule=rule,
         channel=channel,
         action=action,
-        status=status,
+        status=result['status'],
         recipient_summary=', '.join(recipients.get('names', [])[:20]),
-        request_payload=request_summary,
-        response_body=response_body,
-        error_message=error_message,
-        sent_at=timezone.now() if status == AlertNotificationLog.STATUS_SUCCESS else None,
+        request_payload=result['request_payload'],
+        response_body=result['response_body'],
+        error_message=result['error_message'],
+        sent_at=timezone.now() if result['status'] == AlertNotificationLog.STATUS_SUCCESS else None,
     )
     _save_action(alert, AlertAction.ACTION_NOTIFY, actor='system', note=f'{channel.name}: {log.get_status_display()}', metadata={'channel_type': channel.channel_type, 'log_id': log.id})
     return log
+
+
+def build_test_alert():
+    now = timezone.now()
+    return Alert(
+        title='生产环境 API 网关 5xx 比例升高',
+        level='critical',
+        status=Alert.STATUS_ACTIVE,
+        source='prometheus',
+        source_type=Alert.SOURCE_PROMETHEUS,
+        message='5 分钟内 http_requests_5xx_ratio 连续超过 5%，影响下单接口。',
+        service='api-gateway',
+        environment='prod',
+        cluster='prod-shanghai',
+        namespace='gateway',
+        region='cn-east-1',
+        business_line='交易平台',
+        resource_type='service',
+        resource='api-gateway-7d9f8c6b5-x2m4n',
+        metric_name='http_requests_5xx_ratio',
+        runbook_url='https://runbook.example.com/api-gateway-5xx',
+        labels={'alertname': 'ApiGatewayHigh5xx', 'severity': 'critical', 'env': 'prod', 'service': 'api-gateway', 'team': '交易平台'},
+        annotations={'summary': 'API 网关 5xx 比例升高', 'description': '5xx ratio > 5% for 5m'},
+        starts_at=now - timedelta(minutes=6),
+        last_received_at=now,
+        group_key='service=api-gateway,env=prod',
+        occurrence_count=3,
+    )
+
+
+def test_alert_channel(channel, title_template=None, body_template=None, dry_run=False, request=None):
+    alert = build_test_alert()
+    original_title, original_body = channel.template_title, channel.template_body
+    if title_template is not None:
+        channel.template_title = title_template
+    if body_template is not None:
+        channel.template_body = body_template
+    try:
+        if dry_run:
+            title = _render(channel.template_title, alert, 'test') or _default_title(alert, 'test')
+            body = _render(channel.template_body, alert, 'test') or _default_body(alert, 'test')
+            return {
+                'success': True,
+                'dry_run': True,
+                'status': 'preview',
+                'channel_name': channel.name,
+                'channel_type': channel.channel_type,
+                'title': title,
+                'body': body,
+                'response_body': '',
+                'error_message': '',
+                'request_payload': {},
+            }
+        result = _deliver_channel(channel, alert, {'names': ['渠道测试']}, action='test', request=request)
+        return {
+            'success': result['status'] == AlertNotificationLog.STATUS_SUCCESS,
+            'dry_run': False,
+            'status': result['status'],
+            'channel_name': channel.name,
+            'channel_type': channel.channel_type,
+            'title': result['title'],
+            'body': result['body'],
+            'response_body': result['response_body'],
+            'error_message': result['error_message'],
+            'request_payload': result['request_payload'],
+        }
+    finally:
+        channel.template_title, channel.template_body = original_title, original_body
 
 
 def _rule_can_send(rule, alert, action):
