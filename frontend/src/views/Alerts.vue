@@ -230,8 +230,11 @@
           </div>
           <el-table :data="channels" stripe size="small" v-loading="configLoading">
             <el-table-column prop="name" label="&#x6E20;&#x9053;&#x540D;&#x79F0;" min-width="180" />
-            <el-table-column prop="channel_type" label="&#x7C7B;&#x578B;" width="100">
-              <template #default="{ row }">{{ row.channel_type_display || channelText(row.channel_type) }}</template>
+            <el-table-column prop="channel_type" label="&#x7C7B;&#x578B;" width="140">
+              <template #default="{ row }">
+                <span>{{ row.channel_type_display || channelText(row.channel_type) }}</span>
+                <el-button link type="primary" size="small" @click="openChannelGuide(row.channel_type)">说明</el-button>
+              </template>
             </el-table-column>
             <el-table-column prop="send_resolved" label="&#x6062;&#x590D;&#x901A;&#x77E5;" width="100">
               <template #default="{ row }">{{ row.send_resolved ? '&#x53D1;&#x9001;' : '&#x4E0D;&#x53D1;&#x9001;' }}</template>
@@ -528,9 +531,12 @@
           <div class="workbench-editor-grid">
             <el-form-item label="&#x540D;&#x79F0;"><el-input v-model="channelDialog.form.name" /></el-form-item>
             <el-form-item label="&#x7C7B;&#x578B;">
-              <el-select v-model="channelDialog.form.channel_type">
-                <el-option v-for="item in channelOptions" :key="item.value" :label="item.label" :value="item.value" />
-              </el-select>
+              <div class="channel-type-row">
+                <el-select v-model="channelDialog.form.channel_type">
+                  <el-option v-for="item in channelOptions" :key="item.value" :label="item.label" :value="item.value" />
+                </el-select>
+                <el-button link type="primary" size="small" @click="openChannelGuide(channelDialog.form.channel_type)">目标说明</el-button>
+              </div>
             </el-form-item>
           </div>
         </section>
@@ -643,8 +649,13 @@
             <el-form-item label="启用"><el-switch v-model="channelDialog.form.is_enabled" /></el-form-item>
           </div>
           <p class="template-variable-hint">
-            可用变量：{title} {level} {status} {source} {source_type} {service} {environment} {cluster} {namespace} {region} {resource} {metric_name} {message} {claimed_by} {runbook_url} {starts_at} {last_received_at} {group_key} {occurrence_count}，以及 {label.xxx}、{annotation.xxx}
+            可用变量：{title} {level} {level_display} {status} {status_display} {source} {source_type} {service} {environment} {cluster} {namespace} {region} {resource} {metric_name} {message} {claimed_by} {runbook_url} {starts_at} {last_received_at} {group_key} {occurrence_count}，以及 {label.xxx}、{annotation.xxx}
           </p>
+          <div class="template-toolbar">
+            <el-button link type="primary" size="small" @click="applyChannelTemplate()">填入内置模板</el-button>
+            <span>按当前渠道类型填入示例，可直接修改</span>
+            <el-button link size="small" @click="openChannelGuide(channelDialog.form.channel_type)">查看目标说明</el-button>
+          </div>
         </section>
       </el-form>
       <template #footer>
@@ -654,6 +665,42 @@
           <el-button v-if="canNotifyAlerts" type="success" plain :loading="channelTest.loading" @click="runChannelTest(false)">测试发送</el-button>
         </template>
         <el-button type="primary" @click="saveChannel">&#x4FDD;&#x5B58;</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="channelGuide.visible" :title="`目标说明 · ${channelGuideData.label}`" width="720px" append-to-body>
+      <div class="channel-guide">
+        <section>
+          <h4>发送目标</h4>
+          <p>{{ channelGuideData.target }}</p>
+        </section>
+        <section>
+          <h4>必填与可选配置</h4>
+          <ul><li v-for="item in channelGuideData.fields" :key="item">{{ item }}</li></ul>
+        </section>
+        <section>
+          <h4>模板填写规则</h4>
+          <p>{{ channelGuideData.template }}</p>
+        </section>
+        <section>
+          <h4>可用变量</h4>
+          <p class="channel-guide-code">{{ channelTemplateVariables }}</p>
+        </section>
+        <section>
+          <h4>内置示例</h4>
+          <p class="channel-guide-label">标题模板</p>
+          <pre class="channel-test-body">{{ channelTemplatePreset(channelGuide.type).title }}</pre>
+          <p class="channel-guide-label">内容模板</p>
+          <pre class="channel-test-body">{{ channelTemplatePreset(channelGuide.type).body }}</pre>
+        </section>
+        <section>
+          <h4>注意事项</h4>
+          <ul><li v-for="item in channelGuideData.notes" :key="item">{{ item }}</li></ul>
+        </section>
+      </div>
+      <template #footer>
+        <el-button @click="channelGuide.visible = false">关闭</el-button>
+        <el-button v-if="channelDialog.visible" type="primary" @click="applyChannelTemplate(channelGuide.type)">使用此模板</el-button>
       </template>
     </el-dialog>
 
@@ -1116,6 +1163,91 @@ const channelOptions = [
   { label: 'WPS \u534F\u4F5C', value: 'wps' },
 ]
 
+const channelTemplateVariables = '{title} {level} {level_display} {status} {status_display} {source} {source_type} {service} {environment} {cluster} {namespace} {region} {resource} {metric_name} {message} {claimed_by} {runbook_url} {starts_at} {last_received_at} {group_key} {occurrence_count}，以及 {label.xxx}、{annotation.xxx}'
+
+const channelTypeTemplates = {
+  dingtalk: {
+    title: '[{level_display}] {title}',
+    body: '**{title}**\n\n- 级别：{level_display}\n- 状态：{status_display}\n- 服务：{service}\n- 环境：{environment}\n- 资源：{resource}\n\n{message}',
+  },
+  feishu: {
+    title: '[{level_display}] {title}',
+    body: '**{title}**\n\n- 级别：{level_display}\n- 状态：{status_display}\n- 服务：{service}\n- 环境：{environment}\n- 资源：{resource}\n\n{message}',
+  },
+  wecom: {
+    title: '[{level_display}] {title}',
+    body: '**{title}**\n\n- 级别：{level_display}\n- 状态：{status_display}\n- 服务：{service}\n- 环境：{environment}\n- 资源：{resource}\n\n{message}',
+  },
+  wps: {
+    title: '[{level_display}] {title}',
+    body: '**{title}**\n\n- 级别：{level_display}\n- 状态：{status_display}\n- 服务：{service}\n- 环境：{environment}\n- 资源：{resource}\n\n{message}',
+  },
+  email: {
+    title: '[{level_display}][{environment}] {title}',
+    body: '告警标题：{title}\n级别：{level_display}\n状态：{status_display}\n来源：{source_type} / {source}\n服务：{service}\n环境：{environment}\n资源：{resource}\n触发时间：{starts_at}\n\n{message}',
+  },
+  sms: {
+    title: '[{level_display}] {title}',
+    body: '{service} {environment} {resource} {message}',
+  },
+  voice: {
+    title: '{level_display}告警',
+    body: '{service} {resource} 发生{level_display}告警，{message}',
+  },
+}
+
+const channelTypeGuides = {
+  dingtalk: {
+    label: '钉钉',
+    target: '钉钉群自定义机器人。有公共访问地址时优先发送 actionCard 并附带确认、认领、屏蔽、升级按钮；无法生成按钮时退化为 markdown。',
+    fields: ['Webhook 地址，或机器人 access_token', '可选：加签密钥、@手机号、@所有人', '可选：默认接收地址（目前仅作展示）'],
+    template: '标题作为卡片标题；正文支持 Markdown，换行建议使用两个换行。配置公共访问地址（SXDEVOPS_PUBLIC_BASE_URL）后才会生成可点击的处理按钮。',
+    notes: ['单机器人限制 20 条/分钟。', '开启加签后平台自动追加 timestamp 和 sign，密钥留空保存会沿用旧值。', '机器人若设置了关键词，正文必须包含至少一个关键词。'],
+  },
+  feishu: {
+    label: '飞书',
+    target: '飞书群自定义机器人，以交互卡片发送。标题显示在卡片头部，正文按 Markdown 渲染，处理动作以按钮展示。',
+    fields: ['Webhook 地址', '可选：签名密钥', '可选：默认接收地址（目前仅作展示）'],
+    template: '标题作为卡片标题；正文支持 Markdown；配置公共访问地址后会追加确认、认领、屏蔽、升级按钮。',
+    notes: ['开启签名后平台自动在消息体写入 timestamp 和 sign。', '卡片按钮依赖公共访问地址，内网地址手机端无法打开。', '机器人开启关键词校验时，正文需包含关键词。'],
+  },
+  wecom: {
+    label: '企微',
+    target: '企业微信群机器人，以 Markdown 消息发送；处理动作以链接形式列出。',
+    fields: ['Webhook 地址，或机器人 key', '可选：默认接收地址（目前仅作展示）'],
+    template: '标题以加粗形式出现在正文开头；正文使用企业微信支持的 Markdown 子集。',
+    notes: ['单条消息限制 4096 字节，过长请精简模板。', '不支持原生交互按钮，认领/屏蔽等动作是普通链接。', 'Webhook key 等同凭据，不要外泄。'],
+  },
+  wps: {
+    label: 'WPS 协作',
+    target: 'WPS 协作群 webhook 机器人，以 Markdown 消息发送，可 @用户或 @所有人。',
+    fields: ['Webhook 地址（含 key）', '可选：@用户 ID、@所有人', '可选：默认接收地址（目前仅作展示）'],
+    template: '标题以加粗形式出现在正文开头；正文支持 Markdown 子集；处理动作以链接列出。',
+    notes: ['单机器人限制 20 条/分钟、单条 5000 字符。', '@ 人使用 WPS 的 <at user_id="..."> 标签，由平台自动拼接。', 'webhook 不支持回传型按钮，认领/屏蔽等动作是普通链接。'],
+  },
+  email: {
+    label: '邮件',
+    target: '平台 SMTP 邮件，发送到渠道默认地址以及通知规则中的接收人/接收组邮箱。',
+    fields: ['默认接收地址（多个用英文逗号分隔）', '通知规则中的接收人或接收组'],
+    template: '标题作为邮件主题；正文按纯文本发送，换行会直接保留。',
+    notes: ['发件人由部署配置 DEFAULT_FROM_EMAIL 决定。', '邮件没有 Markdown 渲染，避免使用 ** 等标记。', '收件人较多时优先维护接收组。'],
+  },
+  sms: {
+    label: '短信',
+    target: 'Webhook 网关，或阿里云、腾讯云、华为云短信直连。',
+    fields: ['手机号（渠道手机号或接收人手机号）', 'Webhook 地址；或厂商 AccessKey/SecretId/AppKey、签名、模板 ID', '直连时填写模板参数 JSON'],
+    template: '仅 Webhook 网关使用标题和内容模板；选择厂商直连时，短信正文由厂商已审核模板决定，模板参数 JSON 负责变量映射。',
+    notes: ['短信按条计费，模板尽量控制在 70 字以内。', '直连模板必须在厂商控制台审核通过，变量顺序和命名需与模板一致。', 'Webhook 网关请求体为 {phones, title, content, alert}。'],
+  },
+  voice: {
+    label: '语音',
+    target: 'Webhook 网关，或阿里云、腾讯云、华为云语音直连。',
+    fields: ['手机号（渠道手机号或接收人手机号）', 'Webhook 地址；或厂商凭据、语音模板 ID', '阿里云/腾讯云可填主叫显号与播放次数；华为云需填 APP 接入地址'],
+    template: '仅 Webhook 网关使用标题和内容模板；直连时使用厂商 TTS 模板，建议写成 1~2 句短文本。',
+    notes: ['语音会产生通话费用，请只在严重告警使用。', '厂商对单号码有频控，触发后会返回厂商错误码。', '华为云语音必须填写语音通话控制台的 APP 接入地址。'],
+  },
+}
+
 const dimensionOptions = [
   { label: '\u6765\u6E90\u7C7B\u578B', value: 'source_type' },
   { label: '\u73AF\u5883', value: 'environment' },
@@ -1393,6 +1525,22 @@ const environmentOptions = computed(() => {
 const integrationDialog = reactive({ visible: false, form: emptyIntegration() })
 const muteDialog = reactive({ visible: false, target: null, form: { minutes: 60 } })
 const channelDialog = reactive({ visible: false, form: emptyChannel() })
+const channelGuide = reactive({ visible: false, type: 'dingtalk' })
+const channelGuideData = computed(() => channelTypeGuides[channelGuide.type] || channelTypeGuides.dingtalk)
+watch(() => channelDialog.form.channel_type, (type, previous) => {
+  const form = channelDialog.form
+  const preset = channelTypeTemplates[type]
+  const previousPreset = channelTypeTemplates[previous]
+  if (!preset) return
+  const title = (form.template_title || '').trim()
+  const body = (form.template_body || '').trim()
+  const untouched = (!title && !body)
+    || Boolean(previousPreset && title === previousPreset.title.trim() && body === previousPreset.body.trim())
+  if (untouched) {
+    form.template_title = preset.title
+    form.template_body = preset.body
+  }
+})
 const channelTest = reactive({ loading: false })
 const isSmsOrVoiceChannel = computed(() => ['sms', 'voice'].includes(channelDialog.form.channel_type))
 const isVendorChannel = computed(() => isSmsOrVoiceChannel.value && (channelDialog.form.provider || 'webhook') !== 'webhook')
@@ -1747,13 +1895,37 @@ async function removeIntegration(id) {
 }
 
 function emptyChannel() {
+  const preset = channelTypeTemplates.dingtalk
   return {
     id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_user_ids: '', at_all: false, to: '',
     provider: 'webhook', access_key_id: '', access_key_secret: '', region_id: '', sign_name: '', template_code: '', tts_code: '', called_show_number: '', play_times: 2,
     secret_id: '', secret_key: '', region: '', sdk_app_id: '', template_id: '', voice_sdk_app_id: '', voice_template_id: '', template_params: '',
     app_key: '', app_secret: '', endpoint: '', sender: '', display_nbr: '',
-    template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8,
+    template_title: preset.title, template_body: preset.body, send_resolved: true, is_enabled: true, timeout_seconds: 8,
   }
+}
+
+function channelTemplatePreset(type) {
+  return channelTypeTemplates[type] || channelTypeTemplates.dingtalk
+}
+
+function openChannelGuide(type) {
+  channelGuide.type = channelTypeGuides[type] ? type : 'dingtalk'
+  channelGuide.visible = true
+}
+
+async function applyChannelTemplate(type = channelDialog.form.channel_type) {
+  const preset = channelTemplatePreset(type)
+  if (channelDialog.form.template_title || channelDialog.form.template_body) {
+    try {
+      await ElMessageBox.confirm('将覆盖当前标题和内容模板，是否继续？', '填入内置模板', { type: 'warning' })
+    } catch {
+      return
+    }
+  }
+  channelDialog.form.template_title = preset.title
+  channelDialog.form.template_body = preset.body
+  ElMessage.success('已填入内置模板')
 }
 
 function openChannel(row = null) {
@@ -1796,6 +1968,8 @@ function openChannel(row = null) {
       template_params: templateParams
         ? (typeof templateParams === 'string' ? templateParams : JSON.stringify(templateParams, null, 2))
         : '',
+      template_title: row.template_title || channelTemplatePreset(row.channel_type).title,
+      template_body: row.template_body || channelTemplatePreset(row.channel_type).body,
     }
   } else {
     channelDialog.form = emptyChannel()
@@ -2446,6 +2620,72 @@ onMounted(async () => {
   color: var(--alert-muted);
   font-size: 12px;
   line-height: 1.7;
+  word-break: break-word;
+}
+
+.template-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.template-toolbar span {
+  color: var(--alert-muted);
+  font-size: 12px;
+}
+
+.channel-type-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.channel-type-row .el-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 62vh;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.channel-guide h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--alert-text);
+}
+
+.channel-guide p,
+.channel-guide ul {
+  margin: 0;
+  color: var(--alert-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.channel-guide ul {
+  padding-left: 18px;
+}
+
+.channel-guide-label {
+  margin: 8px 0 4px !important;
+  font-size: 12px !important;
+}
+
+.channel-guide-code {
+  padding: 8px 10px;
+  border: 1px solid var(--alert-border-soft);
+  border-radius: 8px;
+  background: #f8fafc;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px !important;
   word-break: break-word;
 }
 

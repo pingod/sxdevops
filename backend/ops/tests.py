@@ -4678,7 +4678,7 @@ class AlertNotificationChannelDeliveryTests(TestCase):
             f'/api/alert-notification-channels/{channel.id}/test/',
             {
                 'dry_run': True,
-                'template_title': '[{level}] {title}',
+                'template_title': '[{level_display}] {title}',
                 'template_body': '{service}/{environment} {label.team} {annotation.summary}',
             },
             format='json',
@@ -4687,7 +4687,7 @@ class AlertNotificationChannelDeliveryTests(TestCase):
         data = response.json()
         self.assertTrue(data['success'])
         self.assertTrue(data['dry_run'])
-        self.assertEqual(data['title'], '[critical] 生产环境 API 网关 5xx 比例升高')
+        self.assertEqual(data['title'], '[严重] 生产环境 API 网关 5xx 比例升高')
         self.assertEqual(data['body'], 'api-gateway/prod 交易平台 API 网关 5xx 比例升高')
         channel.refresh_from_db()
         self.assertEqual(channel.template_title, '')
