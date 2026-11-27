@@ -537,8 +537,59 @@
         <section class="workbench-editor-section workbench-editor-section--tinted">
           <div class="workbench-editor-heading"><span class="workbench-editor-step">02</span><h3>通知接入</h3></div>
           <div>
-            <el-form-item label="Webhook &#x5730;&#x5740;"><el-input v-model="channelDialog.form.webhook_url" /></el-form-item>
-            <el-form-item label="&#x8BBF;&#x95EE;&#x4EE4;&#x724C;"><el-input v-model="channelDialog.form.access_token" show-password placeholder="&#x7559;&#x7A7A;&#x4E0D;&#x66F4;&#x65B0;" /></el-form-item>
+            <el-form-item v-if="isSmsOrVoiceChannel" label="发送方式">
+              <el-select v-model="channelDialog.form.provider">
+                <el-option label="Webhook 网关" value="webhook" />
+                <el-option label="阿里云直连" value="aliyun" />
+                <el-option label="腾讯云直连" value="tencent" />
+              </el-select>
+            </el-form-item>
+            <template v-if="!isVendorChannel">
+              <el-form-item label="Webhook &#x5730;&#x5740;"><el-input v-model="channelDialog.form.webhook_url" /></el-form-item>
+              <el-form-item label="&#x8BBF;&#x95EE;&#x4EE4;&#x724C;"><el-input v-model="channelDialog.form.access_token" show-password placeholder="&#x7559;&#x7A7A;&#x4E0D;&#x66F4;&#x65B0;" /></el-form-item>
+            </template>
+            <template v-if="isAliyunVendor">
+              <el-form-item label="AccessKey ID">
+                <el-input v-model="channelDialog.form.access_key_id" placeholder="RAM 用户 AccessKey ID，留空则保持已保存值" />
+              </el-form-item>
+              <el-form-item label="AccessKey Secret">
+                <el-input v-model="channelDialog.form.access_key_secret" show-password placeholder="留空则保持已保存密钥" />
+              </el-form-item>
+              <el-form-item label="地域">
+                <el-input v-model="channelDialog.form.region_id" placeholder="默认 cn-hangzhou" />
+              </el-form-item>
+              <template v-if="channelDialog.form.channel_type === 'sms'">
+                <el-form-item label="短信签名"><el-input v-model="channelDialog.form.sign_name" /></el-form-item>
+                <el-form-item label="短信模板 Code"><el-input v-model="channelDialog.form.template_code" placeholder="SMS_xxxx" /></el-form-item>
+              </template>
+              <template v-else>
+                <el-form-item label="TTS 模板 Code"><el-input v-model="channelDialog.form.tts_code" placeholder="TTS_xxxx" /></el-form-item>
+                <el-form-item label="主叫显号"><el-input v-model="channelDialog.form.called_show_number" placeholder="留空使用公共模式号码池" /></el-form-item>
+                <el-form-item label="播放次数"><el-input-number v-model="channelDialog.form.play_times" :min="1" :max="3" /></el-form-item>
+              </template>
+            </template>
+            <template v-if="isTencentVendor">
+              <el-form-item label="SecretId">
+                <el-input v-model="channelDialog.form.secret_id" placeholder="腾讯云 API 密钥 SecretId，留空则保持已保存值" />
+              </el-form-item>
+              <el-form-item label="SecretKey">
+                <el-input v-model="channelDialog.form.secret_key" show-password placeholder="留空则保持已保存密钥" />
+              </el-form-item>
+              <el-form-item label="地域"><el-input v-model="channelDialog.form.region" placeholder="默认 ap-guangzhou" /></el-form-item>
+              <template v-if="channelDialog.form.channel_type === 'sms'">
+                <el-form-item label="SdkAppId"><el-input v-model="channelDialog.form.sdk_app_id" placeholder="1400000000" /></el-form-item>
+                <el-form-item label="短信签名"><el-input v-model="channelDialog.form.sign_name" /></el-form-item>
+                <el-form-item label="短信模板 ID"><el-input v-model="channelDialog.form.template_id" /></el-form-item>
+              </template>
+              <template v-else>
+                <el-form-item label="VoiceSdkAppid"><el-input v-model="channelDialog.form.voice_sdk_app_id" placeholder="1400000000" /></el-form-item>
+                <el-form-item label="语音模板 ID"><el-input v-model="channelDialog.form.voice_template_id" /></el-form-item>
+                <el-form-item label="播放次数"><el-input-number v-model="channelDialog.form.play_times" :min="1" :max="3" /></el-form-item>
+              </template>
+            </template>
+            <el-form-item v-if="isVendorChannel" label="模板参数 JSON">
+              <el-input v-model="channelDialog.form.template_params" type="textarea" :rows="3" placeholder='例如 {"name":"{title}","service":"{service}"}；腾讯语音也可填 ["{title}"]' />
+            </el-form-item>
             <el-form-item v-if="channelDialog.form.channel_type === 'dingtalk'" label="加签密钥">
               <el-input v-model="channelDialog.form.secret" show-password placeholder="机器人安全设置中的加签密钥，留空则不加签" />
             </el-form-item>
@@ -557,8 +608,8 @@
             <el-form-item v-if="channelDialog.form.channel_type === 'wps'" label="@所有人">
               <el-switch v-model="channelDialog.form.at_all" />
             </el-form-item>
-            <el-form-item label="默认接收地址">
-              <el-input v-model="channelDialog.form.to" placeholder="多个接收地址或手机号，使用英文逗号分隔" />
+            <el-form-item :label="isSmsOrVoiceChannel ? '手机号' : '默认接收地址'">
+              <el-input v-model="channelDialog.form.to" placeholder="多个手机号或接收地址，使用英文逗号分隔" />
             </el-form-item>
           </div>
         </section>
@@ -1322,6 +1373,10 @@ const integrationDialog = reactive({ visible: false, form: emptyIntegration() })
 const muteDialog = reactive({ visible: false, target: null, form: { minutes: 60 } })
 const channelDialog = reactive({ visible: false, form: emptyChannel() })
 const channelTest = reactive({ loading: false })
+const isSmsOrVoiceChannel = computed(() => ['sms', 'voice'].includes(channelDialog.form.channel_type))
+const isVendorChannel = computed(() => isSmsOrVoiceChannel.value && (channelDialog.form.provider || 'webhook') !== 'webhook')
+const isAliyunVendor = computed(() => isVendorChannel.value && channelDialog.form.provider === 'aliyun')
+const isTencentVendor = computed(() => isVendorChannel.value && channelDialog.form.provider === 'tencent')
 const channelTestDialog = reactive({
   visible: false,
   dry_run: true,
@@ -1670,13 +1725,20 @@ async function removeIntegration(id) {
 }
 
 function emptyChannel() {
-  return { id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_user_ids: '', at_all: false, to: '', template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8 }
+  return {
+    id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_user_ids: '', at_all: false, to: '',
+    provider: 'webhook', access_key_id: '', access_key_secret: '', region_id: '', sign_name: '', template_code: '', tts_code: '', called_show_number: '', play_times: 2,
+    secret_id: '', secret_key: '', region: '', sdk_app_id: '', template_id: '', voice_sdk_app_id: '', voice_template_id: '', template_params: '',
+    template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8,
+  }
 }
 
 function openChannel(row = null) {
   if (row) {
     const config = row.config || {}
     const configTo = config.to || config.phones || []
+    const masked = (value) => (value === 'configured' ? '' : (value ?? ''))
+    const templateParams = config.template_params
     channelDialog.form = {
       ...emptyChannel(),
       ...row,
@@ -1687,6 +1749,25 @@ function openChannel(row = null) {
       at_user_ids: Array.isArray(config.at_user_ids) ? config.at_user_ids.join(',') : String(config.at_user_ids || ''),
       at_all: !!config.at_all,
       to: Array.isArray(configTo) ? configTo.join(',') : String(configTo || ''),
+      provider: config.provider || 'webhook',
+      access_key_id: masked(config.access_key_id),
+      access_key_secret: masked(config.access_key_secret),
+      region_id: config.region_id || '',
+      sign_name: config.sign_name || '',
+      template_code: config.template_code || '',
+      tts_code: config.tts_code || '',
+      called_show_number: config.called_show_number || '',
+      play_times: Number(config.play_times) || 2,
+      secret_id: masked(config.secret_id),
+      secret_key: masked(config.secret_key),
+      region: config.region || '',
+      sdk_app_id: config.sdk_app_id || '',
+      template_id: config.template_id || '',
+      voice_sdk_app_id: config.voice_sdk_app_id || '',
+      voice_template_id: config.voice_template_id || '',
+      template_params: templateParams
+        ? (typeof templateParams === 'string' ? templateParams : JSON.stringify(templateParams, null, 2))
+        : '',
     }
   } else {
     channelDialog.form = emptyChannel()
@@ -1699,6 +1780,28 @@ async function saveChannel() {
   const recipientsText = splitText(data.to)
   const atMobiles = splitText(data.at_mobiles)
   const atUserIds = splitText(data.at_user_ids)
+  const vendorType = ['sms', 'voice'].includes(data.channel_type)
+  const provider = vendorType ? (data.provider || 'webhook') : 'webhook'
+  let templateParams = data.template_params
+  if (vendorType && provider !== 'webhook') {
+    if (typeof templateParams === 'string') {
+      const text = templateParams.trim()
+      if (!text) {
+        templateParams = null
+      } else {
+        try {
+          templateParams = JSON.parse(text)
+        } catch {
+          ElMessage.error('模板参数必须是合法 JSON')
+          return
+        }
+      }
+    }
+    if (templateParams !== null && typeof templateParams !== 'object') {
+      ElMessage.error('模板参数必须是 JSON 对象或数组')
+      return
+    }
+  }
   data.config = {
     ...(data.webhook_url ? { webhook_url: data.webhook_url } : {}),
     ...(data.access_token ? { access_token: data.access_token } : {}),
@@ -1706,7 +1809,30 @@ async function saveChannel() {
     ...(data.channel_type === 'dingtalk' ? { at_mobiles: atMobiles, at_all: !!data.at_all } : {}),
     ...(data.channel_type === 'wps' ? { at_user_ids: atUserIds, at_all: !!data.at_all } : {}),
     ...(data.channel_type === 'email' ? { to: recipientsText } : {}),
-    ...((data.channel_type === 'sms' || data.channel_type === 'voice') ? { phones: recipientsText } : {}),
+    ...(vendorType ? { phones: recipientsText, provider } : {}),
+  }
+  if (vendorType && provider === 'aliyun') {
+    Object.assign(data.config, {
+      ...(data.access_key_id ? { access_key_id: data.access_key_id } : {}),
+      ...(data.access_key_secret ? { access_key_secret: data.access_key_secret } : {}),
+      region_id: data.region_id || 'cn-hangzhou',
+      ...(data.channel_type === 'sms'
+        ? { sign_name: data.sign_name || '', template_code: data.template_code || '' }
+        : { tts_code: data.tts_code || '', called_show_number: data.called_show_number || '', play_times: data.play_times || 2 }),
+    })
+  }
+  if (vendorType && provider === 'tencent') {
+    Object.assign(data.config, {
+      ...(data.secret_id ? { secret_id: data.secret_id } : {}),
+      ...(data.secret_key ? { secret_key: data.secret_key } : {}),
+      region: data.region || 'ap-guangzhou',
+      ...(data.channel_type === 'sms'
+        ? { sdk_app_id: data.sdk_app_id || '', sign_name: data.sign_name || '', template_id: data.template_id || '' }
+        : { voice_sdk_app_id: data.voice_sdk_app_id || '', voice_template_id: data.voice_template_id || '', play_times: data.play_times || 2 }),
+    })
+  }
+  if (vendorType && provider !== 'webhook' && templateParams) {
+    data.config.template_params = templateParams
   }
   if (data.id) await updateAlertNotificationChannel(data.id, data)
   else await createAlertNotificationChannel(data)

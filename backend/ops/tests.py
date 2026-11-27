@@ -1,10 +1,10 @@
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, parse_qsl, quote, urlsplit
 import base64
 import copy
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 import ssl
 from unittest.mock import MagicMock, patch
@@ -4708,3 +4708,204 @@ class AlertNotificationChannelDeliveryTests(TestCase):
         self.assertEqual(data['status'], 'success')
         payload = post.call_args.kwargs['json']
         self.assertIn('生产环境 API 网关 5xx 比例升高', payload['markdown']['content'])
+
+
+class AlertVendorChannelTests(TestCase):
+    def setUp(self):
+        self.alert = Alert.objects.create(
+            title='CPU high',
+            level='critical',
+            source='monitor',
+            source_type='generic',
+            message='cpu high',
+            service='order-center',
+            environment='prod',
+            labels={'team': 'trade'},
+        )
+
+    @patch('ops.alert_vendors.requests.get')
+    def test_aliyun_sms_signs_request_and_renders_params(self, get):
+        from ops.alerting import send_alert_notification
+
+        get.return_value = MagicMock(status_code=200, text='{"Code":"OK"}')
+        get.return_value.json.return_value = {'Code': 'OK', 'Message': 'OK', 'RequestId': 'req-1'}
+        channel = AlertNotificationChannel.objects.create(
+            name='aliyun-sms',
+            channel_type='sms',
+            config={
+                'provider': 'aliyun',
+                'access_key_id': 'ak',
+                'access_key_secret': 'sk',
+                'sign_name': 'SxDevOps',
+                'template_code': 'SMS_1001',
+                'phones': ['13800000000'],
+                'template_params': {'name': '{title}', 'service': '{service}'},
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        url = get.call_args.args[0]
+        query = dict(parse_qsl(urlsplit(url).query))
+        self.assertEqual(query['Action'], 'SendSms')
+        self.assertEqual(query['PhoneNumbers'], '13800000000')
+        self.assertEqual(json.loads(query['TemplateParam']), {'name': 'CPU high', 'service': 'order-center'})
+        signature = query.pop('Signature')
+        canonical = '&'.join(f'{quote(key, safe="~")}={quote(value, safe="~")}' for key, value in sorted(query.items()))
+        expected = base64.b64encode(
+            hmac.new(b'sk&', f'GET&%2F&{quote(canonical, safe="~")}'.encode(), hashlib.sha1).digest()
+        ).decode()
+        self.assertEqual(signature, expected)
+
+    @patch('ops.alert_vendors.requests.post')
+    def test_tencent_sms_uses_tc3_signature_and_array_params(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='{}')
+        post.return_value.json.return_value = {
+            'Response': {
+                'SendStatusSet': [{'Code': 'Ok', 'PhoneNumber': '+8613800000000'}],
+                'RequestId': 'req-2',
+            }
+        }
+        channel = AlertNotificationChannel.objects.create(
+            name='tencent-sms',
+            channel_type='sms',
+            config={
+                'provider': 'tencent',
+                'secret_id': 'sid',
+                'secret_key': 'skey',
+                'region': 'ap-guangzhou',
+                'sdk_app_id': '1400000000',
+                'sign_name': 'SxDevOps',
+                'template_id': '1001',
+                'phones': ['13800000000'],
+                'template_params': ['{title}', '{level}'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        call = post.call_args.kwargs
+        headers = call['headers']
+        body_text = call['data'].decode('utf-8')
+        payload = json.loads(body_text)
+        self.assertEqual(headers['X-TC-Action'], 'SendSms')
+        self.assertEqual(payload['PhoneNumberSet'], ['+8613800000000'])
+        self.assertEqual(payload['TemplateParamSet'], ['CPU high', 'critical'])
+        timestamp = int(headers['X-TC-Timestamp'])
+        date = datetime.fromtimestamp(timestamp, dt_timezone.utc).strftime('%Y-%m-%d')
+        content_type = headers['Content-Type']
+        canonical_request = (
+            f'POST\n/\n\ncontent-type:{content_type}\nhost:sms.tencentcloudapi.com\n\n'
+            f'content-type;host\n{hashlib.sha256(body_text.encode()).hexdigest()}'
+        )
+        credential_scope = f'{date}/sms/tc3_request'
+        string_to_sign = f'TC3-HMAC-SHA256\n{timestamp}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode()).hexdigest()}'
+        secret_date = hmac.new(b'TC3skey', date.encode(), hashlib.sha256).digest()
+        secret_service = hmac.new(secret_date, b'sms', hashlib.sha256).digest()
+        secret_signing = hmac.new(secret_service, b'tc3_request', hashlib.sha256).digest()
+        signature = hmac.new(secret_signing, string_to_sign.encode(), hashlib.sha256).hexdigest()
+        self.assertIn(f'Credential=sid/{credential_scope}', headers['Authorization'])
+        self.assertIn(f'Signature={signature}', headers['Authorization'])
+
+    @patch('ops.alert_vendors.requests.post')
+    def test_tencent_voice_payload(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='{}')
+        post.return_value.json.return_value = {
+            'Response': {'SendStatus': {'CallId': 'call-1'}, 'RequestId': 'req-3'}
+        }
+        channel = AlertNotificationChannel.objects.create(
+            name='tencent-voice',
+            channel_type='voice',
+            config={
+                'provider': 'tencent',
+                'secret_id': 'sid',
+                'secret_key': 'skey',
+                'region': 'ap-guangzhou',
+                'voice_sdk_app_id': '1400000000',
+                'voice_template_id': '2002',
+                'play_times': 3,
+                'phones': ['13800000000'],
+                'template_params': {'content': '{title}'},
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        call = post.call_args.kwargs
+        self.assertEqual(call['headers']['X-TC-Action'], 'SendTtsVoice')
+        payload = json.loads(call['data'].decode('utf-8'))
+        self.assertEqual(payload['CalledNumber'], '+8613800000000')
+        self.assertEqual(payload['VoiceSdkAppid'], '1400000000')
+        self.assertEqual(payload['TemplateId'], '2002')
+        self.assertEqual(payload['PlayTimes'], 3)
+        self.assertEqual(payload['TemplateParamSet'], ['CPU high'])
+
+    @patch('ops.alert_vendors.requests.get')
+    def test_aliyun_voice_calls_each_phone(self, get):
+        from ops.alerting import send_alert_notification
+
+        get.return_value = MagicMock(status_code=200, text='{"Code":"OK"}')
+        get.return_value.json.return_value = {'Code': 'OK', 'Message': 'OK', 'CallId': 'call-1'}
+        channel = AlertNotificationChannel.objects.create(
+            name='aliyun-voice',
+            channel_type='voice',
+            config={
+                'provider': 'aliyun',
+                'access_key_id': 'ak',
+                'access_key_secret': 'sk',
+                'tts_code': 'TTS_1001',
+                'called_show_number': '057100000000',
+                'phones': ['13800000000', '13900000000'],
+                'template_params': {'content': '{title}'},
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        self.assertEqual(get.call_count, 2)
+        called_numbers = []
+        for call in get.call_args_list:
+            query = dict(parse_qsl(urlsplit(call.args[0]).query))
+            called_numbers.append(query['CalledNumber'])
+            self.assertEqual(query['Action'], 'SingleCallByTts')
+            self.assertEqual(query['TtsCode'], 'TTS_1001')
+            self.assertEqual(json.loads(query['TtsParam']), {'content': 'CPU high'})
+        self.assertCountEqual(called_numbers, ['13800000000', '13900000000'])
+
+    @patch('ops.alert_vendors.requests.get')
+    def test_aliyun_error_is_recorded(self, get):
+        from ops.alerting import send_alert_notification
+
+        get.return_value = MagicMock(status_code=200, text='{"Code":"isv.AMOUNT_NOT_ENOUGH"}')
+        get.return_value.json.return_value = {'Code': 'isv.AMOUNT_NOT_ENOUGH', 'Message': '余额不足'}
+        channel = AlertNotificationChannel.objects.create(
+            name='aliyun-sms-error',
+            channel_type='sms',
+            config={
+                'provider': 'aliyun',
+                'access_key_id': 'ak',
+                'access_key_secret': 'sk',
+                'sign_name': 'SxDevOps',
+                'template_code': 'SMS_1001',
+                'phones': ['13800000000'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'error')
+        self.assertIn('isv.AMOUNT_NOT_ENOUGH', log.error_message)
+
+    @patch('ops.alerting.requests.post')
+    def test_sms_webhook_provider_stays_default(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='ok')
+        channel = AlertNotificationChannel.objects.create(
+            name='sms-webhook',
+            channel_type='sms',
+            config={'webhook_url': 'https://sms.example.com/send', 'phones': ['13800000000']},
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['phones'], ['13800000000'])
+        self.assertEqual(payload['title'], '[告警触发] CPU high')

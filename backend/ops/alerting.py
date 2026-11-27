@@ -17,6 +17,14 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from .alert_vendors import (
+    PROVIDER_ALIYUN,
+    PROVIDER_TENCENT,
+    PROVIDER_WEBHOOK,
+    normalize_provider as normalize_vendor_provider,
+    send_sms as send_vendor_sms,
+    send_voice as send_vendor_voice,
+)
 from .models import (
     Alert,
     AlertAction,
@@ -945,6 +953,15 @@ def _dingtalk_mention_text(mobiles, at_all):
     return ' '.join(tokens)
 
 
+def _vendor_template_params(config, alert, action):
+    raw = config.get('template_params')
+    if isinstance(raw, dict):
+        return {str(key): _render(value, alert, action) for key, value in raw.items()}
+    if isinstance(raw, list):
+        return [_render(value, alert, action) for value in raw]
+    return []
+
+
 def _channel_url(channel):
     config = channel.config or {}
     url = _text(config.get('webhook_url') or config.get('url'))
@@ -995,14 +1012,27 @@ def _deliver_channel(channel, alert, recipients, action='fire', request=None):
                 request_summary['recipient_count'] = len(emails)
         elif channel.channel_type in {AlertNotificationChannel.CHANNEL_SMS, AlertNotificationChannel.CHANNEL_VOICE}:
             phones = sorted(set(_list(config.get('phones')) + recipients.get('phones', [])))
-            url = _channel_url(channel)
-            if not phones or not url:
-                status = AlertNotificationLog.STATUS_SKIPPED
-                response_body = '没有手机号或渠道 webhook_url'
+            provider = normalize_vendor_provider(config.get('provider'))
+            if provider != PROVIDER_WEBHOOK:
+                if provider not in {PROVIDER_ALIYUN, PROVIDER_TENCENT}:
+                    raise RuntimeError(f'未知短信/语音厂商: {provider}')
+                if not phones:
+                    status = AlertNotificationLog.STATUS_SKIPPED
+                    response_body = '没有可用手机号'
+                else:
+                    params = _vendor_template_params(config, alert, action)
+                    sender = send_vendor_sms if channel.channel_type == AlertNotificationChannel.CHANNEL_SMS else send_vendor_voice
+                    response_body, vendor_summary = sender(provider, config, phones, params, timeout=channel.timeout_seconds)
+                    request_summary.update(vendor_summary)
             else:
-                payload = {'phones': phones, 'title': title, 'content': body, 'alert': _alert_context(alert, action), 'config': {k: v for k, v in config.items() if k not in {'token', 'access_token', 'secret'}}}
-                request_summary['recipient_count'] = len(phones)
-                response_body = _post_json(url, payload, timeout=channel.timeout_seconds)
+                url = _channel_url(channel)
+                if not phones or not url:
+                    status = AlertNotificationLog.STATUS_SKIPPED
+                    response_body = '没有手机号或渠道 webhook_url'
+                else:
+                    payload = {'phones': phones, 'title': title, 'content': body, 'alert': _alert_context(alert, action), 'config': {k: v for k, v in config.items() if k not in {'token', 'access_token', 'secret'}}}
+                    request_summary['recipient_count'] = len(phones)
+                    response_body = _post_json(url, payload, timeout=channel.timeout_seconds)
         elif channel.channel_type == AlertNotificationChannel.CHANNEL_DINGTALK:
             url = _channel_url(channel)
             if not url:
