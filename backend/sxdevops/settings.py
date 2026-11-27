@@ -486,6 +486,9 @@ WSGI_APPLICATION = 'sxdevops.wsgi.application'
 
 DATABASES = _build_database_config()
 
+# 测试结束后清理后台线程残留的 PostgreSQL 会话，避免删除测试库失败。
+TEST_RUNNER = 'sxdevops.test_runner.SxDevOpsTestRunner'
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

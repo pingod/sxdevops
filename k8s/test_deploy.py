@@ -173,14 +173,14 @@ class KubernetesInstallerTests(unittest.TestCase):
         self.assertTrue(all(first[key] != second[key] for key in deploy.SECRET_KEYS))
         self.assertEqual(len(base64.urlsafe_b64decode(first['CMDB_PASSWORD_ENCRYPTION_KEY'])), 32)
 
-    def test_render_updates_all_five_app_images_and_preserves_storage_and_config(self):
+    def test_render_updates_all_app_images_and_preserves_storage_and_config(self):
         claim = resource('PersistentVolumeClaim', 'postgres-data', spec={'storageClassName': 'existing', 'volumeName': 'original-pv',
                                                                    'resources': {'requests': {'storage': '80Gi'}}})
         config = resource('ConfigMap', 'sxdevops-config', data={'POSTGRES_HOST': 'external-db', 'ALLOWED_HOSTS': 'portal.test'})
         rendered = deploy.render_resources(template(), options(namespace='another'), config, {'postgres-data': claim})
         images = [container['image'] for item in rendered if item['kind'] == 'Deployment'
                   for container in item['spec']['template']['spec']['containers'] + item['spec']['template']['spec'].get('initContainers', [])]
-        self.assertEqual(images.count(options().image), 5)
+        self.assertEqual(images.count(options().image), 10)
         self.assertIn('busybox:1.36.1', images)
         self.assertTrue(all(item['metadata']['namespace'] == 'another' for item in rendered))
         self.assertEqual(next(item for item in rendered if item['metadata']['name'] == 'postgres-data')['spec'], claim['spec'])

@@ -1,6 +1,6 @@
 # Kubernetes 部署指南
 
-推荐使用 [k8s/deploy.py](../k8s/deploy.py) 一键部署。只需填写一次应用镜像地址，脚本自动生成密钥、配置存储、执行迁移、启动服务并引导设置管理员密码。Web、CMDB 调度器、AIOps worker 及两个 schema 初始化容器使用同一应用镜像，默认共享 PostgreSQL、Redis 和 PostgreSQL checkpoint；MySQL 保留为备选。
+推荐使用 [k8s/deploy.py](../k8s/deploy.py) 一键部署。只需填写一次应用镜像地址，脚本自动生成密钥、配置存储、执行迁移、启动服务并引导设置管理员密码。Web、CMDB 调度器、AIOps worker、巡检/网络/告警升级/可观测性调度器、规划引擎及 schema 初始化容器使用同一应用镜像，默认共享 PostgreSQL、Redis 和 PostgreSQL checkpoint；MySQL 保留为备选。
 
 ## 一键部署
 
@@ -90,7 +90,9 @@ docker push registry.example.com/your-team/sxdevops:v2.0.0
 python3 k8s/deploy.py registry.example.com/your-team/sxdevops:v2.0.1 --upgrade
 ```
 
-脚本先将 Web、CMDB 调度器和 AIOps worker 缩至零副本并等待旧 Pod 退出，再更新配置、执行一次独立迁移 Job。迁移成功后启动三个同版本服务；迁移失败则保持应用停止，输出对应 Job 的日志命令，避免新旧代码继续写入。升级不自动重新同步任务模板；确需同步时按[运维指南](deployment.md)独立评估并执行。
+脚本先将 Web、CMDB 调度器、AIOps worker 及巡检/网络/告警升级/可观测性调度器、规划引擎缩至零副本并等待旧 Pod 退出，再更新配置、执行一次独立迁移 Job。迁移成功后启动全部同版本服务；迁移失败则保持应用停止，输出对应 Job 的日志命令，避免新旧代码继续写入。升级不自动重新同步任务模板；确需同步时按[运维指南](deployment.md)独立评估并执行。
+
+现在清单包含 8 个应用 Deployment：`sxdevops`、`cmdb-sync-scheduler`、`aiops-chat-worker`、`inspection-scheduler`、`network-poller`、`alert-escalation-scheduler`、`observability-scheduler`、`planning-engine`。规划引擎使用 `planning-projects` PVC，并通过 `PLANNING_ENGINE_URL` 供 Web 访问。
 
 CMDB 调度器保持单副本；worker 的 schema 初始化容器只检查迁移状态，不执行迁移。相同镜像下修改配置后，也可使用 `--upgrade` 在维护窗口重新部署；配置仍以现有 ConfigMap 为准。
 
@@ -106,6 +108,11 @@ kubectl -n sxdevops logs job/sxdevops-migrate --tail=100
 kubectl -n sxdevops logs deployment/sxdevops --tail=100
 kubectl -n sxdevops logs deployment/cmdb-sync-scheduler --tail=100
 kubectl -n sxdevops logs deployment/aiops-chat-worker --tail=100
+kubectl -n sxdevops logs deployment/alert-escalation-scheduler --tail=100
+kubectl -n sxdevops logs deployment/observability-scheduler --tail=100
+kubectl -n sxdevops logs deployment/inspection-scheduler --tail=100
+kubectl -n sxdevops logs deployment/network-poller --tail=100
+kubectl -n sxdevops logs deployment/planning-engine --tail=100
 ```
 
 命名空间自定义时同步替换 `sxdevops`。迁移 Job 保留约一天后自动清理。自动化部署跳过管理员初始化后，可在交互终端执行：

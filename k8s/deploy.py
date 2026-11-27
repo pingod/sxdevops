@@ -13,7 +13,16 @@ import subprocess
 import sys
 
 
-APPLICATIONS = ('sxdevops', 'cmdb-sync-scheduler', 'aiops-chat-worker')
+APPLICATIONS = (
+    'sxdevops',
+    'cmdb-sync-scheduler',
+    'aiops-chat-worker',
+    'alert-escalation-scheduler',
+    'observability-scheduler',
+    'inspection-scheduler',
+    'network-poller',
+    'planning-engine',
+)
 SECRET_KEYS = ('POSTGRES_PASSWORD', 'SECRET_KEY', 'CMDB_PASSWORD_ENCRYPTION_KEY')
 TEMPLATE = Path(__file__).with_name('sxdevops.yaml')
 INITIALIZED = 'sxdevops.io/templates-initialized'

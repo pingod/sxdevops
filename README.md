@@ -7,7 +7,7 @@
 <p align="center"><strong>思而后行，行必有证。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/pingod/sxdevops/releases/tag/v2.0.3"><img src="https://img.shields.io/badge/Version-v2.0.3-3370FF?style=flat-square" alt="版本 v2.0.3" /></a>
+  <a href="https://github.com/pingod/sxdevops/releases/tag/v2.0.4"><img src="https://img.shields.io/badge/Version-v2.0.4-3370FF?style=flat-square" alt="版本 v2.0.4" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-0F9D8A?style=flat-square" alt="MIT License" /></a>
   <a href="docs/AIOps-LangGraph-试点说明.md"><img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=flat-square&logo=langgraph&logoColor=white" alt="LangGraph 智能体编排" /></a>
 </p>
