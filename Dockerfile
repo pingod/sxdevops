@@ -77,15 +77,21 @@ COPY planning/backend/pyproject.toml /app/planning/backend/pyproject.toml
 COPY planning/backend/idcbox/ /app/planning/backend/idcbox/
 
 # 安装与清理必须同一层：删除动作放在新层只会新增一个“白化”层，镜像体积不会减小。
-# 移除项：pip 运行时不需要；kubernetes/aio 异步客户端代码零引用；.pyc 与 tests 目录。
+# 移除项：pip、ansible-test、类型存根、kubernetes/aio、.pyc 与 tests 目录，
+# 以及运行时用不到的 CPython 工具（ensurepip/idlelib/tkinter/lib2to3/turtledemo）。
 RUN set -eux; \
     pip install --no-cache-dir -r /app/backend/requirements.lock.txt; \
     pip install --no-cache-dir "/app/planning/backend[serve]"; \
     SP=/usr/local/lib/python3.12/site-packages; \
     rm -rf $SP/pip $SP/pip-*.dist-info $SP/wheel $SP/wheel-*.dist-info; \
+    rm -rf $SP/ansible_test $SP/ansible_test-*.dist-info; \
     rm -rf $SP/kubernetes/aio; \
+    find $SP -name "*.pyi" -delete; \
     find $SP -type d -name tests -prune -exec rm -rf {} + || true; \
     find $SP -name "__pycache__" -type d -prune -exec rm -rf {} + || true; \
+    rm -rf /usr/local/lib/python3.12/ensurepip /usr/local/lib/python3.12/idlelib \
+        /usr/local/lib/python3.12/tkinter /usr/local/lib/python3.12/lib2to3 \
+        /usr/local/lib/python3.12/turtledemo /usr/local/lib/python3.12/test; \
     rm -rf /root/.cache
 
 COPY LICENSE /app/LICENSE
