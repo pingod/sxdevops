@@ -1,19 +1,28 @@
-FROM node:20-alpine AS frontend-builder
+ARG REGISTRY_MIRROR=docker.m.daocloud.io/library/
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+FROM ${REGISTRY_MIRROR}node:20-alpine AS frontend-builder
+
+ARG NPM_REGISTRY
 
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm config set registry ${NPM_REGISTRY} && npm ci
 
 COPY frontend/ ./
 RUN npm run build
 
 
-FROM node:22-alpine AS planning-web-builder
+FROM ${REGISTRY_MIRROR}node:22-alpine AS planning-web-builder
+
+ARG NPM_REGISTRY
 
 WORKDIR /app/planning/web
 
-RUN corepack enable && corepack prepare pnpm@11.27.0 --activate
+RUN corepack enable \
+    && COREPACK_NPM_REGISTRY=${NPM_REGISTRY} corepack prepare pnpm@11.27.0 --activate \
+    && pnpm config set registry ${NPM_REGISTRY}
 
 COPY planning/web/package.json planning/web/pnpm-lock.yaml planning/web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -22,24 +31,30 @@ COPY planning/web/ ./
 RUN VITE_BASE=/planning-app/ VITE_API_BASE=/api/planning pnpm build
 
 
-FROM node:22-alpine AS dc-viewer-builder
+FROM ${REGISTRY_MIRROR}node:22-alpine AS dc-viewer-builder
+
+ARG NPM_REGISTRY
 
 WORKDIR /app/tools/dc-viewer
 
 COPY tools/dc-viewer/package*.json ./
-RUN npm ci
+RUN npm config set registry ${NPM_REGISTRY} && npm ci
 
 COPY tools/dc-viewer/ ./
 RUN npm run build
 
 
-FROM node:22-alpine AS dc-designer-builder
+FROM ${REGISTRY_MIRROR}node:22-alpine AS dc-designer-builder
+
+ARG NPM_REGISTRY
 
 WORKDIR /app/tools
 
 COPY tools/dc-viewer/package*.json ./dc-viewer/
 COPY tools/dc-designer/package*.json ./dc-designer/
-RUN cd dc-viewer && npm ci && cd ../dc-designer && npm ci
+RUN npm config set registry ${NPM_REGISTRY} \
+    && cd dc-viewer && npm ci \
+    && cd ../dc-designer && npm ci
 
 COPY tools/dc-viewer/ ./dc-viewer/
 COPY tools/dc-designer/ ./dc-designer/
@@ -47,25 +62,31 @@ COPY tools/dc-designer/ ./dc-designer/
 RUN cd dc-designer && npm run build
 
 
-FROM python:3.12-slim AS app
+FROM ${REGISTRY_MIRROR}python:3.12-slim AS app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
-ARG KUBECTL_VERSION=v1.29.3
-ARG TARGETARCH
+ARG KUBECTL_PACKAGE_VERSION=1.32.3+ds-2
+ARG DEBIAN_MIRROR=mirrors.aliyun.com
 
 WORKDIR /app
 
 # 系统依赖与 kubectl 单独一层：改 requirements.lock.txt 不会重跑 apt。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl bash bash-completion sshpass \
-    && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH:-amd64}/kubectl" -o /usr/local/bin/kubectl \
-    && chmod +x /usr/local/bin/kubectl \
-    && kubectl version --client \
-    && rm -rf /var/lib/apt/lists/*
+# 默认使用国内 Debian 镜像，可通过 --build-arg DEBIAN_MIRROR=mirrors.tuna.tsinghua.edu.cn 覆盖。
+RUN set -eux; \
+    sed -i \
+        -e "s|http://deb.debian.org/debian-security|https://${DEBIAN_MIRROR}/debian-security|" \
+        -e "s|http://deb.debian.org/debian|https://${DEBIAN_MIRROR}/debian|" \
+        /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates bash bash-completion sshpass \
+        kubernetes-client=${KUBECTL_PACKAGE_VERSION}; \
+    kubectl version --client; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 COPY backend/requirements.lock.txt /app/backend/requirements.lock.txt

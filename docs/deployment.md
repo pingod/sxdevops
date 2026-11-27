@@ -19,7 +19,9 @@
 
 发行镜像已内置 `ansible-core` 2.21 与 `sshpass`，主机任务选择 Ansible 时无需额外安装；SSH 口令认证依赖 `sshpass`。直接在本机源码运行后端时，需按 `backend/requirements.txt` 安装 `ansible-core`，macOS 等系统还需自行安装 `sshpass`，否则会提示未检测到 Ansible 控制端环境。
 
-当前镜像（linux/arm64，未压缩）约 541MB，主要构成为：Debian + Python 基础约 145MB，Python 依赖约 323MB，`kubectl` 约 47MB，前端与后端代码/静态资源约 36MB。Dockerfile 已移除 pip、ansible-test、类型存根、`kubernetes/aio`、测试目录、`__pycache__` 与未使用的 CPython 工具，并对 site-packages 的 `.so` 执行 `strip --strip-unneeded`（实测该目录 323MB → 277MB），重建后镜像预计约 490MB。继续显著缩小需要拆分 worker 镜像（去掉前端与 kubectl）或改用 Alpine，两者都需要单独验证，不在当前镜像内直接裁剪。
+构建默认全部使用国内源：基础镜像 `docker.m.daocloud.io/library/`、Debian apt `mirrors.aliyun.com`、PyPI `mirrors.aliyun.com`、npm/pnpm `registry.npmmirror.com`；`kubectl` 通过 Debian `kubectl-client` 包安装（1.32.3），不再从 `dl.k8s.io` 下载。可通过 `--build-arg REGISTRY_MIRROR=...`、`DEBIAN_MIRROR=...`、`NPM_REGISTRY=...`、`PIP_INDEX_URL=...` 覆盖。kubectl 与集群小版本可能不一致，仅影响版本偏差提示，常规 API 操作不受影响。
+
+当前镜像（linux/arm64，未压缩）约 508MB，主要构成为：Debian + Python 基础约 145MB，Python 依赖约 277MB，`kubectl` 约 47MB，前端与后端代码/静态资源约 36MB。Dockerfile 已移除 pip、ansible-test、类型存根、`kubernetes/aio`、测试目录、`__pycache__` 与未使用的 CPython 工具，并对 site-packages 的 `.so` 执行 `strip --strip-unneeded`。继续显著缩小需要拆分 worker 镜像（去掉前端与 kubectl）或改用 Alpine，两者都需要单独验证，不在当前镜像内直接裁剪。
 
 持久状态包括数据库、Redis 数据和 `aiops_runtime` 卷（挂到 `/app/backend/runtime`）。该卷在 v2.0.3 起还保存 `known_hosts`，丢失后所有受管主机会重新走一次 TOFU 记录；AIOps SQLite checkpoint 也在这里。已有凭据还依赖稳定的 `CMDB_PASSWORD_ENCRYPTION_KEY`。
 
