@@ -542,7 +542,7 @@
                 <el-option label="Webhook 网关" value="webhook" />
                 <el-option label="阿里云直连" value="aliyun" />
                 <el-option label="腾讯云直连" value="tencent" />
-                <el-option v-if="channelDialog.form.channel_type === 'sms'" label="华为云直连" value="huawei" />
+                <el-option label="华为云直连" value="huawei" />
               </el-select>
             </el-form-item>
             <template v-if="!isVendorChannel">
@@ -590,20 +590,26 @@
             </template>
             <template v-if="isHuaweiVendor">
               <el-form-item label="AppKey">
-                <el-input v-model="channelDialog.form.app_key" placeholder="短信应用 AppKey，留空则保持已保存值" />
+                <el-input v-model="channelDialog.form.app_key" placeholder="应用 AppKey，留空则保持已保存值" />
               </el-form-item>
               <el-form-item label="AppSecret">
                 <el-input v-model="channelDialog.form.app_secret" show-password placeholder="留空则保持已保存密钥" />
               </el-form-item>
               <el-form-item label="接入地址">
-                <el-input v-model="channelDialog.form.endpoint" placeholder="默认 https://smsapi.cn-north-4.myhuaweicloud.com:443/sms/batchSendSms/v1" />
+                <el-input v-model="channelDialog.form.endpoint" :placeholder="channelDialog.form.channel_type === 'sms' ? '默认 https://smsapi.cn-north-4.myhuaweicloud.com:443/sms/batchSendSms/v1' : '语音通话控制台的 APP 接入地址，如 https://xxx:443'" />
               </el-form-item>
-              <el-form-item label="发送方号码"><el-input v-model="channelDialog.form.sender" placeholder="签名对应的通道号" /></el-form-item>
-              <el-form-item label="模板 ID"><el-input v-model="channelDialog.form.template_id" /></el-form-item>
-              <el-form-item label="签名名称（可选）"><el-input v-model="channelDialog.form.sign_name" placeholder="仅通用模板需要" /></el-form-item>
+              <template v-if="channelDialog.form.channel_type === 'sms'">
+                <el-form-item label="发送方号码"><el-input v-model="channelDialog.form.sender" placeholder="签名对应的通道号" /></el-form-item>
+                <el-form-item label="模板 ID"><el-input v-model="channelDialog.form.template_id" /></el-form-item>
+                <el-form-item label="签名名称（可选）"><el-input v-model="channelDialog.form.sign_name" placeholder="仅通用模板需要" /></el-form-item>
+              </template>
+              <template v-else>
+                <el-form-item label="主叫显号"><el-input v-model="channelDialog.form.display_nbr" placeholder="被叫终端显示的主叫号码，如 +8653100000000" /></el-form-item>
+                <el-form-item label="语音模板 ID"><el-input v-model="channelDialog.form.voice_template_id" /></el-form-item>
+              </template>
             </template>
             <el-form-item v-if="isVendorChannel" label="模板参数 JSON">
-              <el-input v-model="channelDialog.form.template_params" type="textarea" :rows="3" placeholder='例如 {"name":"{title}","service":"{service}"}；腾讯语音也可填 ["{title}"]' />
+              <el-input v-model="channelDialog.form.template_params" type="textarea" :rows="3" placeholder='例如 {"name":"{title}","service":"{service}"}；腾讯/华为语音也可填 ["{title}"]' />
             </el-form-item>
             <el-form-item v-if="channelDialog.form.channel_type === 'dingtalk'" label="加签密钥">
               <el-input v-model="channelDialog.form.secret" show-password placeholder="机器人安全设置中的加签密钥，留空则不加签" />
@@ -1393,9 +1399,6 @@ const isVendorChannel = computed(() => isSmsOrVoiceChannel.value && (channelDial
 const isAliyunVendor = computed(() => isVendorChannel.value && channelDialog.form.provider === 'aliyun')
 const isTencentVendor = computed(() => isVendorChannel.value && channelDialog.form.provider === 'tencent')
 const isHuaweiVendor = computed(() => isVendorChannel.value && channelDialog.form.provider === 'huawei')
-watch(() => channelDialog.form.channel_type, (type) => {
-  if (type !== 'sms' && channelDialog.form.provider === 'huawei') channelDialog.form.provider = 'webhook'
-})
 const channelTestDialog = reactive({
   visible: false,
   dry_run: true,
@@ -1748,7 +1751,7 @@ function emptyChannel() {
     id: null, name: '', channel_type: 'dingtalk', webhook_url: '', access_token: '', secret: '', at_mobiles: '', at_user_ids: '', at_all: false, to: '',
     provider: 'webhook', access_key_id: '', access_key_secret: '', region_id: '', sign_name: '', template_code: '', tts_code: '', called_show_number: '', play_times: 2,
     secret_id: '', secret_key: '', region: '', sdk_app_id: '', template_id: '', voice_sdk_app_id: '', voice_template_id: '', template_params: '',
-    app_key: '', app_secret: '', endpoint: '', sender: '',
+    app_key: '', app_secret: '', endpoint: '', sender: '', display_nbr: '',
     template_title: '', template_body: '', send_resolved: true, is_enabled: true, timeout_seconds: 8,
   }
 }
@@ -1789,6 +1792,7 @@ function openChannel(row = null) {
       app_secret: masked(config.app_secret),
       endpoint: config.endpoint || '',
       sender: config.sender || '',
+      display_nbr: config.display_nbr || '',
       template_params: templateParams
         ? (typeof templateParams === 'string' ? templateParams : JSON.stringify(templateParams, null, 2))
         : '',
@@ -1859,10 +1863,10 @@ async function saveChannel() {
     Object.assign(data.config, {
       ...(data.app_key ? { app_key: data.app_key } : {}),
       ...(data.app_secret ? { app_secret: data.app_secret } : {}),
-      endpoint: data.endpoint || 'https://smsapi.cn-north-4.myhuaweicloud.com:443/sms/batchSendSms/v1',
-      sender: data.sender || '',
-      template_id: data.template_id || '',
-      sign_name: data.sign_name || '',
+      endpoint: data.endpoint || (data.channel_type === 'sms' ? 'https://smsapi.cn-north-4.myhuaweicloud.com:443/sms/batchSendSms/v1' : ''),
+      ...(data.channel_type === 'sms'
+        ? { sender: data.sender || '', template_id: data.template_id || '', sign_name: data.sign_name || '' }
+        : { display_nbr: data.display_nbr || '', voice_template_id: data.voice_template_id || '' }),
     })
   }
   if (vendorType && provider !== 'webhook' && templateParams) {

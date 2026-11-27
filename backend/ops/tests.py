@@ -4958,9 +4958,12 @@ class AlertVendorChannelTests(TestCase):
         self.assertEqual(log.status, 'error')
         self.assertIn('E000104', log.error_message)
 
-    def test_huawei_voice_reports_unsupported(self):
+    @patch('ops.alert_vendors.requests.post')
+    def test_huawei_voice_uses_aksk_and_play_info(self, post):
         from ops.alerting import send_alert_notification
 
+        post.return_value = MagicMock(status_code=200, text='{"resultcode":"0"}')
+        post.return_value.json.return_value = {'resultcode': '0', 'resultdesc': 'Success', 'sessionId': 'sess-1'}
         channel = AlertNotificationChannel.objects.create(
             name='huawei-voice',
             channel_type='voice',
@@ -4968,12 +4971,51 @@ class AlertVendorChannelTests(TestCase):
                 'provider': 'huawei',
                 'app_key': 'ak',
                 'app_secret': 'sk',
+                'endpoint': 'https://voicecall.example.com:443',
+                'display_nbr': '13900000000',
+                'voice_template_id': 'voice-tpl',
+                'phones': ['13800000000'],
+                'template_params': ['{title}'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        self.assertIn('sess-1', log.request_payload.get('request_id', ''))
+        call = post.call_args.kwargs
+        self.assertIn('/rest/httpsessions/callnotify/v2.0', post.call_args.args[0])
+        headers = call['headers']
+        self.assertEqual(headers['Authorization'], 'AKSK realm="SDP",profile="UsernameToken",type="Appkey"')
+        aksk = headers['X-AKSK']
+        nonce = re.search(r'Nonce="([^"]+)"', aksk).group(1)
+        created = re.search(r'Created="([^"]+)"', aksk).group(1)
+        digest = re.search(r'PasswordDigest="([^"]+)"', aksk).group(1)
+        expected = base64.b64encode(
+            hmac.new(b'sk', f'{nonce}{created}'.encode(), hashlib.sha256).digest()
+        ).decode()
+        self.assertEqual(digest, expected)
+        payload = call['json']
+        self.assertEqual(payload['calleeNbr'], '+8613800000000')
+        self.assertEqual(payload['displayNbr'], '13900000000')
+        self.assertEqual(payload['playInfoList'][0]['templateId'], 'voice-tpl')
+        self.assertEqual(payload['playInfoList'][0]['templateParas'], ['CPU high'])
+
+    def test_huawei_voice_requires_endpoint(self):
+        from ops.alerting import send_alert_notification
+
+        channel = AlertNotificationChannel.objects.create(
+            name='huawei-voice-no-endpoint',
+            channel_type='voice',
+            config={
+                'provider': 'huawei',
+                'app_key': 'ak',
+                'app_secret': 'sk',
+                'voice_template_id': 'voice-tpl',
                 'phones': ['13800000000'],
             },
         )
         log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
         self.assertEqual(log.status, 'error')
-        self.assertIn('华为云语音直连暂未支持', log.error_message)
+        self.assertIn('APP 接入地址', log.error_message)
 
     @patch('ops.alerting.requests.post')
     def test_sms_webhook_provider_stays_default(self, post):
