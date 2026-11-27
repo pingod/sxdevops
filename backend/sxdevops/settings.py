@@ -653,6 +653,11 @@ WEBSOCKET_AUTH_RECHECK_SECONDS = 5
 SXDEVOPS_SSH_KNOWN_HOSTS = os.getenv('SXDEVOPS_SSH_KNOWN_HOSTS', str(BASE_DIR / 'runtime' / 'known_hosts'))
 SXDEVOPS_SSH_STRICT_HOST_KEY = _bool_value(os.getenv('SXDEVOPS_SSH_STRICT_HOST_KEY'), True)
 
+# Ansible 控制端：镜像内置 ansible-core 与 sshpass；可用环境变量覆盖二进制路径。
+HOST_TASK_ANSIBLE_BINARY = os.getenv('HOST_TASK_ANSIBLE_BINARY', 'ansible')
+HOST_TASK_ANSIBLE_PLAYBOOK_BINARY = os.getenv('HOST_TASK_ANSIBLE_PLAYBOOK_BINARY', 'ansible-playbook')
+HOST_TASK_ANSIBLE_FALLBACK_TO_SSH = _bool_value(os.getenv('HOST_TASK_ANSIBLE_FALLBACK_TO_SSH'), DEBUG)
+
 # 邮件外发超时：告警通知不能无限阻塞 worker。
 EMAIL_TIMEOUT = _int_value(os.getenv('EMAIL_TIMEOUT'), 'EMAIL_TIMEOUT', 10)
 

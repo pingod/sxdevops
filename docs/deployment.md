@@ -17,6 +17,8 @@
 
 应用、调度器和 worker 必须使用同一份发行镜像及兼容配置。只更新 Web 会造成 worker 沿用旧图或旧权限逻辑。
 
+发行镜像已内置 `ansible-core` 2.21 与 `sshpass`，主机任务选择 Ansible 时无需额外安装；SSH 口令认证依赖 `sshpass`。直接在本机源码运行后端时，需按 `backend/requirements.txt` 安装 `ansible-core`，macOS 等系统还需自行安装 `sshpass`，否则会提示未检测到 Ansible 控制端环境。
+
 持久状态包括数据库、Redis 数据和 `aiops_runtime` 卷（挂到 `/app/backend/runtime`）。该卷在 v2.0.3 起还保存 `known_hosts`，丢失后所有受管主机会重新走一次 TOFU 记录；AIOps SQLite checkpoint 也在这里。已有凭据还依赖稳定的 `CMDB_PASSWORD_ENCRYPTION_KEY`。
 
 v2.0.3 起应用容器设置了 `SXDEVOPS_OBSERVABILITY_SCHEDULER=0`，态势刷新只由 `observability-scheduler` 执行；如果自行删掉该服务，需要把该变量改回 `1`，否则快照不再更新。

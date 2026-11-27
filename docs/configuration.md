@@ -58,6 +58,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | --- | --- |
 | `SXDEVOPS_SSH_KNOWN_HOSTS` | `backend/runtime/known_hosts`；首次连接写入主机密钥，之后密钥变更直接拒绝连接。容器部署必须让该目录落在持久卷上 |
 | `SXDEVOPS_SSH_STRICT_HOST_KEY` | 默认 `1`（TOFU 校验）。设为 `0` 退回 `AutoAddPolicy` 并打印告警，仅用于临时排障 |
+| `HOST_TASK_ANSIBLE_BINARY` | 默认 `ansible`；镜像内置 ansible-core 2.21，通常无需修改；自定义控制端时填写可执行文件路径 |
+| `HOST_TASK_ANSIBLE_PLAYBOOK_BINARY` | 默认 `ansible-playbook`；自定义控制端时填写 playbook 可执行文件路径 |
+| `HOST_TASK_ANSIBLE_FALLBACK_TO_SSH` | 默认跟随 `DEBUG`；Ansible 控制端不可用时是否回退到 Paramiko SSH，生产环境建议显式设为 `0` |
 | `SXDEVOPS_OBSERVABILITY_SCHEDULER` | 默认 `1`；进程内每小时刷新系统态势快照。Compose 部署设为 `0`，改由 `observability-scheduler` 服务单实例执行 |
 | `SXDEVOPS_OBSERVABILITY_SCHEDULER_START_DELAY` | 进程内调度线程的首轮延迟秒数，默认 `15` |
 | `EMAIL_TIMEOUT` | 告警邮件外发超时，默认 `10` 秒；不设置时邮件发送可能长时间占住 worker |

@@ -61,7 +61,7 @@ WORKDIR /app
 
 # 系统依赖与 kubectl 单独一层：改 requirements.lock.txt 不会重跑 apt。
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl bash bash-completion \
+    && apt-get install -y --no-install-recommends ca-certificates curl bash bash-completion sshpass \
     && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH:-amd64}/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
     && kubectl version --client \

@@ -13,6 +13,7 @@ sqlparse==0.6.1
 pymongo==4.18.2
 cryptography==50.0.2
 paramiko==5.1.0
+ansible-core==2.21.0
 pysnmp==7.1.29
 channels==4.3.2
 channels-redis==4.3.0
