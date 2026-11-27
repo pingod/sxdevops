@@ -1362,6 +1362,7 @@ class SystemPostureSLAHistory(models.Model):
 class LogDataSource(models.Model):
     PROVIDER_CHOICES = [
         ('loki', 'Loki'),
+        ('victorialogs', 'VictoriaLogs'),
         ('elk', 'ELK / Elasticsearch'),
         ('sls', '阿里云 SLS'),
     ]

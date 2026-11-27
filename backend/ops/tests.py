@@ -1,5 +1,6 @@
 from urllib.parse import quote
 import copy
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 import ssl
@@ -99,13 +100,65 @@ class LogViewsTests(TestCase):
         self.user = get_user_model().objects.create_superuser('ops-admin', 'ops@example.com', 'Admin@123456')
         self.client.force_authenticate(user=self.user)
 
-    def test_log_providers_returns_loki_elk_and_sls(self):
+    def test_log_providers_returns_all_supported_providers(self):
         response = self.client.get('/api/log/providers/')
 
         self.assertEqual(response.status_code, 200)
         providers = response.json()['providers']
-        self.assertEqual([item['id'] for item in providers], ['loki', 'elk', 'sls'])
+        self.assertEqual([item['id'] for item in providers], ['loki', 'victorialogs', 'elk', 'sls'])
         self.assertEqual(providers[0]['defaults']['endpoint'], 'http://loki.example:3100')
+
+    @patch('ops.log_views.http_requests.get')
+    def test_victorialogs_query_parses_logsql_results(self, mock_get):
+        response = self.client.post(
+            '/api/log/datasources/',
+            {
+                'name': 'VictoriaLogs Cluster',
+                'provider': 'victorialogs',
+                'config': {'endpoint': 'http://victorialogs.example:9428'},
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        datasource_id = response.json()['id']
+
+        log_line = {
+            '_msg': 'request failed with error',
+            '_time': '2026-11-27T05:49:07.836153452Z',
+            '_stream': '{kubernetes.pod_namespace="monitoring"}',
+            'kubernetes.pod_name': 'api-1',
+            'kubernetes.pod_namespace': 'monitoring',
+        }
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps(log_line) + '\n'
+        mock_response.json.return_value = log_line
+        mock_get.return_value = mock_response
+
+        query_response = self.client.post(
+            '/api/log/query/',
+            {
+                'datasource_id': datasource_id,
+                'query': '_msg:~"(?i)error"',
+                'limit': 50,
+            },
+            format='json',
+        )
+
+        self.assertEqual(query_response.status_code, 200)
+        payload = query_response.json()
+        self.assertEqual(payload['provider'], 'victorialogs')
+        self.assertEqual(payload['source'], 'LogsQL')
+        self.assertEqual(payload['total'], 1)
+        self.assertEqual(payload['logs'][0]['message'], 'request failed with error')
+        self.assertEqual(payload['logs'][0]['source'], 'api-1')
+        self.assertEqual(payload['logs'][0]['level'], 'error')
+        self.assertEqual(payload['logs'][0]['attributes']['kubernetes.pod_namespace'], 'monitoring')
+
+        args, kwargs = mock_get.call_args
+        self.assertTrue(args[0].endswith('/select/logsql/query'))
+        self.assertEqual(kwargs['params']['query'], '_msg:~"(?i)error"')
+        self.assertEqual(kwargs['params']['limit'], 50)
 
     def test_can_create_log_datasource(self):
         response = self.client.post(

@@ -5,7 +5,7 @@
         <div class="release-hero-title-row release-hero-title-inline">
           <span class="log-header-icon"><el-icon><Search /></el-icon></span>
           <h2>日志中心</h2>
-          <p class="page-desc inline-subtitle">支持 ELK、Loki、阿里云 SLS 日志查询。</p>
+          <p class="page-desc inline-subtitle">支持 ELK、Loki、VictoriaLogs、阿里云 SLS 日志查询。</p>
         </div>
       </div>
       <div class="hero-actions">
@@ -138,6 +138,25 @@
                     </span>
                   </template>
                   <el-input v-model="currentTab.lokiManualQuery" type="textarea" :rows="2" placeholder='{job="nginx"} |= "error"' />
+                </el-form-item>
+              </template>
+
+              <template v-else-if="isVictoriaLogs">
+                <div class="sls-query-presets">
+                  <span>常用查询</span>
+                  <el-button v-for="preset in victoriaLogsPresets" :key="preset.query" size="small" plain :type="currentTab.queryText === preset.query ? 'primary' : 'default'" @click="currentTab.queryText = preset.query">
+                    {{ preset.label }}
+                  </el-button>
+                  <el-button v-if="currentTab.queryText" size="small" link @click="currentTab.queryText = ''">清除</el-button>
+                </div>
+                <el-form-item class="syntax-form-item">
+                  <template #label>
+                    <span class="field-label-with-help">
+                      <span>LogsQL</span>
+                      <el-button link type="primary" @click="openSyntaxHelp('victorialogs')">查询语法帮助</el-button>
+                    </span>
+                  </template>
+                  <el-input v-model="currentTab.queryText" type="textarea" :rows="3" placeholder='_msg:~"(?i)error" | stats count() logs' />
                 </el-form-item>
               </template>
 
@@ -451,6 +470,22 @@ const SYNTAX_HELP_DOCS = {
     ],
     link: 'https://www.alibabacloud.com/help/en/sls/query-syntax/',
   },
+  victorialogs: {
+    title: 'VictoriaLogs / LogsQL 帮助',
+    description: '直接用 LogsQL 检索 VictoriaLogs，字段过滤、正则、管道统计都在一条语句里。',
+    examples: [
+      '*',
+      '_msg:~"(?i)error|exception"',
+      'kubernetes.pod_namespace:="monitoring" _msg:~"timeout"',
+      '* | stats by (kubernetes.pod_namespace) count() logs',
+    ],
+    tips: [
+      'field:="value" 精确匹配，field:~"regex" 正则匹配，多个条件用空格（AND）连接。',
+      '关键字直接写会按词匹配 _msg，例如 error。',
+      '支持管道：| stats、| sort、| limit 等。',
+    ],
+    link: 'https://docs.victoriametrics.com/victorialogs/logsql/',
+  },
 }
 const quickRanges = [
   { key: '10m', label: '最近10分钟', minutes: 10 },
@@ -467,6 +502,11 @@ const slsPresets = [
   { label: '全部日志', query: '*' },
   { label: '错误日志', query: 'level:ERROR OR level:error' },
   { label: '超时请求', query: 'timeout OR 504 OR 超时' },
+]
+const victoriaLogsPresets = [
+  { label: '全部日志', query: '*' },
+  { label: '错误关键字', query: '_msg:~"(?i)error|exception"' },
+  { label: '超时请求', query: '_msg:~"(?i)timeout|超时"' },
 ]
 const logTimeRangeShortcuts = quickRanges.map((item) => ({
   text: item.label,
@@ -496,6 +536,7 @@ const currentTab = computed(() => queryTabs.value.find((item) => item.id === act
 const currentDataSource = computed(() => dataSources.value.find((item) => item.id === currentTab.value?.datasourceId) || null)
 const activeProvider = computed(() => currentDataSource.value?.provider || '')
 const isLoki = computed(() => activeProvider.value === 'loki')
+const isVictoriaLogs = computed(() => activeProvider.value === 'victorialogs')
 const isElk = computed(() => activeProvider.value === 'elk')
 const isSls = computed(() => activeProvider.value === 'sls')
 const currentResults = computed(() => currentTab.value?.results || { total: 0, source: '', took_ms: null, progress: '', logs: [] })
@@ -506,6 +547,7 @@ const canViewGrafana = computed(() => authStore.hasPermission('ops.grafana.view'
 const currentSummary = computed(() => {
   const config = currentDataSource.value?.config || {}
   if (activeProvider.value === 'loki') return [{ label: '接入地址', value: config.endpoint || '--' }]
+  if (activeProvider.value === 'victorialogs') return [{ label: '接入地址', value: config.endpoint || '--' }]
   if (activeProvider.value === 'elk') {
     return [
       { label: '接入地址', value: config.endpoint || '--' },
@@ -686,6 +728,7 @@ function createQueryTab(seed = {}) {
 function providerLabel(provider) {
   return {
     loki: 'Loki',
+    victorialogs: 'VictoriaLogs',
     elk: 'ELK / Elasticsearch',
     sls: '阿里云 SLS',
   }[provider] || provider
@@ -694,6 +737,7 @@ function providerLabel(provider) {
 function providerTagType(provider) {
   return {
     loki: 'success',
+    victorialogs: 'primary',
     elk: 'warning',
     sls: 'info',
   }[provider] || 'info'
@@ -1049,6 +1093,17 @@ function buildTraceRouteQuery(datasource, traceId) {
       filters.push(`(service_namespace:"${escapedNamespace}" OR namespace:"${escapedNamespace}")`)
     }
     return filters.join(' AND ')
+  }
+
+  if (provider === 'victorialogs') {
+    const filters = [`trace_id:"${escapedTraceId}"`]
+    if (service) {
+      filters.push(`(service.name:"${escapedService}" OR service_name:"${escapedService}" OR kubernetes.pod_name:"${escapedService}")`)
+    }
+    if (namespace) {
+      filters.push(`kubernetes.pod_namespace:"${escapedNamespace}"`)
+    }
+    return filters.join(' ')
   }
 
   return normalizedTraceId
@@ -1689,6 +1744,8 @@ function buildPayload(tab) {
 
   if (datasource?.provider === 'loki') {
     payload.query = tab.lokiManualQuery.trim()
+  } else if (datasource?.provider === 'victorialogs') {
+    payload.query = tab.queryText.trim() || '*'
   } else if (datasource?.provider === 'elk') {
     payload.query = buildElkQuery(tab)
     payload.source = tab.sourceName || datasource.config?.index_pattern

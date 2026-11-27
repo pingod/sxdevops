@@ -559,9 +559,15 @@ REST_FRAMEWORK = {
 # Loki
 LOKI_URL = 'http://47.95.15.209:33100'
 
+# VictoriaLogs (LogsQL). Per-datasource endpoints are stored on LogDataSource.
+VICTORIALOGS_URL = os.getenv('VICTORIALOGS_URL', '')
+
 LOG_PROVIDER_CONFIGS = {
     'loki': {
         'endpoint': os.getenv('LOKI_URL', LOKI_URL),
+    },
+    'victorialogs': {
+        'endpoint': VICTORIALOGS_URL,
     },
     'elk': {
         'endpoint': os.getenv('ELK_URL', ''),

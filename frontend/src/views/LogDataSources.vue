@@ -5,7 +5,7 @@
         <div class="release-hero-title-row release-hero-title-inline">
           <span class="log-header-icon"><el-icon><DataBoard /></el-icon></span>
           <h2>日志数据源</h2>
-          <p class="page-inline-desc inline-subtitle">统一管理 Loki、ELK 和阿里云 SLS 的连接配置，查询页可以直接复用已保存的数据源。</p>
+          <p class="page-inline-desc inline-subtitle">统一管理 Loki、VictoriaLogs、ELK 和阿里云 SLS 的连接配置，查询页可以直接复用已保存的数据源。</p>
         </div>
       </div>
       <div class="hero-actions">
@@ -125,6 +125,15 @@
             <template v-if="form.provider === 'loki'">
               <el-form-item label="Loki 地址">
                 <el-input v-model="form.config.endpoint" placeholder="http://localhost:3100" />
+              </el-form-item>
+            </template>
+
+            <template v-else-if="form.provider === 'victorialogs'">
+              <el-form-item label="VictoriaLogs 地址">
+                <el-input v-model="form.config.endpoint" placeholder="http://192.168.1.68:30428" />
+              </el-form-item>
+              <el-form-item class="workbench-editor-full" label="查询说明">
+                <span class="form-hint">对接 VictoriaLogs 的 LogsQL 查询接口（/select/logsql/*），无需额外认证。</span>
               </el-form-item>
             </template>
 
@@ -265,6 +274,7 @@ const canManageLogDataSources = computed(() => authStore.hasPermission('ops.log.
 function providerLabel(provider) {
   return {
     loki: 'Loki',
+    victorialogs: 'VictoriaLogs',
     elk: 'ELK / Elasticsearch',
     sls: '阿里云 SLS',
   }[provider] || provider
@@ -273,6 +283,7 @@ function providerLabel(provider) {
 function providerTagType(provider) {
   return {
     loki: 'success',
+    victorialogs: 'primary',
     elk: 'warning',
     sls: 'info',
   }[provider] || 'info'
@@ -281,6 +292,7 @@ function providerTagType(provider) {
 function formatSummary(row) {
   const config = row.config || {}
   if (row.provider === 'loki') return config.endpoint || '未配置 Loki 地址'
+  if (row.provider === 'victorialogs') return config.endpoint || '未配置 VictoriaLogs 地址'
   if (row.provider === 'elk') {
     return [config.endpoint, config.index_pattern && `索引 ${config.index_pattern}`].filter(Boolean).join(' / ') || '未配置 ELK 连接'
   }

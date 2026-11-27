@@ -85,6 +85,9 @@ def _provider_defaults():
         'loki': {
             'endpoint': getattr(settings, 'LOKI_URL', 'http://localhost:3100'),
         },
+        'victorialogs': {
+            'endpoint': getattr(settings, 'VICTORIALOGS_URL', ''),
+        },
         'elk': {
             'endpoint': '',
             'auth_type': 'none',
@@ -186,6 +189,13 @@ def _provider_info():
             'description': '基于标签的日志检索与 LogQL 查询。',
             'configured': bool(defaults.get('loki', {}).get('endpoint')),
             'defaults': _public_config(defaults.get('loki', {})),
+        },
+        {
+            'id': 'victorialogs',
+            'name': 'VictoriaLogs',
+            'description': '使用 LogsQL 检索 VictoriaLogs 日志。',
+            'configured': bool(defaults.get('victorialogs', {}).get('endpoint')),
+            'defaults': _public_config(defaults.get('victorialogs', {})),
         },
         {
             'id': 'elk',
@@ -1055,6 +1065,115 @@ def _loki_request(endpoint, path, params):
     return _safe_json(response)
 
 
+def _victorialogs_request(endpoint, path, params):
+    if not str(endpoint or '').strip():
+        raise ProviderError('VictoriaLogs endpoint is required', status.HTTP_400_BAD_REQUEST)
+    url = f'{_normalize_endpoint(endpoint)}{path}'
+    try:
+        response = http_requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+    except http_requests.Timeout as exc:
+        raise ProviderError('VictoriaLogs request timed out', status.HTTP_504_GATEWAY_TIMEOUT, {'detail': str(exc)}) from exc
+    except http_requests.ConnectionError as exc:
+        raise ProviderError('Unable to connect to VictoriaLogs', status.HTTP_502_BAD_GATEWAY, {'detail': str(exc)}) from exc
+    _raise_for_status(response, 'VictoriaLogs')
+    return response
+
+
+def _victorialogs_values(response):
+    payload = _safe_json(response)
+    values = payload.get('values') if isinstance(payload, dict) else None
+    return [
+        item.get('value')
+        for item in (values or [])
+        if isinstance(item, dict) and item.get('value') not in (None, '')
+    ]
+
+
+def _victorialogs_timestamp(value):
+    """Return (RFC3339 UTC string, epoch seconds) for a VictoriaLogs `_time`."""
+    text = str(value or '').strip()
+    if not text:
+        return '', None
+    normalized = re.sub(r'(\.\d{6})\d+', r'\1', text).replace('Z', '+00:00')
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return text, None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=dt_timezone.utc)
+    dt = dt.astimezone(dt_timezone.utc)
+    return dt.isoformat().replace('+00:00', 'Z'), dt.timestamp()
+
+
+def _catalog_victorialogs(config, payload):
+    action = payload.get('action', 'labels')
+    endpoint = config.get('endpoint', '')
+    if action == 'label_values':
+        label = payload.get('label')
+        if not label:
+            raise ProviderError('label is required for VictoriaLogs field values')
+        label = _path_segment(label, 'label')
+        response = _victorialogs_request(
+            endpoint,
+            '/select/logsql/field_values',
+            {'field': label, 'query': '*'},
+        )
+        return {'kind': 'label_values', 'items': _victorialogs_values(response)}
+    response = _victorialogs_request(endpoint, '/select/logsql/field_names', {'query': '*'})
+    return {'kind': 'labels', 'items': _victorialogs_values(response)}
+
+
+def _query_victorialogs(config, payload):
+    query = (payload.get('query') or '').strip() or '*'
+    start_ms, end_ms = _time_bounds(payload)
+    params = {
+        'query': query,
+        'start': _iso_from_ms(start_ms),
+        'end': _iso_from_ms(end_ms),
+        'limit': _sanitize_limit(payload.get('limit')),
+    }
+    response = _victorialogs_request(config.get('endpoint', ''), '/select/logsql/query', params)
+    logs = []
+    for line in response.text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        message = str(entry.get('_msg') or '')
+        attributes = {key: value for key, value in entry.items() if key not in ('_msg', '_time')}
+        attributes = _with_trace_id(attributes, message)
+        timestamp, sort_key = _victorialogs_timestamp(entry.get('_time'))
+        logs.append({
+            'sort_key': sort_key if sort_key is not None else float('-inf'),
+            'timestamp': timestamp,
+            'message': message,
+            'level': _detect_level(message, attributes),
+            'source': (
+                entry.get('kubernetes.pod_name')
+                or entry.get('kubernetes.container_name')
+                or entry.get('service.name')
+                or 'victorialogs'
+            ),
+            'attributes': attributes,
+        })
+    logs.sort(key=lambda item: item['sort_key'], reverse=True)
+    for item in logs:
+        item.pop('sort_key', None)
+    return {
+        'provider': 'victorialogs',
+        'query': query,
+        'source': 'LogsQL',
+        'total': len(logs),
+        'took_ms': None,
+        'logs': logs,
+    }
+
+
 def _elk_auth_headers(config):
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
     auth = None
@@ -1438,6 +1557,8 @@ def _query_sls(config, payload):
 def _get_catalog(provider, config, payload):
     if provider == 'loki':
         return _catalog_loki(config, payload)
+    if provider == 'victorialogs':
+        return _catalog_victorialogs(config, payload)
     if provider == 'elk':
         return _catalog_elk(config, payload)
     if provider == 'sls':
@@ -1448,6 +1569,8 @@ def _get_catalog(provider, config, payload):
 def _run_query(provider, config, payload):
     if provider == 'loki':
         return _query_loki(config, payload)
+    if provider == 'victorialogs':
+        return _query_victorialogs(config, payload)
     if provider == 'elk':
         return _query_elk(config, payload)
     if provider == 'sls':
@@ -1493,7 +1616,7 @@ class LogDataSourceViewSet(EventWallModelViewSetMixin, RBACPermissionMixin, view
     def test_connection(self, request, pk=None):
         datasource = self.get_object()
         try:
-            payload = {'action': 'labels'} if datasource.provider == 'loki' else {'action': 'sources'}
+            payload = {'action': 'labels'} if datasource.provider in ('loki', 'victorialogs') else {'action': 'sources'}
             preview = _get_catalog(datasource.provider, _merge_config(datasource.provider, datasource.config), payload)
             record_event(
                 request=request,
