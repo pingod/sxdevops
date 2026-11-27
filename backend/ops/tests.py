@@ -4,6 +4,7 @@ import copy
 import hashlib
 import hmac
 import json
+import re
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 import ssl
@@ -4893,6 +4894,86 @@ class AlertVendorChannelTests(TestCase):
         log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
         self.assertEqual(log.status, 'error')
         self.assertIn('isv.AMOUNT_NOT_ENOUGH', log.error_message)
+
+    @patch('ops.alert_vendors.requests.post')
+    def test_huawei_sms_uses_wsse_and_form_payload(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=200, text='{"code":"000000"}')
+        post.return_value.json.return_value = {
+            'code': '000000',
+            'description': 'Success',
+            'result': [{'status': '000000', 'smsMsgId': 'msg-1'}],
+        }
+        channel = AlertNotificationChannel.objects.create(
+            name='huawei-sms',
+            channel_type='sms',
+            config={
+                'provider': 'huawei',
+                'app_key': 'ak',
+                'app_secret': 'sk',
+                'sender': '1069000000000',
+                'template_id': 'tpl-1',
+                'phones': ['13800000000'],
+                'template_params': ['{title}', '{level}'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'success')
+        self.assertIn('msg-1', log.request_payload.get('request_id', ''))
+        call = post.call_args.kwargs
+        headers = call['headers']
+        self.assertEqual(headers['Authorization'], 'WSSE realm="SDP",profile="UsernameToken",type="Appkey"')
+        wsse = headers['X-WSSE']
+        nonce = re.search(r'Nonce="([^"]+)"', wsse).group(1)
+        created = re.search(r'Created="([^"]+)"', wsse).group(1)
+        digest = re.search(r'PasswordDigest="([^"]+)"', wsse).group(1)
+        expected = base64.b64encode(hashlib.sha256(f'{nonce}{created}sk'.encode()).digest()).decode()
+        self.assertEqual(digest, expected)
+        payload = call['data']
+        self.assertEqual(payload['to'], '+8613800000000')
+        self.assertEqual(payload['templateId'], 'tpl-1')
+        self.assertEqual(payload['from'], '1069000000000')
+        self.assertEqual(json.loads(payload['templateParas']), ['CPU high', 'critical'])
+
+    @patch('ops.alert_vendors.requests.post')
+    def test_huawei_sms_error_is_recorded(self, post):
+        from ops.alerting import send_alert_notification
+
+        post.return_value = MagicMock(status_code=401, text='{"code":"E000104","description":"Invalid app_secret."}')
+        post.return_value.json.return_value = {'code': 'E000104', 'description': 'Invalid app_secret.'}
+        channel = AlertNotificationChannel.objects.create(
+            name='huawei-sms-error',
+            channel_type='sms',
+            config={
+                'provider': 'huawei',
+                'app_key': 'ak',
+                'app_secret': 'bad',
+                'sender': '1069000000000',
+                'template_id': 'tpl-1',
+                'phones': ['13800000000'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'error')
+        self.assertIn('E000104', log.error_message)
+
+    def test_huawei_voice_reports_unsupported(self):
+        from ops.alerting import send_alert_notification
+
+        channel = AlertNotificationChannel.objects.create(
+            name='huawei-voice',
+            channel_type='voice',
+            config={
+                'provider': 'huawei',
+                'app_key': 'ak',
+                'app_secret': 'sk',
+                'phones': ['13800000000'],
+            },
+        )
+        log = send_alert_notification(channel, self.alert, {'names': ['Ops']})
+        self.assertEqual(log.status, 'error')
+        self.assertIn('华为云语音直连暂未支持', log.error_message)
 
     @patch('ops.alerting.requests.post')
     def test_sms_webhook_provider_stays_default(self, post):

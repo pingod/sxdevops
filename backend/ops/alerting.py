@@ -19,6 +19,7 @@ from django.utils.dateparse import parse_datetime
 
 from .alert_vendors import (
     PROVIDER_ALIYUN,
+    PROVIDER_HUAWEI,
     PROVIDER_TENCENT,
     PROVIDER_WEBHOOK,
     normalize_provider as normalize_vendor_provider,
@@ -1014,7 +1015,7 @@ def _deliver_channel(channel, alert, recipients, action='fire', request=None):
             phones = sorted(set(_list(config.get('phones')) + recipients.get('phones', [])))
             provider = normalize_vendor_provider(config.get('provider'))
             if provider != PROVIDER_WEBHOOK:
-                if provider not in {PROVIDER_ALIYUN, PROVIDER_TENCENT}:
+                if provider not in {PROVIDER_ALIYUN, PROVIDER_TENCENT, PROVIDER_HUAWEI}:
                     raise RuntimeError(f'未知短信/语音厂商: {provider}')
                 if not phones:
                     status = AlertNotificationLog.STATUS_SKIPPED

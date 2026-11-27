@@ -24,7 +24,9 @@ TENCENT_VOICE_VERSION = '2020-09-02'
 
 PROVIDER_ALIYUN = 'aliyun'
 PROVIDER_TENCENT = 'tencent'
+PROVIDER_HUAWEI = 'huawei'
 PROVIDER_WEBHOOK = 'webhook'
+HUAWEI_SMS_ENDPOINT = 'https://smsapi.cn-north-4.myhuaweicloud.com:443/sms/batchSendSms/v1'
 
 
 def _text(value, default=''):
@@ -42,6 +44,8 @@ def normalize_provider(value):
         'tencent': PROVIDER_TENCENT,
         'tencentcloud': PROVIDER_TENCENT,
         'qcloud': PROVIDER_TENCENT,
+        'huawei': PROVIDER_HUAWEI,
+        'huaweicloud': PROVIDER_HUAWEI,
         'webhook': PROVIDER_WEBHOOK,
         '': PROVIDER_WEBHOOK,
     }
@@ -54,7 +58,7 @@ def normalize_phones(phones, provider):
         digits = re.sub(r'[^\d]', '', _text(raw))
         if not digits:
             continue
-        if provider == PROVIDER_TENCENT:
+        if provider in {PROVIDER_TENCENT, PROVIDER_HUAWEI}:
             if _text(raw).startswith('+'):
                 value = f'+{digits}'
             elif digits.startswith('86') and len(digits) >= 13:
@@ -290,6 +294,66 @@ def _send_tencent_voice(config, phones, params, timeout):
     return {'provider': PROVIDER_TENCENT, 'provider_label': '腾讯云语音', 'recipient_count': len(phones), 'request_id': ','.join(filter(None, call_ids)), 'response': ' | '.join(responses)}
 
 
+def _huawei_wsse_headers(app_key, app_secret):
+    nonce = uuid.uuid4().hex
+    created = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    digest = base64.b64encode(
+        hashlib.sha256(f'{nonce}{created}{app_secret}'.encode('utf-8')).digest()
+    ).decode('utf-8')
+    return {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'WSSE realm="SDP",profile="UsernameToken",type="Appkey"',
+        'X-WSSE': f'UsernameToken Username="{app_key}",PasswordDigest="{digest}",Nonce="{nonce}",Created="{created}"',
+    }
+
+
+def _send_huawei_sms(config, phones, params, timeout):
+    app_key = _text(config.get('app_key'))
+    app_secret = _text(config.get('app_secret'))
+    sender = _text(config.get('sender'))
+    template_id = _text(config.get('template_id'))
+    if not app_key or not app_secret:
+        raise RuntimeError('华为云短信需要配置 AppKey 和 AppSecret。')
+    if not sender or not template_id:
+        raise RuntimeError('华为云短信需要配置发送方号码和模板 ID。')
+    param_values = list(params) if isinstance(params, list) else list(params.values()) if isinstance(params, dict) else []
+    payload = {
+        'from': sender,
+        'to': ','.join(phones),
+        'templateId': template_id,
+    }
+    if param_values:
+        payload['templateParas'] = json.dumps(param_values, ensure_ascii=False)
+    signature = _text(config.get('sign_name'))
+    if signature:
+        payload['signature'] = signature
+    endpoint = _text(config.get('endpoint')) or HUAWEI_SMS_ENDPOINT
+    response = requests.post(
+        endpoint,
+        data=payload,
+        headers=_huawei_wsse_headers(app_key, app_secret),
+        timeout=timeout,
+    )
+    body_text = response.text[:1000]
+    if response.status_code >= 400:
+        raise RuntimeError(f'HTTP {response.status_code}: {body_text}')
+    try:
+        body = response.json()
+    except ValueError:
+        raise RuntimeError(f'华为云返回非 JSON 内容: {body_text}')
+    code = body.get('code') or body.get('Code')
+    description = body.get('description') or body.get('Description') or ''
+    if code != '000000':
+        raise RuntimeError(f'code={code}: {description or body_text}')
+    result = body.get('result') or []
+    failures = [item for item in result if _text(item.get('status')) not in ('000000',)]
+    if failures:
+        detail = '; '.join(f"{item.get('originTo')}: {item.get('status')}".strip() for item in failures)
+        raise RuntimeError(f'华为云短信发送失败: {detail}')
+    request_id = _text((result[0] or {}).get('smsMsgId')) if result and isinstance(result[0], dict) else ''
+    return {'provider': PROVIDER_HUAWEI, 'provider_label': '华为云短信', 'recipient_count': len(phones), 'request_id': request_id, 'response': body_text}
+
+
 def _int_in_range(value, minimum, maximum, default):
     try:
         number = int(value)
@@ -305,6 +369,8 @@ def send_sms(provider, config, phones, params, timeout=8):
         summary = _send_aliyun_sms(config, numbers, params, timeout)
     elif provider == PROVIDER_TENCENT:
         summary = _send_tencent_sms(config, numbers, params, timeout)
+    elif provider == PROVIDER_HUAWEI:
+        summary = _send_huawei_sms(config, numbers, params, timeout)
     else:
         raise RuntimeError(f'未知短信厂商: {provider}')
     return f"{summary['provider_label']}已提交 {summary['recipient_count']} 个号码", summary
@@ -312,6 +378,8 @@ def send_sms(provider, config, phones, params, timeout=8):
 
 def send_voice(provider, config, phones, params, timeout=8):
     provider = normalize_provider(provider)
+    if provider == PROVIDER_HUAWEI:
+        raise RuntimeError('华为云语音直连暂未支持，请使用 Webhook 网关或其他厂商。')
     numbers = normalize_phones(phones, provider)
     if provider == PROVIDER_ALIYUN:
         summary = _send_aliyun_voice(config, numbers, params, timeout)

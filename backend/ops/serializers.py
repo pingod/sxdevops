@@ -89,6 +89,7 @@ SECRET_CONFIG_KEY_HINTS = (
     'token',
     'api_key',
     'apikey',
+    'app_key',
     'authorization',
     'access_key',
     'private_key',
