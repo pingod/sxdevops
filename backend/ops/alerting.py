@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import json
 import re
 from collections import Counter, defaultdict
@@ -195,6 +196,19 @@ def _status_to_alert_status(value, payload=None):
     return Alert.STATUS_ACTIVE
 
 
+def _find_host(text):
+    host = Host.objects.filter(hostname=text).first()
+    if host:
+        return host
+    # PostgreSQL backs Host.ip_address with inet; comparing it to a hostname
+    # raises ValueError instead of simply not matching (SQLite tolerates it).
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return None
+    return Host.objects.filter(ip_address=text).first()
+
+
 def _host_for(resource, labels):
     candidates = [
         resource,
@@ -209,12 +223,11 @@ def _host_for(resource, labels):
         text = _text(candidate)
         if not text:
             continue
-        host = Host.objects.filter(Q(hostname=text) | Q(ip_address=text)).first()
+        host = _find_host(text)
         if host:
             return host
         if ':' in text:
-            short = text.split(':', 1)[0]
-            host = Host.objects.filter(Q(hostname=short) | Q(ip_address=short)).first()
+            host = _find_host(text.split(':', 1)[0])
             if host:
                 return host
     return None

@@ -4492,6 +4492,15 @@ class AlertActionApiTests(TestCase):
         self.assertEqual(self.alert.status, Alert.STATUS_MUTED)
         self.assertTrue(self.alert.is_suppressed)
 
+    @patch('ops.alerting.Host.objects.filter')
+    def test_host_lookup_skips_inet_comparison_for_hostnames(self, host_filter):
+        from ops.alerting import _host_for
+
+        host_filter.return_value.first.return_value = None
+        self.assertIsNone(_host_for('switch-01', {}))
+        self.assertEqual(host_filter.call_count, 1)
+        self.assertEqual(host_filter.call_args.kwargs, {'hostname': 'switch-01'})
+
     def test_card_action_link_is_idempotent_and_renders_html(self):
         self.client.force_authenticate(user=None)
         token = AlertInteractionToken.objects.create(
