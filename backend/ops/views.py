@@ -2303,11 +2303,40 @@ def alert_webhook(request, provider, token=''):
     }, status=status.HTTP_202_ACCEPTED)
 
 
+def _render_card_action_page(ok, message, alert, http_status):
+    from html import escape
+    from django.http import HttpResponse
+
+    color = '#15803d' if ok else '#b91c1c'
+    heading = '操作成功' if ok else '操作未完成'
+    detail_lines = []
+    if alert:
+        detail_lines.append(f'<p class="meta">告警：{escape(str(alert.title))}</p>')
+        detail_lines.append(f'<p class="meta">当前状态：{escape(str(alert.get_status_display()))}</p>')
+    body = f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{heading}</title>
+<style>
+ body {{ font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f8fafc; margin: 0; padding: 24px; color: #0f172a; }}
+ .card {{ max-width: 420px; margin: 12vh auto 0; background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 12px 32px rgba(15, 23, 42, .12); text-align: center; }}
+ h1 {{ font-size: 20px; color: {color}; margin: 0 0 12px; }}
+ .msg {{ font-size: 15px; line-height: 1.6; margin: 0 0 8px; }}
+ .meta {{ font-size: 13px; color: #64748b; margin: 6px 0; word-break: break-all; }}
+ a {{ display: inline-block; margin-top: 16px; padding: 10px 18px; border-radius: 10px; background: #2563eb; color: #fff; text-decoration: none; font-size: 14px; }}
+</style></head>
+<body><div class="card"><h1>{heading}</h1><p class="msg">{escape(message)}</p>{''.join(detail_lines)}<a href="/alerts">返回告警中心</a></div></body></html>"""
+    return HttpResponse(body, status=http_status, content_type='text/html; charset=utf-8')
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 def alert_card_action(request, token):
     ok, message, alert = handle_interaction_token(token, request=request)
     http_status = status.HTTP_200_OK if ok else status.HTTP_400_BAD_REQUEST
+    accept = (request.META.get('HTTP_ACCEPT') or '').lower()
+    if 'application/json' not in accept:
+        return _render_card_action_page(ok, message, alert, http_status)
     return Response({'success': ok, 'message': message, 'alert_id': alert.id if alert else None}, status=http_status)
 
 

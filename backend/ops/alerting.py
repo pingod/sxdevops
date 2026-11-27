@@ -1197,13 +1197,19 @@ def handle_interaction_token(token_value, request=None):
     token = AlertInteractionToken.objects.select_related('alert').filter(token=token_value).first()
     if not token:
         return False, '交互令牌不存在', None
-    if not token.is_available:
-        return False, '交互令牌已过期或已使用', token.alert
+    if token.used_at:
+        # 重复点击同一个按钮只是重复投递，动作已生效，按成功返回避免误导。
+        return True, '该操作已执行过，无需重复操作', token.alert
+    if token.expires_at <= timezone.now():
+        return False, '交互令牌已过期', token.alert
     # 条件更新消费令牌：重复点击/重复投递只会有一次真正执行动作。
     claimed = AlertInteractionToken.objects.filter(pk=token.pk, used_at__isnull=True).update(used_at=timezone.now())
     if not claimed:
-        return False, '交互令牌已过期或已使用', token.alert
+        return True, '该操作已执行过，无需重复操作', token.alert
     actor = f'card:{token.provider or "unknown"}'
+    user = getattr(request, 'user', None) if request else None
+    if user is not None and getattr(user, 'is_authenticated', False):
+        actor = getattr(user, 'get_full_name', lambda: '')() or getattr(user, 'username', '') or actor
     note = '卡片按钮操作'
     apply_alert_action(token.alert, token.action, actor=actor, note=note, metadata={'token': str(token.token)}, request=request)
     return True, '告警操作已处理', token.alert

@@ -16,6 +16,7 @@ from ops.models import (
     Alert,
     AlertAction,
     AlertIntegration,
+    AlertInteractionToken,
     AlertNotificationChannel,
     AlertNotificationRule,
     AlertRecipient,
@@ -4490,6 +4491,33 @@ class AlertActionApiTests(TestCase):
         self.alert.refresh_from_db()
         self.assertEqual(self.alert.status, Alert.STATUS_MUTED)
         self.assertTrue(self.alert.is_suppressed)
+
+    def test_card_action_link_is_idempotent_and_renders_html(self):
+        self.client.force_authenticate(user=None)
+        token = AlertInteractionToken.objects.create(
+            alert=self.alert,
+            action='claim',
+            provider='feishu',
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+        url = f'/api/alerts/card-actions/{token.token}/'
+
+        first = self.client.get(url, HTTP_ACCEPT='application/json')
+        self.assertEqual(first.status_code, 200)
+        self.assertTrue(first.json()['success'])
+        self.alert.refresh_from_db()
+        self.assertEqual(self.alert.claimed_by, 'card:feishu')
+
+        second = self.client.get(url, HTTP_ACCEPT='application/json')
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.json()['success'])
+        self.assertIn('已执行', second.json()['message'])
+        self.assertEqual(self.alert.claim_records.count(), 1)
+
+        page = self.client.get(url, HTTP_ACCEPT='text/html')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn('text/html', page['Content-Type'])
+        self.assertIn('返回告警中心', page.content.decode('utf-8'))
 
     def test_multiple_users_can_claim_same_alert(self):
         first_claim_response = self.client.post(f'/api/alerts/{self.alert.id}/claim/')
