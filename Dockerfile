@@ -78,8 +78,11 @@ COPY planning/backend/idcbox/ /app/planning/backend/idcbox/
 
 # 安装与清理必须同一层：删除动作放在新层只会新增一个“白化”层，镜像体积不会减小。
 # 移除项：pip、ansible-test、类型存根、kubernetes/aio、.pyc 与 tests 目录，
-# 以及运行时用不到的 CPython 工具（ensurepip/idlelib/tkinter/lib2to3/turtledemo）。
+# 运行时用不到的 CPython 工具（ensurepip/idlelib/tkinter/lib2to3/turtledemo），
+# 以及 site-packages 内扩展模块的调试符号。
 RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends binutils; \
     pip install --no-cache-dir -r /app/backend/requirements.lock.txt; \
     pip install --no-cache-dir "/app/planning/backend[serve]"; \
     SP=/usr/local/lib/python3.12/site-packages; \
@@ -89,10 +92,13 @@ RUN set -eux; \
     find $SP -name "*.pyi" -delete; \
     find $SP -type d -name tests -prune -exec rm -rf {} + || true; \
     find $SP -name "__pycache__" -type d -prune -exec rm -rf {} + || true; \
+    find $SP -type f -name "*.so" -exec strip --strip-unneeded {} + || true; \
     rm -rf /usr/local/lib/python3.12/ensurepip /usr/local/lib/python3.12/idlelib \
         /usr/local/lib/python3.12/tkinter /usr/local/lib/python3.12/lib2to3 \
         /usr/local/lib/python3.12/turtledemo /usr/local/lib/python3.12/test; \
-    rm -rf /root/.cache
+    apt-get purge -y binutils; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/* /root/.cache
 
 COPY LICENSE /app/LICENSE
 COPY THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
