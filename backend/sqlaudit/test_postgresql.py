@@ -134,7 +134,7 @@ class PostgreSQLExecutionTests(TransactionTestCase):
         self.client.force_login(user)
         response = self.client.post('/api/sqlaudit/datasources/', {
             'name': 'postgres-integration', 'db_type': 'postgresql', 'host': self.source.host,
-            'port': self.source.port, 'user': self.source.user, 'password': 'test-only', 'database': self.database,
+            'port': self.source.port, 'user': self.source.user, 'password': settings.DATABASES['default']['PASSWORD'], 'database': self.database,
         })
         self.assertEqual(response.status_code, 201, response.content)
         datasource = response.json()

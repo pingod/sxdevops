@@ -2,7 +2,7 @@ import logging
 import time
 
 from django.core.management.base import BaseCommand
-from django.db import OperationalError, ProgrammingError, close_old_connections
+from django.db import OperationalError, ProgrammingError, close_old_connections, connection
 
 from aiops.services import claim_async_chat_job, fail_exhausted_chat_jobs, process_async_chat_job
 from aiops.langgraph_management import cleanup_checkpoints
@@ -23,7 +23,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         next_cleanup = time.monotonic() + max(options['cleanup_interval'], 60)
         while True:
-            close_old_connections()
+            if not connection.in_atomic_block:
+                close_old_connections()
             try:
                 fail_exhausted_chat_jobs()
                 job = claim_async_chat_job()

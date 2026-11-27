@@ -7,7 +7,7 @@ import threading
 import paramiko
 import yaml
 from django.core.cache import cache
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections, connection, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from kubernetes import utils as k8s_utils
@@ -497,8 +497,13 @@ def _deploy_k8s(deployment, log_lines):
         log_lines.append(f'[INFO] 已创建 {document["kind"]}/{document["metadata"]["name"]}')
 
 
+def _close_old_connections_safe():
+    if not connection.in_atomic_block:
+        close_old_connections()
+
+
 def deploy_service(deployment_id):
-    close_old_connections()
+    _close_old_connections_safe()
     try:
         deployment = Deployment.objects.select_related('host', 'docker_host', 'cluster').get(pk=deployment_id)
     except Deployment.DoesNotExist:
@@ -587,7 +592,7 @@ def deploy_service(deployment_id):
 
     deployment.deploy_log = '\n'.join(log_lines)
     deployment.save(update_fields=['status', 'finished_at', 'deploy_log', 'batch_current'])
-    close_old_connections()
+    _close_old_connections_safe()
     return deployment
 
 

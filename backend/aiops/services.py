@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 import requests
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db import DatabaseError, close_old_connections, transaction
+from django.db import DatabaseError, close_old_connections, connection, transaction
 from django.db.models import Avg, Count, F, Q, Sum
 from django.http import QueryDict
 from django.utils import timezone
@@ -19278,8 +19278,14 @@ class ChatJobLeaseLost(RuntimeError):
     pass
 
 
+def _close_old_connections_safe():
+    """在测试事务里跳过 close_old_connections，避免关闭共享测试连接。"""
+    if not connection.in_atomic_block:
+        close_old_connections()
+
+
 def _run_async_chat_worker(session_id, user_message_id, user_id, assistant_message_id, question, analysis_only=False, thread_id='', check_lease=None):
-    close_old_connections()
+    _close_old_connections_safe()
     try:
         session = AIOpsChatSession.objects.select_related('user').get(pk=session_id)
         user_message = AIOpsChatMessage.objects.get(pk=user_message_id)
@@ -19331,7 +19337,7 @@ def _run_async_chat_worker(session_id, user_message_id, user_id, assistant_messa
         if session:
             _touch_chat_session(session, question=question)
     finally:
-        close_old_connections()
+        _close_old_connections_safe()
 
 
 
@@ -19465,7 +19471,7 @@ def process_async_chat_job(job):
 
     def renew_lease():
         while not stop_heartbeat.wait(30):
-            close_old_connections()
+            _close_old_connections_safe()
             try:
                 renewed = AIOpsChatJob.objects.filter(
                     pk=job.pk,
@@ -19480,7 +19486,7 @@ def process_async_chat_job(job):
                 lease_lost.set()
                 return
             finally:
-                close_old_connections()
+                _close_old_connections_safe()
 
     heartbeat = threading.Thread(target=renew_lease, daemon=True, name=f'aiops-chat-lease-{job.id}')
     heartbeat.start()

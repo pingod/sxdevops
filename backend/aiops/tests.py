@@ -147,7 +147,8 @@ class AIOpsSystemPostureDisabledTests(TestCase):
         self.assertEqual(result['sections'], [])
         self.assertTrue(result['summary']['disabled'])
 
-    def test_mcp_stdio_command_and_environment_are_restricted(self):
+    @mock.patch('aiops.services.shutil.which', return_value='/usr/bin/npx')
+    def test_mcp_stdio_command_and_environment_are_restricted(self, _which):
         with self.assertRaises(ValueError):
             _validate_mcp_stdio_command('python -c "import os"')
         with self.assertRaises(ValueError):
@@ -170,7 +171,8 @@ class AIOpsSystemPostureDisabledTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('endpoint_or_command', serializer.errors)
 
-    def test_mcp_stdio_serializer_accepts_safe_command(self):
+    @mock.patch('aiops.services.shutil.which', return_value='/usr/bin/npx')
+    def test_mcp_stdio_serializer_accepts_safe_command(self, _which):
         from .serializers import AIOpsMCPServerSerializer
 
         serializer = AIOpsMCPServerSerializer(data={

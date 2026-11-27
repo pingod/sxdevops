@@ -5,15 +5,22 @@
 “database is being accessed by other users”。
 
 这里改用 PostgreSQL 13+ 的 DROP DATABASE ... WITH (FORCE)，
-在销毁测试库时强制断开所有会话；测试库本身随后立即删除，后台线程
-无法继续写入。非 PostgreSQL 数据库仍走 Django 默认流程。
+在销毁**测试库**时强制断开所有会话。测试库名按 Django 规则计算：
+TEST["NAME"] 或 test_<主库名>。绝不能直接使用旧配置里的主库名。
+非 PostgreSQL 数据库仍走 Django 默认流程。
 """
 import logging
 
-from django.db import connections
 from django.test.runner import DiscoverRunner
 
 logger = logging.getLogger(__name__)
+
+
+def _test_database_name(connection, old_name):
+    configured = (connection.settings_dict.get('TEST') or {}).get('NAME')
+    if configured:
+        return configured
+    return f'test_{old_name}'
 
 
 def _force_drop(connection, database_name):
@@ -42,13 +49,17 @@ class SxDevOpsTestRunner(DiscoverRunner):
         remaining = []
         for connection, old_name, destroy in old_config:
             if destroy and connection.vendor == 'postgresql':
+                test_name = _test_database_name(connection, old_name)
+                if not test_name or test_name == old_name:
+                    remaining.append((connection, old_name, destroy))
+                    continue
                 try:
-                    _force_drop(connection, old_name)
+                    _force_drop(connection, test_name)
                     continue
                 except Exception:
                     logger.warning(
                         'force drop failed for %s, falling back to Django teardown',
-                        old_name,
+                        test_name,
                         exc_info=True,
                     )
             remaining.append((connection, old_name, destroy))

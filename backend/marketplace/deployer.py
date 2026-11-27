@@ -9,7 +9,7 @@ import shlex
 
 import paramiko
 import yaml
-from django.db import close_old_connections
+from django.db import close_old_connections, connection
 from django.utils.text import slugify
 from kubernetes import utils as k8s_utils
 from kubernetes.client.exceptions import ApiException
@@ -279,9 +279,14 @@ def _scale_k8s_workloads(deployment, replicas):
     return scaled
 
 
+def _close_old_connections_safe():
+    if not connection.in_atomic_block:
+        close_old_connections()
+
+
 def deploy_service(deployment_id):
     """执行服务部署任务（后台线程）"""
-    close_old_connections()
+    _close_old_connections_safe()
 
     try:
         deployment = ServiceDeployment.objects.select_related('template', 'host', 'cluster').get(pk=deployment_id)
@@ -346,7 +351,7 @@ def deploy_service(deployment_id):
 
     deployment.deploy_log = '\n'.join(log_lines)
     deployment.save(update_fields=['status', 'deploy_log'])
-    close_old_connections()
+    _close_old_connections_safe()
     return deployment
 
 
