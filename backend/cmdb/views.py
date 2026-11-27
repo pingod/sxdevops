@@ -35,6 +35,7 @@ from .collectors import collect_items_for_sync_job, configured_collection_item_c
 from .builtins import ensure_builtin_cmdb
 from .costs import AliyunCostSyncError, sync_aliyun_monthly_costs
 from .metrics import latest_metric_snapshots
+from .waterline_ssh import collect_ssh_waterline_batch
 from .models import (
     CIArchiveCandidate,
     CIChangeLog,
@@ -7416,11 +7417,9 @@ class CIResourceMetricSnapshotViewSet(RBACPermissionMixin, viewsets.ModelViewSet
 
         job_targets = {}
         skipped = []
+        ssh_candidates = []
         for ci in ci_rows:
             mappings = _source_mapping_rows_for_waterline_refresh(ci)
-            if not mappings:
-                skipped.append({'ci_id': ci.id, 'name': ci.name, 'reason': '未找到支持实时水位采集的来源映射'})
-                continue
             matched = False
             for mapping in mappings:
                 job = _sync_job_for_waterline_mapping(mapping)
@@ -7431,7 +7430,8 @@ class CIResourceMetricSnapshotViewSet(RBACPermissionMixin, viewsets.ModelViewSet
                 target['ci_ids'].add(ci.id)
                 matched = True
             if not matched:
-                skipped.append({'ci_id': ci.id, 'name': ci.name, 'reason': '未找到对应的同步任务'})
+                # 物理机/虚拟机没有云同步任务时回退到 SSH 采集（登录凭据 + ssh_port）。
+                ssh_candidates.append(ci)
 
         total_summary = defaultdict(int)
         records = []
@@ -7479,14 +7479,24 @@ class CIResourceMetricSnapshotViewSet(RBACPermissionMixin, viewsets.ModelViewSet
                 'summary': result['summary'],
             })
 
+        ssh_collected = []
+        if ssh_candidates:
+            ssh_collected, ssh_skipped = collect_ssh_waterline_batch(ssh_candidates)
+            skipped.extend(ssh_skipped)
+            if ssh_collected:
+                total_summary['metric_snapshot'] += sum(len(item['metrics']) for item in ssh_collected)
+                total_summary['ssh_collected'] += len(ssh_collected)
+
         latest_rows = _latest_metric_snapshot_rows_for_ci_ids([ci.id for ci in ci_rows])
         return Response({
             'requested_count': len(ci_rows),
             'executed_job_count': len(executed_jobs),
-            'refreshed_count': sum(item['matched_count'] for item in executed_jobs),
+            'refreshed_count': sum(item['matched_count'] for item in executed_jobs) + len(ssh_collected),
             'skipped_count': len(skipped),
             'summary': dict(total_summary),
             'jobs': executed_jobs,
+            'ssh_collected_count': len(ssh_collected),
+            'ssh_collected': ssh_collected,
             'skipped': skipped,
             'records': CISyncRecordSerializer(records, many=True).data,
             'latest_metrics': self.get_serializer(latest_rows, many=True).data,

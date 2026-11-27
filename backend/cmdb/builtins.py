@@ -131,6 +131,7 @@ MODEL_DEFINITIONS = [
         'fields': [
             {'code': 'asset_sn', 'name': '资产序列号', 'field_type': 'string', 'field_group': '资产信息', 'required': True, 'unique': True, 'is_searchable': True, 'sort_order': 10},
             {'code': 'private_ip', 'name': '管理 IP', 'field_type': 'ip', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 20},
+            {'code': 'ssh_port', 'name': 'SSH 端口', 'field_type': 'integer', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 25},
             {'code': 'idc', 'name': '机房/数据中心', 'field_type': 'string', 'field_group': '位置信息', 'required': False, 'is_searchable': True, 'sort_order': 30},
             {'code': 'rack', 'name': '机柜', 'field_type': 'string', 'field_group': '位置信息', 'sort_order': 40},
             {'code': 'u_position', 'name': 'U 位', 'field_type': 'string', 'field_group': '位置信息', 'sort_order': 45},
@@ -176,6 +177,7 @@ MODEL_DEFINITIONS = [
         'fields': [
             {'code': 'instance_id', 'name': '实例 ID', 'field_type': 'string', 'field_group': '云资源信息', 'required': True, 'unique': True, 'is_searchable': True, 'sort_order': 10},
             {'code': 'private_ip', 'name': '私网 IP', 'field_type': 'ip', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 20},
+            {'code': 'ssh_port', 'name': 'SSH 端口', 'field_type': 'integer', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 25},
             {'code': 'public_ip', 'name': '公网 IP', 'field_type': 'ip', 'field_group': '网络信息', 'is_searchable': True, 'sort_order': 30},
             {'code': 'instance_type', 'name': '实例规格', 'field_type': 'string', 'field_group': '资源规格', 'sort_order': 40},
             {'code': 'cpu', 'name': 'CPU 核数', 'field_type': 'integer', 'field_group': '资源规格', 'sort_order': 50},
@@ -194,6 +196,7 @@ MODEL_DEFINITIONS = [
         'fields': [
             {'code': 'instance_id', 'name': '实例 ID', 'field_type': 'string', 'field_group': '虚拟化信息', 'required': True, 'unique': True, 'is_searchable': True, 'sort_order': 10},
             {'code': 'private_ip', 'name': '私网 IP', 'field_type': 'ip', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 20},
+            {'code': 'ssh_port', 'name': 'SSH 端口', 'field_type': 'integer', 'field_group': '网络信息', 'required': False, 'is_searchable': True, 'sort_order': 25},
             {'code': 'public_ip', 'name': '公网 IP', 'field_type': 'ip', 'field_group': '网络信息', 'is_searchable': True, 'sort_order': 30},
             {'code': 'instance_type', 'name': '硬件版本', 'field_type': 'string', 'field_group': '资源规格', 'sort_order': 40},
             {'code': 'cpu', 'name': 'CPU 核数', 'field_type': 'integer', 'field_group': '资源规格', 'sort_order': 50},
